@@ -40,7 +40,9 @@ export function createLocalAdminAccess(options: { pin?: string, secret: string, 
   function assertOrigin(c: Context) {
     const origin = c.req.header('Origin')
     const localDevelopment = options.origin && origin && isLoopbackOrigin(options.origin) && isLoopbackOrigin(origin)
-    if (options.origin && origin !== options.origin && !localDevelopment)
+    // The selected LAN entry shares this API with the public HTTPS deployment.
+    const lanKiosk = origin === 'http://100.92.1.80:5169'
+    if (options.origin && origin !== options.origin && !localDevelopment && !lanKiosk)
       throw createForbiddenError('Untrusted local administrator origin')
   }
 
@@ -53,7 +55,7 @@ export function createLocalAdminAccess(options: { pin?: string, secret: string, 
       if (!timingSafeEqual(digest(pin), digest(options.pin)))
         throw createUnauthorizedError('Incorrect local administrator PIN')
       const expiresAt = Date.now() + sessionLifetimeSeconds * 1000
-      await setSignedCookie(c, localAdminCookieName, JSON.stringify({ deviceId, credentialHash: digest(credential).toString('hex'), expiresAt }), signingKey, { ...cookieOptions, maxAge: sessionLifetimeSeconds })
+      await setSignedCookie(c, localAdminCookieName, JSON.stringify({ deviceId, credentialHash: digest(credential).toString('hex'), expiresAt }), signingKey, { ...cookieOptions, secure: options.secureCookies && c.req.header('Origin') !== 'http://100.92.1.80:5169', maxAge: sessionLifetimeSeconds })
       return { expiresAt }
     },
     async authorize(c: Context, deviceId: string, credential: string) {
@@ -76,7 +78,8 @@ export function createLocalAdminAccess(options: { pin?: string, secret: string, 
     },
     lock(c: Context) {
       assertOrigin(c)
-      deleteCookie(c, localAdminCookieName, cookieOptions)
+      // Match the HTTP grant's attributes so locking also clears the LAN cookie.
+      deleteCookie(c, localAdminCookieName, { ...cookieOptions, secure: options.secureCookies && c.req.header('Origin') !== 'http://100.92.1.80:5169' })
     },
   }
 }

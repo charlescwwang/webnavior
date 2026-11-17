@@ -152,3 +152,13 @@ it('supersedes a checkout offer with an explicitly presented purchase question',
   window.releaseService(snapshot, purchase.questionId)
   expect(window.pending(snapshot)).toBeUndefined()
 })
+
+// Report: this chat, Nov17 case 4 — old final consent must not authorize an edited invoice/contact form.
+it('revokes final submission consent after checkout data changes without affecting form-entry questions', () => {
+  const { window, snapshot } = setup()
+  const before = { ...snapshot, checkoutVersion: 'carrier-and-phone-v1' }
+  const question = window.presentService(before, { purpose: 'submit-order', query: 'one-use', request: '結帳', question: '確認送出？', choices: [{ id: 'yes', description: '確認送出' }] })
+  expect(window.consume(question.questionId, 'yes', { ...before, checkoutVersion: 'donation-and-phone-v2' })).toEqual({ kind: 'invalid' })
+  const entry = window.presentService(before, { purpose: 'invoice-details', request: '填發票', question: '填好說好了', choices: [{ id: 'yes', description: '重新讀取' }] })
+  expect(window.consume(entry.questionId, 'yes', { ...before, checkoutVersion: 'filled' })).toMatchObject({ kind: 'service', purpose: 'invoice-details' })
+})

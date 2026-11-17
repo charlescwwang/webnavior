@@ -1,5 +1,5 @@
 import { readPbJourney } from '@proj-airi/stage-shared/pb-journey'
-import { array, literal, looseObject, minLength, object, parse, pipe, safeParse, string, unknown } from 'valibot'
+import { array, literal, looseObject, minLength, object, optional, parse, pipe, safeParse, string, unknown } from 'valibot'
 import { readonly, shallowRef } from 'vue'
 
 const ownerSchema = object({ owner: pipe(string(), minLength(1)) })
@@ -59,17 +59,32 @@ export function createBrowserCartSession(storage: Pick<Storage, 'getItem' | 'set
     blocked: readonly(blocked),
     /** A fresh empty cart can transfer automatically; a nonempty unowned cart requires review. */
     check,
-    /** Checks a newly loaded page before exposing its ordering controls. */
-    async prepare(owner: string, serviceUrl: string, read: () => Promise<unknown>, isCurrent: () => boolean): Promise<'ready' | 'blocked' | 'stale' | 'table-only'> {
-      const raw = await read()
+    /** Reads the covered document before exposing controls; only the table page needs private cart access. */
+    async prepare(owner: string, serviceUrl: string, read: (input: { includeCatalog: false, forAdmission?: true }) => Promise<unknown>, isCurrent: () => boolean): Promise<'ready' | 'blocked' | 'stale' | 'table-only'> {
+      // Menu forAdmission also dismisses PB's announcement through a visible
+      // control. Admission owns the native cover, so that action would reject
+      // its own hidden document forever. Read facts first, without UI actions.
+      let raw = await read({ includeCatalog: false })
       if (!isCurrent())
         return 'stale'
+      const journey = readPbJourney(serviceUrl)
+      const table = safeParse(looseObject({ ok: literal(true), page: literal('table'), code: literal('table-selection-required') }), raw)
+      if (journey?.tablePath === new URL(serviceUrl).pathname && table.success) {
+        // Ordinary table context intentionally withholds the previous cart.
+        // Only this observed table document gets the Host-only read; unlike
+        // the menu path, it performs no announcement/control dispatch.
+        raw = await read({ includeCatalog: false, forAdmission: true })
+        if (!isCurrent())
+          return 'stale'
+      }
+      const rejected = safeParse(looseObject({ ok: literal(false), error: optional(string()) }), raw)
+      if (rejected.success)
+        throw new Error(rejected.output.error ?? 'PB 購物車資料讀取未完成。')
       parse(looseObject({ ok: literal(true) }), raw)
       const deferred = safeParse(looseObject({ ok: literal(true), page: literal('table'), cartAdmission: literal('after-table-entry') }), raw)
       if (deferred.success && !('cart' in deferred.output)) {
         // PB cannot inspect a first-time guest's cart before Start. Table tools
         // remain available, but ownership is not granted; menu admission retries.
-        const journey = readPbJourney(serviceUrl)
         if (journey?.tablePath === new URL(serviceUrl).pathname)
           return blocked.value ? 'blocked' : 'table-only'
       }

@@ -11,7 +11,7 @@ const kioskHostOnlyToolNames: ReadonlySet<string> = new Set(hostToolNames)
 
 /** Publishes business operations while keeping PB's native control protocol private. */
 export function createInteractiveServiceTools(): Tool[] {
-  if (interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_observe'))
+  if (interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_observe' || tool.name === 'browser_state_get'))
     return createBrowserOrderingTools(interactiveServiceClient)
   return interactiveServiceClient.tools.value
     .filter(tool => !kioskHostOnlyToolNames.has(tool.name))

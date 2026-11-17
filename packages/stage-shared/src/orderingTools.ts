@@ -90,6 +90,8 @@ export function nativeOrderingToolName(name: string): string {
 
 /** Selects tools from verified page and pending task; page alone never forbids cart edits. */
 export function availableOrderingTools(context: BrowserConversation): OrderingToolName[] {
+  if (context.phase === 'viewing_order')
+    return ['reply_to_customer']
   if (context.phase === 'selecting_table')
     return ['select_table', 'start_ordering_at_table', 'ask_customer_question', 'reply_to_customer']
   if (context.phase === 'sign_in_required' || context.phase === 'review_required')

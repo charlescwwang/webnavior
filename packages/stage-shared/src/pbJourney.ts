@@ -19,6 +19,8 @@ const deployments = [
   // Merchant-authorized unpaid orders; final summary assent remains mandatory.
   { origin: 'https://app.esgpb.com', store: '1kgJeql', flow: 'internal_use', buyer: 'guest', canSubmit: true },
   { origin: 'https://app-205-rd.esgpb.com', store: '1kAMNok', flow: 'internal_use', buyer: 'guest', canSubmit: false },
+  // Public simulator is isolated from the merchant deployment and creates TEST orders only.
+  { origin: 'https://webnavior.aikcitri.qzz.io', store: '1kgJeql', flow: 'internal_use', buyer: 'guest', canSubmit: true },
   // Explicit offline simulator; other loopback ports/stores remain untrusted.
   { origin: 'http://127.0.0.1:5188', store: '1kgJeql', flow: 'internal_use', buyer: 'guest', canSubmit: true },
 ] as const
@@ -42,11 +44,43 @@ export function readPbJourney(value: string): PbJourney | undefined {
   }
 }
 
+/** Resolves a read-only result page without granting editor/checkout privileges. */
+export function readPbStateJourney(value: string): PbJourney | undefined {
+  const editor = readPbJourney(value)
+  if (editor)
+    return editor
+  let url: URL
+  try {
+    url = new URL(value)
+  }
+  catch { return }
+  const menu = new URL(url.href)
+  menu.pathname = url.pathname.replace(/orders\/[\w-]{1,200}(?:\/choosePayment)?$/, 'menu')
+  const journey = readPbJourney(menu.href)
+  return journey && isPbOrderResultUrl(menu.href, value) ? journey : undefined
+}
+
 /** Host approval follows its configured service, even when another PB deployment is reviewed. */
 export function isPbJourneyPage(entry: string, current: string) {
   const expected = readPbJourney(entry)
   const actual = readPbJourney(current)
   return Boolean(expected && actual && expected.origin === actual.origin && expected.basePath === actual.basePath)
+}
+
+/** Browser backup belongs only to our simulator and a reviewed Kiosk parent, never the merchant. */
+export function isPbSimulatorHost(serviceUrl: string, hostUrl: string): boolean {
+  const journey = readPbStateJourney(serviceUrl)
+  if (!journey || !['https://webnavior.aikcitri.qzz.io', 'http://127.0.0.1:5188'].includes(journey.origin))
+    return false
+  try {
+    const host = new URL(hostUrl)
+    // Same-site embedding preserves the simulator's Strict cookie isolation.
+    // The Tailscale HTTP browser has neither that cookie context nor secure media APIs.
+    const approvedOrigin = host.origin === journey.origin
+      || (journey.origin === 'http://127.0.0.1:5188' && host.origin === 'http://127.0.0.1:5169')
+    return approvedOrigin && !host.username && !host.password && host.pathname.startsWith('/kiosk/')
+  }
+  catch { return false }
 }
 
 /** Submission may retire the editor for its same-store order result; this grants no automation there. */
@@ -59,7 +93,8 @@ export function isPbOrderResultUrl(entry: string, current: string) {
     if (url.origin !== journey.origin || url.username || url.password || url.hash || url.search)
       return false
     const suffix = url.pathname.slice(journey.basePath.length)
-    return url.pathname.startsWith(journey.basePath) && /^orders\/[\w-]{1,200}(?:\/choosePayment)?$/.test(suffix) && suffix !== 'orders/create'
+    const result = suffix.match(/^orders\/([\w-]{1,200})(?:\/choosePayment)?$/)
+    return url.pathname.startsWith(journey.basePath) && Boolean(result && result[1] !== 'create')
   }
   catch { return false }
 }

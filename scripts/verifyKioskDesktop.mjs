@@ -686,7 +686,7 @@ try {
       history.pushState({}, '', '/order/store/1kgJeql/pick_up/orders/create')
       const cart = document.createElement('section')
       cart.className = 'order-create'
-      cart.innerHTML = '<div class="produce-item"><h3>Fixture meal <span>($10)</span></h3><input type="number" value="1"><button class="is-circle">Delete line</button></div><a href="/order/store/1kgJeql/pick_up/menu">繼續點餐</a>'
+      cart.innerHTML = '<div class="produce-item"><h3>Fixture meal <span>($10)</span></h3><input type="number" min="0" value="1"></div><a href="/order/store/1kgJeql/pick_up/menu">繼續點餐</a>'
       menu.replaceWith(cart)
       const returnToMenu = (event) => {
         event.preventDefault()
@@ -699,7 +699,12 @@ try {
         }, 150)
       }
       cart.querySelector('a').addEventListener('click', returnToMenu)
-      cart.querySelector('button').addEventListener('click', async () => {
+      // PB's reviewed native quantity contract removes a line at zero. The
+      // fixture must implement that input event, rather than an unused delete
+      // button, or verification waits forever for a write the fixture ignored.
+      cart.querySelector('input').addEventListener('change', async (event) => {
+        if (event.target.value !== '0')
+          return
         await fetch('/order/store/1kgJeql/pick_up/orders/fixture-order/details/1', { method: 'DELETE' })
         // PB's last-line removal changes the navigation control as well as rows.
         cart.innerHTML = '<h2>購物車是空的</h2><button>立即點餐</button>'

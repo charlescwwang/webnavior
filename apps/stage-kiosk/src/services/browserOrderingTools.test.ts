@@ -41,7 +41,7 @@ function setup(transcript: string, pending = false, labels: CatalogLabel[] = [])
   const lines: CartLine[] = [{ ref: 'line', productRef: 'chicken', name: '雞腿飯', quantity: 3, configuration: '', unitPrice: 100, note: '', options: [] }]
   const facts = { ok: true, source: 'browser', cart: { version: 'cart', lines }, products: [{ ref: 'chicken', name: '雞腿飯', price: 100, kind: 'product', priceType: 1, configurations: [configuration] }] }
   const checkout: PbCheckout = { methods: [{ method: 'none', label: '無載具', selected: true }, { method: 'carrier', label: '手機載具', selected: false }], fields: [], missing: ['請填寫通知手機或電子信箱。'], ready: false, orderNote: '', total: 300 }
-  const names = ['browser_table_select', 'browser_start_ordering', 'browser_open_product', 'browser_clarify_product', 'browser_cart_get', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_cart_review', 'browser_product_get', 'browser_present', 'browser_close_product', 'browser_search', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_order_submit']
+  const names = ['browser_state_get', 'browser_table_select', 'browser_start_ordering', 'browser_open_product', 'browser_clarify_product', 'browser_cart_get', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_cart_review', 'browser_product_get', 'browser_present', 'browser_close_product', 'browser_search', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_order_submit']
   const tools = shallowRef<ServiceTool[]>(names.map(name => ({ name, description: '', inputSchema: { type: 'object' }, origin: 'http://127.0.0.1:5188' })))
   const execute = vi.fn<(tool: ServiceTool, input: Record<string, unknown>) => Promise<unknown>>(async (tool, input) => {
     if (['browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone'].includes(tool.name)) {
@@ -60,7 +60,7 @@ function setup(transcript: string, pending = false, labels: CatalogLabel[] = [])
     }
     if (tool.name === 'browser_order_submit')
       return { ok: true, source: 'browser', code: 'order-submission-starting', effect: 'pending', confirmationToken: input.confirmationToken, customerMessage: '已按下送出訂單。' }
-    if (tool.name === 'browser_cart_get')
+    if (tool.name === 'browser_cart_get' || tool.name === 'browser_state_get')
       return structuredClone(facts)
     if (['browser_table_select', 'browser_start_ordering'].includes(tool.name))
       return { ok: true, source: 'browser', selectedTable: input.name }
@@ -1021,4 +1021,105 @@ it('reads item information without resolving the pending cart review as a new re
   expect(result).toMatchObject({ customerMessage: expect.stringContaining('雞腿飯') })
   expect(answer).not.toHaveBeenCalled()
   expect(dialogue.conversation(facts).waitingFor).toEqual(waiting)
+})
+
+// Report: this chat, Nov17 case 12 — a manual form edit retires the question, not the invoice workflow.
+it.each(['cart-version', 'expiry'] as const)('continues completed donation fields after %s without choosing the invoice method again', async (change) => {
+  if (change === 'expiry')
+    vi.useFakeTimers()
+  const { call, client, facts, dialogue, checkout, execute } = setup('我要捐贈發票')
+  checkout.methods.push({ method: 'donation', label: '捐贈發票', selected: false })
+  Object.assign(facts, { page: 'cart', checkout })
+  const selected = await call('choose_invoice_method', { method: 'donation' })
+  expect(selected.pendingCustomerChoice.question).toContain('捐贈')
+  checkout.fields[0] = { kind: 'donation', label: '捐贈碼', value: '123', valid: true }
+  checkout.fields.push({ kind: 'phone', label: '通知手機', value: '', valid: false })
+  if (change === 'expiry') {
+    vi.setSystemTime(Date.now() + 120_001)
+  }
+  else {
+    facts.cart.version = 'manual-edit'
+  }
+  try {
+    const pending = dialogue.conversation(facts).waitingFor
+    expect(pending).toBeDefined()
+    expect(pending!.questionId).not.toBe(selected.pendingCustomerChoice.questionId)
+    cleanup.push(beginBrowserCartTask('好了', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+    const resume = await prepareBrowserQuestionAnswer(client)
+    expect(resume).toBeTypeOf('function')
+    const continued = await resume!()
+    expect(continued).toMatchObject({ pendingCustomerChoice: { question: expect.stringContaining('通知手機') } })
+    expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_select')).toHaveLength(1)
+    expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
+  }
+  finally { vi.useRealTimers() }
+})
+
+// Report: this chat, Nov17 case 12 — Main may propose reselecting donation after a bare completion.
+it('treats a completion during invoice entry as a form recheck even if Main proposes an invoice tool', async () => {
+  const { call, facts, dialogue, checkout, execute } = setup('我要捐贈發票')
+  checkout.methods.push({ method: 'donation', label: '捐贈發票', selected: false })
+  Object.assign(facts, { page: 'cart', checkout })
+  await call('choose_invoice_method', { method: 'donation' })
+  checkout.fields[0] = { kind: 'donation', label: '捐贈碼', value: '123', valid: true }
+  checkout.fields.push({ kind: 'phone', label: '通知手機', value: '', valid: false })
+  cleanup.push(beginBrowserCartTask('好了', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  expect(await call('choose_invoice_method', { method: 'donation' })).toMatchObject({ pendingCustomerChoice: { question: expect.stringContaining('通知手機') } })
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_select')).toHaveLength(1)
+})
+
+// Report: this chat, Nov17 cases 4/5 — a rejected native final press needs fresh consent, never a cart-review loop.
+it.each(['none', 'unknown'] as const)('handles a final submission with %s effect without replaying it', async (effect) => {
+  const { call, client, facts, dialogue, checkout, execute } = setup('幫我結帳')
+  Object.assign(checkout, { fields: [{ kind: 'phone', label: '通知手機', value: '0912345678', valid: true }], ready: true, missing: [] })
+  Object.assign(facts, { page: 'cart', checkout })
+  const summary = await call('continue_checkout', {})
+  const original = execute.getMockImplementation()!
+  execute.mockImplementation((tool, input) => tool.name === 'browser_order_submit' ? Promise.resolve({ ok: false, source: 'browser', status: effect === 'none' ? 'rejected' : 'unknown', effect, customerMessage: effect === 'none' ? '控制項尚未就緒，尚未送出。' : '送出結果尚未確認。' }) : original(tool, input))
+  cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const submit = await prepareBrowserQuestionAnswer(client)
+  const result = await submit!()
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(1)
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_review')).toHaveLength(0)
+  if (effect === 'none') {
+    expect(result).toMatchObject({ pendingCustomerChoice: { question: expect.stringContaining('確認送出') } })
+    expect(result).toMatchObject({ customerMessage: expect.stringContaining('尚未送出') })
+    expect((result as typeof summary).pendingCustomerChoice.questionId).not.toBe(summary.pendingCustomerChoice.questionId)
+  }
+  else {
+    expect(result).not.toHaveProperty('pendingCustomerChoice')
+    expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_checkout_prepare')).toHaveLength(1)
+  }
+})
+
+// Report: this chat, Nov17 case 4 — an expired summary may refresh data but never consume its old token.
+it('reissues an expired final summary without sending the order or repeating invoice selection', async () => {
+  vi.useFakeTimers()
+  try {
+    const { call, client, facts, dialogue, checkout, execute } = setup('結帳')
+    Object.assign(checkout, { fields: [{ kind: 'phone', label: '通知手機', value: '0912345678', valid: true }], ready: true, missing: [] })
+    Object.assign(facts, { page: 'cart', checkout })
+    const previous = await call('continue_checkout', {})
+    vi.setSystemTime(Date.now() + 120_001)
+    cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+    const recheck = await prepareBrowserQuestionAnswer(client)
+    const result = await recheck!()
+    expect(result).toMatchObject({ pendingCustomerChoice: { question: expect.stringContaining('確認送出') } })
+    expect((result as typeof previous).pendingCustomerChoice.questionId).not.toBe(previous.pendingCustomerChoice.questionId)
+    expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
+    expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_select')).toHaveLength(0)
+  }
+  finally { vi.useRealTimers() }
+})
+
+// Report: this chat, Nov17 case 4 — a mistaken invoice tool may not send final consent back to invoice choice.
+it('resolves the actual final question when Main proposes invoice selection for a bare confirmation', async () => {
+  const { call, facts, dialogue, checkout, execute } = setup('結帳')
+  Object.assign(checkout, { fields: [{ kind: 'phone', label: '通知手機', value: '0912345678', valid: true }], ready: true, missing: [] })
+  Object.assign(facts, { page: 'cart', checkout })
+  await call('continue_checkout', {})
+  cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  await call('choose_invoice_method', { method: 'carrier' })
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(1)
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_select')).toHaveLength(0)
 })

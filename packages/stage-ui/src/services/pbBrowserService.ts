@@ -5,8 +5,8 @@ import type { RouteName } from './pbRoutes'
 
 import { errorMessageFrom } from '@moeru/std'
 import { discoveryRequestSchema, executionRequestSchema, inspectionRequestSchema } from '@proj-airi/stage-shared/interactive-service'
-import { pbInvoiceMethodSchema } from '@proj-airi/stage-shared/pb-checkout'
-import { isPbJourneyPage, readPbJourney } from '@proj-airi/stage-shared/pb-journey'
+import { pbInvoiceMethodSchema, readPbOrderState } from '@proj-airi/stage-shared/pb-checkout'
+import { isPbJourneyPage, isPbOrderResultUrl, readPbStateJourney } from '@proj-airi/stage-shared/pb-journey'
 import { describePbMeal, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { browserPresentationInputSchema, browserRecommendationLimit } from '@proj-airi/stage-shared/product-presentation'
 import { array, boolean, integer, isValiError, literal, looseObject, maxLength, maxValue, minLength, minValue, nullable, number, optional, parse, picklist, pipe, safeParse, strictObject, string, unknown } from 'valibot'
@@ -29,18 +29,19 @@ function describeProducts(products: readonly { name: string, price?: number }[])
 
 /** Owns PB's bounded operations and document journal independently of its transport. */
 export function createPbService() {
-  const entry = location.href
-  const approvedJourney = readPbJourney(entry)
+  const approvedJourney = readPbStateJourney(location.href)
   if (!approvedJourney)
     throw new Error('PB service journey has not been approved.')
   const journey = approvedJourney
+  const entry = new URL(journey.menuPath, journey.origin).href
   /** SPA navigation keeps this listener alive; every admission must recheck scope. */
   function assertScope() {
     if (!isPbJourneyPage(entry, location.href))
       throw new Error('目前已離開這家店的點餐菜單，請返回菜單後重新確認需求。')
   }
 
-  assertScope()
+  if (!isPbJourneyPage(entry, location.href) && !isPbOrderResultUrl(entry, location.href))
+    throw new Error('PB page is outside the approved reader scope.')
   if (document.documentElement.hasAttribute('data-webnavior-pb-bridge'))
     throw new Error('PB service is already attached to this document.')
   document.documentElement.setAttribute('data-webnavior-pb-bridge', 'ready')
@@ -103,7 +104,11 @@ export function createPbService() {
   for (const eventName of ['pointerdown', 'keydown', 'wheel']) {
     document.addEventListener(eventName, (event) => {
       if (event.isTrusted && !presentation.isCovered() && !invoiceInput.owns(event)) {
-        manualRevision++
+        // Scrolling cancels the visual cue but changes no cart data. Checkout
+        // field editing is likewise excluded above; form values are separately
+        // fingerprinted before the final submission ticket can be consumed.
+        if (eventName !== 'wheel')
+          manualRevision++
         controlRevision++
         activeVisual?.abort()
       }
@@ -133,6 +138,7 @@ export function createPbService() {
         ]
       : []),
     { name: 'browser_present', description: 'Present exact current catalog refs, never cart quantities or subtotal. Default mode=recommendation presents at most three in the supplied ranking order; use it for named selections and ordinary recommendations. other-recommendations requests a different batch and shares the three-item limit; only that mode permits Host exclusion of the last introduced batch. mode=information is only for explicit named comparisons/menu information and allows up to ten. The full requested ref list is validated first; limiting is not evidence of absent products. If the prior search hides any selected product, clears the native search and verifies ALL selected cards before speaking. [] cancels visuals only; browser_search query="" clears the search. Never changes cart. Explicit presentation may return to the menu; preservePage=true keeps both the page and search unchanged.', inputSchema: { type: 'object', properties: { preservePage: { type: 'boolean', description: 'Host speech cue only: keep the current page and search unchanged; skip framing if the cards are not already visible.' }, deferVisual: { type: 'boolean', description: 'Host reserves validated dishes for reply-time cues; no frame or scroll until speech or visible reply starts.' }, productRefs: { type: 'array', items: { type: 'string' }, maxItems: 100 }, mode: { type: 'string', enum: ['recommendation', 'other-recommendations', 'information'], description: 'Defaults to recommendation (three). other-recommendations is only for explicitly requesting a different recommendation batch. Information is only for explicit customer-requested comparisons or factual lists.' } }, required: ['productRefs'], additionalProperties: false }, annotations: { readOnlyHint: true } },
+    { name: 'browser_state_get', description: 'Host-only fresh page, form and order state. Never a model tool; never navigates or grants write authority.', inputSchema: { type: 'object', properties: { includeCatalog: { type: 'boolean' } }, required: ['includeCatalog'], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_cart_get', description: 'Read planning data before a cart edit: current cart/version and optional product references. includeCatalog=true is internal planning data, not a customer cart-review receipt. forAdmission=true is Host-only reception preparation, including a fresh cart read on the table page. For 核對、我點了什麼、目前訂單、還不要送 use browser_cart_review instead. This does not submit an order.', inputSchema: { type: 'object', properties: { includeCatalog: { type: 'boolean' }, forAdmission: { type: 'boolean' } }, required: ['includeCatalog'], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_return_menu', description: 'Return to the full actual menu, clear website search and unfinished selection, and verify the cart is unchanged. Does not increase servings, clear cart items, submit or pay.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_cart_review', description: 'Open the actual cart for review and read back the CURRENT ORDER, quantities, options, notes and actual PB subtotal as a customer receipt. Use for 核對一下、我點了什麼、確認目前訂單、先不要送. This is read-only: it neither presents menu unit prices as an order nor changes or submits anything. No parameters.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false }, annotations: { readOnlyHint: true } },
@@ -255,7 +261,8 @@ export function createPbService() {
 
   async function readCart() {
     const props = await pageProps('orders/create')
-    const pickup = props.order === null
+    const persistedPickup = safeParse(looseObject({ pick_up_date: string(), pick_up_time: string() }), props.order)
+    const pickup = !persistedPickup.success
       ? parse(looseObject({ defaultPickUpDate: string(), defaultPickUpTime: string() }), await pageProps(`menu${location.search}`))
       : { defaultPickUpDate: '', defaultPickUpTime: '' }
     const cart = readCartPage(props, { date: pickup.defaultPickUpDate, time: pickup.defaultPickUpTime }, manualRevision)
@@ -395,13 +402,31 @@ export function createPbService() {
   /** Reads live site state without navigation; account fields never leave this document. */
   async function recoveryContext() {
     const [products, cart] = await Promise.all([readCatalog(), readCart()])
+    // Re-read only: an earlier add/edit can have committed before its readback
+    // failed. Clear this document's cart marker only after the coordinator
+    // proves the entire expected result. Submission/reset markers never qualify.
+    if (writeMarker && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(writeMarker)
+      && localStorage.getItem(blockedKey) === writeMarker && cartOperations.verifyPending(cart)) {
+      localStorage.removeItem(blockedKey)
+      writeMarker = undefined
+    }
     // Equality evidence covers options/prices and pickup as well as the cart.
     // It is a local observation digest, never a vendor revision or write receipt.
     const state = { manualRevision, products, cart, visible: observe(true) }
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(state)))
     const contextKey = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
     const canRetry = !localStorage.getItem(blockedKey) && cartOperations.canRecover() && ![...(active?.operations.values() ?? [])].some(operation => operation.name !== 'browser_recovery_context' && operation.status === 'pending')
-    return { source: 'browser', documentId, contextKey, canRetry, canReset: canResetCart() }
+    const marker = localStorage.getItem(blockedKey)
+    let blockedBy: 'order' | 'reset' | 'cart' | 'operation' | undefined
+    if (marker?.startsWith('order:'))
+      blockedBy = 'order'
+    else if (marker?.startsWith('reset:'))
+      blockedBy = 'reset'
+    else if (marker || !cartOperations.canRecover())
+      blockedBy = 'cart'
+    else if (!canRetry)
+      blockedBy = 'operation'
+    return { source: 'browser', documentId, contextKey, canRetry, canReset: canResetCart(), ...(blockedBy ? { blockedBy } : {}) }
   }
 
   /** Presents fresh facts only after every selected ref has a unique rendered card. */
@@ -495,8 +520,6 @@ export function createPbService() {
       const result = await presentation.show([], target, true, [], { label, dispatch, prepare })
       return result.cue === 'shown'
     } })
-    const controls = createControls(operation, controller.signal)
-    currentControls = controls
 
     try {
       const result = name === 'browser_customer_reset'
@@ -526,10 +549,38 @@ export function createPbService() {
         activeVisual = undefined
     }
     async function executeAction() {
+      if (name === 'browser_state_get') {
+        parse(strictObject({ includeCatalog: boolean() }), input)
+        if (isPbOrderResultUrl(entry, location.href)) {
+          const url = location.href
+          const response = await fetch(url, { cache: 'no-store', redirect: 'error', headers: { 'X-Inertia': 'true', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html, application/xhtml+xml' }, signal: AbortSignal.timeout(8000) })
+          if (!response.ok || response.url !== url || response.headers.get('X-Inertia') !== 'true')
+            throw new Error('訂單狀態暫時無法讀取，請先查看畫面，避免重複送單。')
+          const order = readPbOrderState(entry, url, await response.json())
+          if (location.href !== url)
+            throw new Error('訂單狀態屬於已離開的頁面。')
+          // A result page grants no editor controls. Its fresh lifecycle decision
+          // permits only Host entry reload after a terminal payment state. Never
+          // clear a journal marker or infer settlement from the page title.
+          let restart = 'allowed'
+          if (localStorage.getItem(blockedKey) || [...(active?.operations.values() ?? [])].some(operation => operation.name !== 'browser_state_get' && operation.status === 'pending'))
+            restart = 'operation-pending'
+          else if (order.paymentStatus === 'pending')
+            restart = 'payment-pending'
+          else if (order.paymentStatus === 'unknown')
+            restart = 'payment-unknown'
+          return { ok: true, source: 'browser', effect: 'none', dataOnly: true, page: url.endsWith('/choosePayment') ? 'payment' : 'order-result', observedAt: Date.now(), documentId, order, restart }
+        }
+        // Editor reads retain the same cart/catalog and DOM form verifier. This
+        // internal variant cannot request admission actions or consume answers.
+        name = 'browser_cart_get'
+      }
       try {
         assertScope()
       }
       catch (error) { return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: errorMessageFrom(error) ?? '請返回點餐菜單。' } }
+      const controls = createControls(operation, controller.signal)
+      currentControls = controls
       if (location.pathname === journey.tablePath && name !== 'browser_customer_reset') {
         if (name === 'browser_recovery_context')
           return recoveryContext()
@@ -575,7 +626,7 @@ export function createPbService() {
             admission = { cartAdmission: 'after-table-entry' }
           }
         }
-        return { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', effect: 'none', tableChoices, ...(selectedTable ? { selectedTable } : {}), ...admission, customerMessage: selectedTable ? `已選擇${selectedTable}，請說「開始點餐」，或點畫面的開始點餐按鈕。` : '內用請先找到座位，再回來告訴我您的桌號；外帶可以選櫃台自取。這裡沒有外送服務。' }
+        return { ok: true, source: 'browser', observedAt: Date.now(), documentId, page: 'table', code: 'table-selection-required', effect: 'none', tableChoices, ...(selectedTable ? { selectedTable } : {}), ...admission, customerMessage: selectedTable ? `已選擇${selectedTable}，請說「開始點餐」，或點畫面的開始點餐按鈕。` : '內用請先找到座位，再回來告訴我您的桌號；外帶可以選櫃台自取。這裡沒有外送服務。' }
       }
       if (name === 'browser_table_select' || name === 'browser_start_ordering')
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '目前不在選桌頁，尚未更換桌號。' }
@@ -620,6 +671,10 @@ export function createPbService() {
         else
           parse(strictObject({}), input)
         const [products, observed] = await Promise.all([includeCatalog ? readCatalog() : undefined, cartOperations.observe()])
+        // The first Host admission after table entry owns this harmless view
+        // transition. Do not leave a store announcement covering the new menu.
+        if (name === 'browser_cart_get' && input.forAdmission === true && location.pathname === journey.menuPath)
+          await controls.dismissAnnouncement()
         let cart = observed
         if (name === 'browser_cart_review' && cart.lines.length) {
           await controls.navigate(journey.cartPath)
@@ -628,13 +683,14 @@ export function createPbService() {
         }
         const productDialog = observe().productDialog.flatMap(dialog => dialog.name ? [{ name: dialog.name }] : [])
         const checkoutState = checkout.read()
-        return { ok: true, source: 'browser', menuReady: location.pathname === journey.menuPath && observe().products.length > 0, itemSelectionOpen: productDialog.length > 0, productDialog, search: document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value ?? '', page: location.pathname === journey.cartPath ? 'cart' : 'menu', cart, ...(checkoutState ? { checkout: checkoutState } : {}), ...(products ? { products, dataOnly: true } : { customerMessage: cart.lines.length ? `目前購物車：${describeCartLines(cart.lines)}。小計 ${cart.subtotal} 元。` : '購物車目前沒有餐點。' }) }
+        return { ok: true, source: 'browser', observedAt: Date.now(), documentId, menuReady: location.pathname === journey.menuPath && observe().products.length > 0, itemSelectionOpen: productDialog.length > 0, productDialog, search: document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value ?? '', page: location.pathname === journey.cartPath ? 'cart' : 'menu', cart, ...(checkoutState ? { checkout: checkoutState } : {}), ...(products ? { products, dataOnly: true } : { customerMessage: cart.lines.length ? `目前購物車：${describeCartLines(cart.lines)}。小計 ${cart.subtotal} 元。` : '購物車目前沒有餐點。' }) }
       }
       else if (name === 'browser_checkout_prepare' || name === 'browser_invoice_select' || name === 'browser_notification_phone' || name === 'browser_order_submit') {
         if (localStorage.getItem(blockedKey))
           return { ok: false, source: 'browser', status: 'unknown', effect: 'none', customerMessage: '先前操作仍在確認，請先查看目前訂單畫面，避免重複送出。' }
         if (name === 'browser_order_submit') {
           const { confirmationToken } = parse(strictObject({ confirmationToken: text }), input)
+          invoiceInput.leave()
           return checkout.submit(confirmationToken, controls)
         }
         await controls.navigate(journey.cartPath)
@@ -655,6 +711,8 @@ export function createPbService() {
           await checkout.focus(focus ?? 'next', controls)
           state = await checkout.prepare()
         }
+        if (state.ready)
+          invoiceInput.leave()
         return { ok: true, source: 'browser', page: 'cart', dataOnly: true, cart: await cartOperations.observe(), checkout: state }
       }
       else if (name === 'browser_product_get') {
@@ -895,7 +953,8 @@ export function createPbService() {
     const request = parse(discoveryRequestSchema, raw)
     if (active?.id !== request.connectionId)
       active = { id: request.connectionId, operations: new Map() }
-    return { ...request, documentId, toolsRevision: 1, tools }
+    const available = isPbOrderResultUrl(entry, location.href) ? tools.filter(tool => tool.name === 'browser_state_get') : tools
+    return { ...request, documentId, toolsRevision: 1, tools: available }
   }
   function enqueue(request: InferOutput<typeof executionRequestSchema>, binding: NonNullable<typeof active>) {
     const revision = presentation.revision()
@@ -965,7 +1024,8 @@ export function createPbService() {
       if (active.operations.size >= 256)
         throw new Error('Prototype operation limit reached; stop this experiment.')
       // Cart writes classify failures inside their coordinator after dispatch.
-      // Exceptions here are argument/preparation failures before any cart write.
+      // Exceptions here are argument/preparation failures before a control effect;
+      // dispatched cart/order failures already carry execution/coordinator receipts.
       const result = enqueue(request, active).catch((error) => {
         // Only pageProps produces this cause after reading the current vendor
         // auth state. Do not infer login loss from arbitrary English error text
@@ -974,7 +1034,7 @@ export function createPbService() {
           return { ok: false, source: 'browser', status: 'rejected', effect: 'none', code: 'sign-in-required', error: error.message }
         if (['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'].includes(request.name) && isValiError(error))
           return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, error: errorMessageFrom(error) ?? 'PB arguments were rejected.', explanation: '工具參數未符合 schema，尚未派送購物車寫入。請修正參數：version 使用最新 cart.version，selection.version 使用所選 product.configurations 的 version；不得省略規格版本。只修正本輪原需求，不改選商品或規格。' }
-        return { ok: false, source: 'browser', error: errorMessageFrom(error) ?? 'PB operation was rejected.' }
+        return { ok: false, source: 'browser', status: 'rejected', effect: 'none', error: errorMessageFrom(error) ?? 'PB operation was rejected.' }
       })
       operation = { name: request.name, fingerprint, result, status: 'pending' }
       active.operations.set(request.operationId, operation)

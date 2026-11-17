@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createBrowserFastPathSource } from './browserFastPath'
 import { createIncompleteAsrSession, runFastPath } from './kiosk-fast-path'
 
-const tools: ServiceTool[] = ['browser_cart_get', 'browser_observe', 'browser_product_get', 'browser_cart_add', 'browser_present'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
+const tools: ServiceTool[] = ['browser_state_get', 'browser_cart_get', 'browser_observe', 'browser_product_get', 'browser_cart_add', 'browser_present'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
 
 const configuration: ProductConfiguration = { version: 'today-80', variantRef: '', name: '當日新菜', unitPrice: 80, groups: [] }
 const question = { questionId: 'pb-question', purpose: 'browser-order-slot', question: '請問要幾份？', expiresAt: Date.now() + 120000, choices: [{ id: 'cancel', description: '取消尚未加入的餐點。' }] }
@@ -153,7 +153,7 @@ describe('pB Jev finite source', () => {
     expect(decide).toHaveBeenCalledOnce()
     expect(decide.mock.calls[0]).toMatchObject([{ decisionState: { phase: 'ordering', references: [{ label: '當日新菜', refId: 'p-daily-7' }] } }])
     expect(execute).toHaveBeenCalledOnce()
-    expect(execute.mock.calls[0]).toEqual([tools[3], { version: 'current-cart', productRef: 'p-daily-7', quantity: 2, unitPrice: 80, note: '', selection: { version: 'today-80', variantRef: '', choices: [] } }])
+    expect(execute.mock.calls[0]).toEqual([tools.find(tool => tool.name === 'browser_cart_add'), { version: 'current-cart', productRef: 'p-daily-7', quantity: 2, unitPrice: 80, note: '', selection: { version: 'today-80', variantRef: '', choices: [] } }])
     expect(await source.execute({ candidateId: 'intent:add-item' })).toMatchObject({ ok: false, effect: 'none' })
     expect(execute).toHaveBeenCalledOnce()
   })
@@ -464,4 +464,25 @@ it('passes the exact issued question and selected answer to the Host instead of 
   await source.context({ transcript: '那就往下一步吧' })
   await source.execute({ candidateId: 'yes' })
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_answer_question' }), { questionId: waiting.questionId, choiceId: 'yes' })
+})
+
+// Report: this chat, Nov17 cases 6/11 — Jev must receive payment facts rather than a cart-read rejection.
+it('reads the payment page automatically without offering editor actions', async () => {
+  const read = vi.fn(async () => ({ ok: true, source: 'browser', page: 'payment', observedAt: 123, order: { reference: 'TEST-1', status: 20, total: 64, paymentStatus: 'pending', paymentMethods: ['信用卡'], invoice: { method: 'donation', code: '123' } } }))
+  const execute = vi.fn()
+  const pendingQuestion = vi.fn()
+  const source = createBrowserFastPathSource({ tools, read, execute, pendingQuestion, hasPendingQuestion: () => true })
+  expect(await source.context({ transcript: '我要用信用卡付款' })).toMatchObject({ requiresPlanner: true, readOnly: true, paymentState: 'pending', candidates: [], interactionState: { pendingAction: expect.stringContaining('信用卡') } })
+  expect(read).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_state_get' }), { includeCatalog: true })
+  expect(pendingQuestion).not.toHaveBeenCalled()
+  expect(execute).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov17 case 12 — fresh form facts must reach Jev without copying private codes.
+it('includes current invoice and contact validity in the automatic Jev read', async () => {
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, cart: { version: 'v', lines: [] }, products: [product], checkout: { methods: [{ method: 'donation', label: '捐贈', selected: true }], fields: [{ kind: 'donation', label: '捐贈碼', value: '12345', valid: true }, { kind: 'phone', label: '手機', value: '0912345678', valid: false }], ready: false, missing: ['手機格式錯誤'], orderNote: '' } }), execute: vi.fn(), checkoutStep: () => 'invoice-details', pendingQuestion: () => undefined, hasPendingQuestion: () => false })
+  const context = await source.context({ transcript: '好了' })
+  expect(context).toMatchObject({ checkoutSnapshot: { source: 'pb', step: 'invoice-details', invoiceMethod: 'donation', ready: false, fields: [{ kind: 'donation', present: true, valid: true }, { kind: 'phone', present: true, valid: false }] } })
+  expect(JSON.stringify(context)).not.toContain('0912345678')
+  expect(JSON.stringify(context)).not.toContain('12345')
 })

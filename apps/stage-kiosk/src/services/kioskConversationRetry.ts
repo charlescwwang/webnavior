@@ -3,9 +3,11 @@ import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/service
 import { browserRecoveryContextSchema } from '@proj-airi/stage-shared/interactive-service'
 import { conversationContextSchema, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { nativeOrderingToolName } from '@proj-airi/stage-shared/ordering-tools'
+import { pbOrderReceptionSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { menuEntryReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
 import { array, literal, looseObject, optional, parse, picklist, safeParse, string, unknown } from 'valibot'
 
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
 
 const retrySafeToolNames = new Set([
@@ -14,6 +16,7 @@ const retrySafeToolNames = new Set([
   'browser_quote',
   'browser_clarify_product',
   'browser_cart_get',
+  'browser_state_get',
   'browser_product_get',
   'cart_get',
   'kiosk_session_history',
@@ -142,8 +145,38 @@ export async function recoverConversationService(client: Pick<ReturnType<typeof 
   }
 }
 
-/** Ends browser reception only after native cart clearing; retains the document and shared login. */
+/** A verified lifecycle refusal whose message can be shown without exposing transport errors. */
+export class BrowserRestartBlocked extends Error {}
+
+/** Retires terminal orders by entry reload; unfinished carts still require verified native clearing. */
 export async function resetConversationService(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute' | 'refresh' | 'waitUntilReady' | 'getDocumentId'>) {
+  const stateReader = client.tools.value.find(tool => tool.name === 'browser_state_get')
+  if (stateReader) {
+    const documentId = client.getDocumentId()
+    let raw: unknown
+    try {
+      raw = await client.execute(stateReader, { includeCatalog: false })
+    }
+    catch { throw new BrowserRestartBlocked(orderingMessages['zh-Hant'].restart.unavailable) }
+    if (!raw || typeof raw !== 'object' || !('ok' in raw) || raw.ok !== true || !documentId || client.getDocumentId() !== documentId)
+      throw new BrowserRestartBlocked(orderingMessages['zh-Hant'].restart.unavailable)
+    if ('page' in raw && ['payment', 'order-result'].includes(String(raw.page))) {
+      const result = safeParse(pbOrderReceptionSchema, raw)
+      if (!result.success || result.output.documentId !== documentId)
+        throw new BrowserRestartBlocked(orderingMessages['zh-Hant'].restart.unavailable)
+      const state = result.output
+      if (state.restart === 'operation-pending' || state.restart === 'payment-unknown' || state.order.paymentStatus === 'unknown')
+        throw new BrowserRestartBlocked(orderingMessages['zh-Hant'].restart.unknown)
+      if (state.restart === 'payment-pending' || state.order.paymentStatus === 'pending')
+        throw new BrowserRestartBlocked(orderingMessages['zh-Hant'].restart.pending)
+      // The existing customer lifecycle reloads the configured entry, revokes
+      // this binding and retires the visitor. Never refresh editor descriptors
+      // or clear/cancel a submitted order on its result document.
+      return 'reload' as const
+    }
+    if (!client.tools.value.some(tool => tool.name === 'browser_customer_reset'))
+      throw new BrowserRestartBlocked(orderingMessages['zh-Hant'].restart.unavailable)
+  }
   if (!client.tools.value.some(tool => tool.name === 'browser_recovery_context'))
     return 'reload' as const
   if (!client.tools.value.some(tool => tool.name === 'browser_customer_reset'))
@@ -151,13 +184,15 @@ export async function resetConversationService(client: Pick<ReturnType<typeof cr
   const reader = client.tools.value.find(tool => tool.name === 'browser_cart_get')
   if (reader) {
     const current = parse(looseObject({ ok: literal(true), page: string(), selectedTable: optional(string()), cart: looseObject({ lines: array(unknown()) }) }), await client.execute(reader, { includeCatalog: false, forAdmission: true }))
+    // Inspect the barrier on both table and checkout pages before offering
+    // Restart. An unknown final submission is not an ordinary leftover cart.
+    const recovery = client.tools.value.find(tool => tool.name === 'browser_recovery_context')!
+    const state = parse(browserRecoveryContextSchema, await client.execute(recovery, {}))
+    if (!state.canReset && state.blockedBy === 'order')
+      throw new Error(orderingMessages['zh-Hant'].recovery.order)
+    if (!state.canReset)
+      throw new Error('上一筆餐點操作的結果仍在確認，請稍候再試；若持續無法重新開始，請洽工作人員。')
     if (current.page === 'table') {
-      // Retrying a purchase and explicitly discarding an old unfinished cart
-      // have different effects. Never use purchase-retry admission for Restart.
-      const recovery = client.tools.value.find(tool => tool.name === 'browser_recovery_context')!
-      const state = parse(browserRecoveryContextSchema, await client.execute(recovery, {}))
-      if (!state.canReset)
-        throw new Error('上一筆餐點操作的結果仍在確認，請稍候再試；若持續無法重新開始，請洽工作人員。')
       // A verified empty table cart needs no hidden Start or fake reset receipt.
       // The lifecycle still retires this visitor and reloads the table entry.
       if (!current.cart.lines.length && state.canRetry)

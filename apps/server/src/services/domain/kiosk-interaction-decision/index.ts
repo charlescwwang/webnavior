@@ -3,6 +3,8 @@ import type { DecisionConversation } from './context'
 import type { KioskDecisionState, KioskInteractionDecision } from './contracts'
 
 import { isTargetAcknowledgement } from '@proj-airi/stage-shared/kiosk-conversation'
+import { pbCheckoutProgressSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { safeParse } from 'valibot'
 
 import { normalizeTranscript } from './context'
 import { decisionQuestionBudget } from './contracts'
@@ -1103,14 +1105,21 @@ function createDecisionState(input: Pick<DecisionInput, 'conversation' | 'review
   const checkout = rawCheckout && typeof rawCheckout === 'object' && !Array.isArray(rawCheckout)
     ? rawCheckout as Record<string, unknown>
     : undefined
-  const checkoutSummary = checkout
-    ? {
-        stage: typeof checkout.stage === 'string' ? checkout.stage : input.decisionState?.phase,
-        invoiceMethod: typeof checkout.invoiceMethod === 'string' ? checkout.invoiceMethod : undefined,
-        hasCarrier: typeof checkout.carrierCode === 'string' && checkout.carrierCode.length > 0,
-        hasTaxId: typeof checkout.taxId === 'string' && /^\d{8}$/.test(checkout.taxId),
-      }
-    : undefined
+  const browserForm = safeParse(pbCheckoutProgressSchema, rawCheckout)
+  // PB supplies only field validity. Owned Menu has its own checkout contract;
+  // it still needs the bounded summary below, never raw codes in either path.
+  let checkoutSummary: unknown
+  if (browserForm.success) {
+    checkoutSummary = browserForm.output
+  }
+  else if (checkout) {
+    checkoutSummary = {
+      stage: typeof checkout.stage === 'string' ? checkout.stage : input.decisionState?.phase,
+      invoiceMethod: typeof checkout.invoiceMethod === 'string' ? checkout.invoiceMethod : undefined,
+      hasCarrier: typeof checkout.carrierCode === 'string' && checkout.carrierCode.length > 0,
+      hasTaxId: typeof checkout.taxId === 'string' && /^\d{8}$/.test(checkout.taxId),
+    }
+  }
   if (input.decisionState?.phase === 'checkout_invoice' && !input.review) {
     // Touch can enter invoice selection before a spoken question. Ground short choices
     // in this step, without stale meal references or personal invoice codes.

@@ -19,6 +19,9 @@ assert(['merchant', 'fixture'].includes(checkoutOrigin))
 const localCheckout = scenario === 'checkout-flow' && checkoutOrigin === 'fixture'
 assert(['full', 'customization', 'pork-chicken', 'cart-admission', 'checkout-flow', 'service-boundary', 'dumpling-cart-edit', 'dumpling-assent', 'dumpling-follow-up', 'matched-recommendations', 'table-guidance', 'recommendation', 'recommendation-follow-up', 'search-missing', 'search', 'cart', 'reset', 'idle', 'semantics', 'follow-up', 'stale-result'].includes(scenario))
 const reportPath = process.env.PB_AUDIT_REPORT_PATH ?? '/tmp/pb-ordering-audit.json'
+const nullablePickup = process.env.PB_AUDIT_NULL_PICKUP === '1'
+const readbackFailure = process.env.PB_AUDIT_READBACK_FAILURE === '1'
+assert(!readbackFailure || (scenario === 'checkout-flow' && !process.env.PB_AUDIT_CDP), 'Readback-failure acceptance uses a fresh isolated Electron checkout fixture.')
 const acceleratedIdle = process.env.PB_AUDIT_ACCELERATE_IDLE === '1'
 const retiredCartMarker = process.env.PB_AUDIT_RETIRED_CART_MARKER === '1'
 const restartButton = process.env.PB_AUDIT_RESTART_BUTTON ?? 'preparation'
@@ -38,7 +41,7 @@ const siteRoot = resolve(process.env.PB_AUDIT_SITE_ROOT ?? 'pb-test.local/site')
 const builtEntry = await readFile(resolve(siteRoot, 'kiosk/index.html'), 'utf8')
 const expectedEntry = builtEntry.match(/<script\s[^>]*type="module"[^>]*src="([^"]+)"/)?.[1]
 assert(expectedEntry, 'Built Kiosk entry script is missing.')
-const report = { runnerSha256: createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex'), build: JSON.parse(await readFile(resolve(siteRoot, '../built.json'), 'utf8')), hostEntrySha256: createHash('sha256').update(builtEntry).digest('hex'), hostOrigin, siteRoot, fixture: 'pb-order-lab', host: 'built-kiosk', transport: cdp ? 'cdp' : 'electron-launcher', scenario, acceleratedIdle, steps: [], errors: [] }
+const report = { runnerSha256: createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex'), build: JSON.parse(await readFile(resolve(siteRoot, '../built.json'), 'utf8')), hostEntrySha256: createHash('sha256').update(builtEntry).digest('hex'), hostOrigin, siteRoot, fixture: 'pb-order-lab', host: 'built-kiosk', transport: cdp ? 'cdp' : 'electron-launcher', scenario, nullablePickup, readbackFailure, acceleratedIdle, steps: [], errors: [] }
 report.sourceHashes = Object.fromEntries(await Promise.all([
   'packages/stage-shared/src/orderingTools.ts',
   'packages/stage-shared/src/interactiveService.ts',
@@ -104,7 +107,7 @@ try {
       executablePath: runtime,
       // Xvfb has no physical GPU. Use Electron's software WebGL for the actual
       // avatar import/preview instead of bypassing published-profile loading.
-      args: [resolve('apps/stage-kiosk-desktop/out/main/index.js'), '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+      args: [resolve('apps/stage-kiosk-desktop/out/main/index.js'), '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', ...(process.env.PB_AUDIT_AUDIO_DEVICES_CHECK === '1' ? ['--use-fake-device-for-media-stream'] : [])],
       env: { ...process.env, KIOSK_DESKTOP_URL: `${hostOrigin}/kiosk/`, KIOSK_DESKTOP_WINDOWED: '1', KIOSK_DESKTOP_USER_DATA: profile },
     })
     app.process().stderr?.on('data', chunk => report.stderr = ((report.stderr ?? '') + String(chunk)).slice(-16000))
@@ -166,13 +169,14 @@ try {
   if (app) {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1080, 1920))
     const partition = `persist:service-${createHash('sha256').update(JSON.stringify(['pb-ubuntu-test', 'https://app.esgpb.com'])).digest('hex')}`
-    await app.evaluate(async ({ app, session }, partition) => {
+    await app.evaluate(async ({ app, session }, { partition, nullablePickup, readbackFailure }) => {
     // A changed published service ID must fail closed, never create a second
     // un-intercepted merchant session while this fixture is running.
       app.on('session-created', (created) => {
         created.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (request, callback) => callback({ cancel: new URL(request.url).hostname !== '127.0.0.1' }))
       })
       const site = session.fromPartition(partition)
+      globalThis.__auditReadbackFaults = 0
       let cookie = ''
       // Vite HMR is unnecessary here; no websocket may escape to the merchant.
       site.webRequest.onBeforeRequest({ urls: ['http://*/*', 'ws://*/*', 'wss://*/*'] }, (request, callback) => callback({ cancel: new URL(request.url).protocol !== 'http:' || new URL(request.url).hostname !== '127.0.0.1' }))
@@ -195,6 +199,38 @@ try {
         returnedHeaders.delete('content-encoding')
         returnedHeaders.delete('content-length')
         let body = await response.arrayBuffer()
+        // The public-capable fixture now reports absolute page URLs. Project
+        // only its loopback origin into this simulated merchant document;
+        // keep path/query mismatches intact for production ownership checks.
+        if (returnedHeaders.get('X-Inertia') === 'true') {
+          const page = JSON.parse(new TextDecoder().decode(body))
+          if (typeof page.url === 'string') {
+            const pageUrl = new URL(page.url, local.origin)
+            if (pageUrl.origin === local.origin)
+              page.url = new URL(pageUrl.pathname + pageUrl.search, url.origin).href
+          }
+          body = new TextEncoder().encode(JSON.stringify(page))
+        }
+        // Report: Nov17 — a new merchant draft may defer pickup fields until
+        // checkout. Exercise that protocol shape through actual native reads.
+        if (nullablePickup && local.pathname.endsWith('/orders/create') && returnedHeaders.get('content-type')?.includes('application/json')) {
+          const page = JSON.parse(new TextDecoder().decode(body))
+          if (page.props?.order) {
+            page.props.order.pick_up_date = null
+            page.props.order.pick_up_time = null
+            body = new TextEncoder().encode(JSON.stringify(page))
+          }
+        }
+        if (readbackFailure && !globalThis.__auditReadbackFaults && local.pathname.endsWith('/orders/create') && returnedHeaders.get('content-type')?.includes('application/json')) {
+          const page = JSON.parse(new TextDecoder().decode(body))
+          if (page.props?.details?.length && page.props.order) {
+            // Exactly one post-dispatch read is malformed. Recovery must use
+            // the next valid snapshot, never click Add again or require a user.
+            page.props.order.pick_up_time = 42
+            globalThis.__auditReadbackFaults++
+            body = new TextEncoder().encode(JSON.stringify(page))
+          }
+        }
         if (returnedHeaders.get('content-type')?.includes('text/html')) {
         // The merchant release has no HMR. Vite's injected client queues errors
         // indefinitely when its WebSocket is blocked; do not load it in this proxy.
@@ -202,7 +238,7 @@ try {
         }
         return new Response(body, { status: response.status, headers: returnedHeaders })
       })
-    }, partition)
+    }, { partition, nullablePickup, readbackFailure })
   }
   else {
     let cookie = ''
@@ -227,6 +263,17 @@ try {
       returned.delete('content-encoding')
       returned.delete('content-length')
       let body = Buffer.from(await response.arrayBuffer())
+      // CDP uses the same fixture projection as the native protocol adapter;
+      // do not let localhost metadata masquerade as a merchant page response.
+      if (returned.get('X-Inertia') === 'true') {
+        const page = JSON.parse(body.toString('utf8'))
+        if (typeof page.url === 'string') {
+          const pageUrl = new URL(page.url, local.origin)
+          if (pageUrl.origin === local.origin)
+            page.url = new URL(pageUrl.pathname + pageUrl.search, url.origin).href
+        }
+        body = Buffer.from(JSON.stringify(page))
+      }
       if (returned.get('content-type')?.includes('text/html'))
         body = Buffer.from(body.toString('utf8').replace(/<script type="module" src="\/@vite\/client"><\/script>\s*/, ''))
       await route.fulfill({ status: response.status, headers: Object.fromEntries(returned), body })
@@ -234,12 +281,29 @@ try {
   }
   if (localCheckout) {
     // Direct loopback testing needs the same no-HMR document as the merchant
-    // proxy above. Preserve the real fixture response, cookies and API calls.
+    // proxy above. Faults must reach its actual cart JSON reads too; merchant
+    // protocol interception does not see this independently owned partition.
+    let readbackFaultInjected = false
     await context.route('http://127.0.0.1:5188/**', async (route) => {
       const request = route.request()
-      if (!request.isNavigationRequest() || request.method() !== 'GET')
+      const cartRead = new URL(request.url()).pathname.endsWith('/orders/create')
+        && request.headers()['x-inertia'] === 'true' && (nullablePickup || readbackFailure)
+      if (request.method() !== 'GET' || (!request.isNavigationRequest() && !cartRead))
         return route.continue()
       const response = await route.fetch()
+      if (cartRead && response.headers()['content-type']?.includes('application/json')) {
+        const page = await response.json()
+        if (nullablePickup && page.props?.order) {
+          page.props.order.pick_up_date = null
+          page.props.order.pick_up_time = null
+        }
+        if (readbackFailure && !readbackFaultInjected && page.props?.details?.length && page.props.order) {
+          readbackFaultInjected = true
+          page.props.order.pick_up_time = 42
+          await app.evaluate(() => globalThis.__auditReadbackFaults++)
+        }
+        return route.fulfill({ response, json: page })
+      }
       if (!response.headers()['content-type']?.includes('text/html'))
         return route.fulfill({ response })
       const body = (await response.text()).replace(/<script type="module" src="\/@vite\/client"><\/script>\s*/, '')
@@ -278,7 +342,79 @@ try {
     await host.locator('.kiosk-conversation').waitFor({ timeout: 90000 })
   }
 
+  const setMode = async (textOnlyMode) => {
+    await host.evaluate(async ({ mode, diagnostics }) => {
+      const settings = await (await fetch('/api/kiosk/settings', { credentials: 'include' })).json()
+      const unlocked = await fetch('/api/kiosk/admin/session', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pin: '0000' }) })
+      assertResponse(unlocked)
+      function assertResponse(response) {
+        if (!response.ok)
+          throw new Error(`Settings request failed: ${response.status}`)
+      }
+      try {
+        assertResponse(await fetch('/api/kiosk/settings', { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: settings.settings.version, overrides: { ...settings.settings.overrides, textOnlyMode: mode, ...(diagnostics ? { voiceDiagnosticsEnabled: true } : {}) } }) }))
+      }
+      finally { await fetch('/api/kiosk/admin/session', { method: 'DELETE', credentials: 'include' }) }
+    }, { mode: textOnlyMode, diagnostics: process.env.PB_AUDIT_VOICE_DIAGNOSTICS_CHECK === '1' })
+    await host.reload()
+    await host.locator('.kiosk-conversation').waitFor({ timeout: 90000 })
+  }
+  if (process.env.PB_AUDIT_TEXT_MODE_CHECK === '1') {
+    await setMode(false)
+    await host.locator('.voice-only-notice').waitFor({ timeout: 10000 })
+    assert(!context.pages().some(page => !page.isClosed() && page.url() === 'about:blank'), 'Voice mode must not open a text console.')
+    await setMode(true)
+    await host.waitForFunction(() => document.querySelector('.kiosk-conversation') && !document.querySelector('.voice-only-notice'))
+    for (let attempt = 0; attempt < 50 && !context.pages().some(page => !page.isClosed() && page.url() === 'about:blank'); attempt++)
+      await new Promise(resolve => setTimeout(resolve, 100))
+    assert(context.pages().some(page => !page.isClosed() && page.url() === 'about:blank'), 'Text mode must open its owned console.')
+    await setMode(false)
+    await host.locator('.voice-only-notice').waitFor({ timeout: 10000 })
+    assert(!context.pages().some(page => !page.isClosed() && page.url() === 'about:blank'), 'Returning to voice must close the text console.')
+    await setMode(true)
+    report.textModePolicy = { voiceHidden: true, textEnabled: true, voiceAgainHidden: true }
+    console.info('PASS: device mode controls the real text console independently of the legacy profile.')
+  }
+  else {
+    // The audit uses text input explicitly; profile display flags cannot opt a device in.
+    await setMode(true)
+  }
   console.info('AUDIT: owned-site ready')
+  if (process.env.PB_AUDIT_AUDIO_DEVICES_CHECK === '1') {
+    report.audioDevices = await host.evaluate(async () => {
+      // Synthetic devices exercise the shipped host's actual permission handler.
+      // The merchant document never receives media or speaker permissions.
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const context = new AudioContext()
+      try {
+        const output = (await navigator.mediaDevices.enumerateDevices()).find(device => device.kind === 'audiooutput' && device.deviceId !== 'default')
+        if (!output)
+          throw new Error('Synthetic audio output missing')
+        const player = new Audio()
+        await player.setSinkId(output.deviceId)
+        await context.setSinkId(output.deviceId)
+        return { microphoneLive: stream.getAudioTracks()[0].readyState === 'live', nativeOutputSelected: player.sinkId === output.deviceId, graphOutputSelected: context.sinkId === output.deviceId }
+      }
+      finally {
+        stream.getTracks().forEach(track => track.stop())
+        await context.close()
+      }
+    })
+    assert(report.audioDevices.microphoneLive && report.audioDevices.nativeOutputSelected && report.audioDevices.graphOutputSelected)
+    console.info('PASS: shipped native host allows microphone and speaker routing.')
+  }
+  if (process.env.PB_AUDIT_VOICE_DIAGNOSTICS_CHECK === '1') {
+    await host.locator('.voice-diagnostics').waitFor()
+    const bounds = await host.evaluate(() => {
+      const audio = document.querySelector('.voice-diagnostics').getBoundingClientRect()
+      const hero = document.querySelector('.service-hero').getBoundingClientRect()
+      const menu = document.querySelector('.menu-region').getBoundingClientRect()
+      return { audioTop: audio.top, audioBottom: audio.bottom, hostTop: hero.top, menuTop: menu.top, text: document.querySelector('.voice-runtime').textContent }
+    })
+    assert(bounds.audioTop >= bounds.hostTop && bounds.audioBottom <= bounds.menuTop, 'Audio diagnostics must remain outside the native menu bounds.')
+    report.voiceDiagnostics = bounds
+    console.info('PASS: audio diagnostics are visible above the native menu before any audio event.')
+  }
   // Electron teleports the real text console into an owned BrowserWindow.
   // Find that surface instead of inventing input in the Host document.
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -334,7 +470,7 @@ try {
     }, 2000)
   }
   const state = () => native.evaluate(() => window.pbTest.getState())
-  async function send(text, verify) {
+  async function send(text, verify, expectedStatus = 'is-completed') {
     const started = Date.now()
     const mainRequestStart = report.modelContexts?.length ?? 0
     const assistantStart = await host.locator('[data-chat-message-role="assistant"]').count()
@@ -361,7 +497,7 @@ try {
     assert(!(report.modelContexts ?? []).some(context => context.toolNames?.some(name => name.startsWith('browser_'))), 'Private browser tools reached Main.')
     assert.equal(await host.locator('[data-chat-message-role="error"]').count(), 0, 'Internal error message reached the customer.')
     assert(!textResult.includes('助手已達本次處理上限'), 'Internal tool limit reached the customer.')
-    assert(await host.locator('.request-status').last().evaluate(element => element.classList.contains('is-completed')), `Customer request failed: ${textResult.slice(-600)}`)
+    assert(await host.locator('.request-status').last().evaluate((element, expected) => element.classList.contains(expected), expectedStatus), `Customer request failed: ${textResult.slice(-600)}`)
     report.current.cart = snapshot.cart
     await verify(snapshot, assistantReply)
     step.durationMs = Date.now() - started
@@ -401,10 +537,11 @@ try {
     })
   }
   await native.getByRole('combobox').evaluate(element => element.addEventListener('click', () => console.info('audit-table-reopened')))
-  await send('開始點餐', (snapshot) => {
+  await send('開始點餐', async (snapshot) => {
     assert.match(new URL(native.url()).pathname, /\/menu$/)
     assert.match(snapshot.table, /B3/)
     assert.equal(tableReopens, 0, 'Start must not reopen the already selected table.')
+    assert.equal(await native.getByRole('button', { name: '我知道了，開始點餐', exact: true }).count(), 0, 'The new menu must dismiss its store announcement before ordering.')
   })
   if (scenario === 'dumpling-cart-edit') {
     await send('水餃1份', (snapshot) => {
@@ -797,9 +934,19 @@ try {
       assert.equal(snapshot.cart[0].unitPrice, 64)
       assert.equal(snapshot.orders.length, 0)
       const reply = await host.locator('[data-chat-message-role="assistant"]').last().textContent()
-      assert.match(reply, /要結帳嗎[？?]/)
+      assert.match(reply, readbackFailure ? /核對|確認購物車/ : /要結帳嗎[？?]/)
       assert.doesNotMatch(reply, /您是指|要幾份|要來一份|要幫您加入|尚未確認您要進行/)
-    })
+    }, readbackFailure ? 'is-review' : 'is-completed')
+    if (readbackFailure) {
+      await host.waitForFunction(() => !document.querySelector('.service-status'), undefined, { timeout: 30000 })
+      assert.equal(await host.getByRole('button', { name: '恢復菜單連線' }).count(), 0, 'Customers must not press a recovery control.')
+      const recovered = await state()
+      assert.equal(recovered.cart.length, 1)
+      assert.equal(recovered.cart[0].quantity, 1, 'Automatic recovery must not replay the addition.')
+      assert.equal(recovered.orders.length, 0)
+      assert.equal(await app.evaluate(() => globalThis.__auditReadbackFaults), 1)
+      report.automaticRecovery = { faultInjected: 1, recoveredWithoutTouch: true, retainedQuantity: 1, submitted: false }
+    }
     if (scenario === 'dumpling-assent') {
       assert.equal(report.modelContexts?.length ?? 0, beforeMain, 'Assenting to a complete base-serving offer must not invoke Main.')
       assert.equal(report.browserPlanRequests ?? 0, beforePlans, 'Optional extras must not trigger another semantic plan check after a sealed base-serving assent.')
@@ -809,7 +956,7 @@ try {
       // Report: Nov15, this chat. The actual invitation's short answer must
       // open cart review without Main and reply-time framing must keep it there.
       const beforeCheckoutMain = report.modelContexts?.length ?? 0
-      await send('好', async (snapshot) => {
+      await send(readbackFailure ? '幫我結帳' : '好', async (snapshot) => {
         assert.equal(snapshot.orders.length, 0)
         assert.match(new URL(native.url()).pathname, /\/orders\/create$/)
         assert.match(await host.locator('[data-chat-message-role="assistant"]').last().textContent(), /餐點、份數和金額正確嗎/)
@@ -845,7 +992,7 @@ try {
       })
       await native.getByPlaceholder('請輸入共8碼編號').fill('/AB12345')
       await native.getByPlaceholder('請輸入共8碼編號').press('Enter')
-      await send('ok', async (snapshot) => {
+      await send('好了', async (snapshot) => {
         assert.equal(snapshot.invoice.code, '/AB12345')
         assert.equal(snapshot.invoice.phone, '')
         assert.equal(snapshot.orders.length, 0)
@@ -855,6 +1002,13 @@ try {
       })
       assert.match(await host.locator('[data-chat-message-role="assistant"]').last().textContent(), /分段/)
       assert.match(await native.evaluate(() => document.activeElement?.closest('.field')?.textContent ?? ''), /手機/)
+      // Report: Nov17, this chat — scroll and the first touch on phone input
+      // retired the bound checkout question before the next spoken fragment.
+      await native.mouse.wheel(0, 300)
+      await native.locator('.field').filter({ has: native.getByText('手機號碼', { exact: true }) }).locator('input').click()
+      const keypad = native.getByRole('group', { name: '通知手機數字鍵盤' })
+      await keypad.getByRole('button', { name: '清除', exact: true }).click()
+      assert.equal((await state()).invoice.phone, '')
       for (const [chunk, count] of [['0912', 4], ['345', 7], ['678', 10]]) {
         await send(chunk, async (snapshot) => {
           assert.equal(snapshot.invoice.phone, '')

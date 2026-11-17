@@ -12,6 +12,39 @@ import { createInteractiveServiceClient } from './interactiveServiceClient'
 const cleanups: Array<() => void> = []
 afterEach(() => cleanups.splice(0).reverse().forEach(cleanup => cleanup()))
 
+// Report: this chat, Nov17 — automatic reconnect could not recover a failed first discovery.
+it('reconnects the configured transport after first discovery fails without replaying any tool', async () => {
+  const client = createInteractiveServiceClient()
+  cleanups.push(() => client.activate())
+  let attempts = 0
+  let executions = 0
+  client.activateTransport('https://menu.example', () => {
+    const lifetime = new AbortController()
+    const failed = attempts++ === 0
+    return {
+      signal: lifetime.signal,
+      discover: async (request) => {
+        if (failed)
+          throw new Error('Transient discovery failure')
+        return { ...request, documentId: 'fresh-document', toolsRevision: 1, tools: [{ name: 'cart_get', description: '', inputSchema: { type: 'object' } }] }
+      },
+      execute: async () => {
+        executions++
+        throw new Error('No operation is expected')
+      },
+      inspect: async () => { throw new Error('No prior operation exists') },
+      dispose: reason => lifetime.abort(reason),
+    }
+  })
+  await expect(client.waitUntilReady()).rejects.toBeDefined()
+  expect(client.availability.value).toBe('unavailable')
+  await client.recover()
+  expect(client.availability.value).toBe('ready')
+  expect(client.getDocumentId()).toBe('fresh-document')
+  expect(attempts).toBe(2)
+  expect(executions).toBe(0)
+})
+
 // Report: this chat, 2026-10-26; recover a lost receipt without replaying its write.
 it('blocks recovery while an accepted write is pending and reconnects the same cart only after it settles', async () => {
   const { client, tool } = await setup('?slow')

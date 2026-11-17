@@ -159,6 +159,11 @@ describe('kiosk routes', () => {
     const closed = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: false, secureCookies: false, kioskService: createKioskService(db), llmGateway, runtimeModelPolicy }))
     expect((await closed.request('/api/kiosk/bootstrap', { headers: { Cookie: cookie } })).status).toBe(200)
     expect((await closed.request('/api/kiosk/development/register', { method: 'POST' })).status).toBe(404)
+    // The selected LAN origin reaches the same authenticated POS boundary.
+    expect((await app.request(path, { method: 'POST', headers: { Cookie: cookie, Origin: 'http://100.92.1.80:5169' }, body: '{}' })).status).toBe(200)
+    expect(forward).toHaveBeenCalledTimes(3)
+    expect((await app.request(path, { method: 'POST', headers: { Cookie: cookie, Origin: 'http://100.92.1.81:5169' }, body: '{}' })).status).toBe(403)
+    expect(forward).toHaveBeenCalledTimes(3)
   })
 
   it('verifies a legacy development device without automatically registering a replacement during payment', async () => {
@@ -1656,11 +1661,12 @@ describe('kiosk routes', () => {
   it('resolves ASR and TTS from the authenticated device policy without accepting client provider settings', async () => {
     const kioskService = createKioskService(db)
     const transcribe = vi.fn(async () => '我要一份牛肉麵')
+    const transcribeFalcon = vi.fn(async () => ({ text: '水餃一份', timing: { inferenceMs: 493.9, asrMs: 300.2 } }))
     const speak = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), {
       headers: { 'Content-Type': 'audio/mpeg' },
     }))
-    const app = new Hono().route('/api/kiosk', createKioskRoutes({
-      audioGateway: { speak, transcribe },
+    const app = new Hono().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'unexpected' }, 500)).route('/api/kiosk', createKioskRoutes({
+      audioGateway: { speak, transcribe, recognitionPolicy: async () => ({ mode: 'legacy', maxUtteranceSeconds: 15, timeoutMs: 60000 }), transcribeFalcon },
       developmentRegistrationEnabled: true,
       kioskService,
       llmGateway,
@@ -1692,6 +1698,15 @@ describe('kiosk routes', () => {
     expect(audio.status).toBe(200)
     expect(audio.headers.get('Content-Type')).toBe('audio/mpeg')
     expect(speak).toHaveBeenCalledWith({ locale: 'zh-TW', modelName: 'restaurant-tts', text: '您好，想吃什麼？' })
+    const policy = await app.request('/api/kiosk/audio/recognition-policy', { headers: { Cookie: cookie } })
+    await expect(policy.json()).resolves.toEqual({ mode: 'legacy', maxUtteranceSeconds: 15, timeoutMs: 60000 })
+    const packet = new ArrayBuffer(294404)
+    new DataView(packet).setUint32(0, 25, true)
+    expect((await app.request('/api/kiosk/audio/falcon-transcriptions', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: packet })).status).toBe(401)
+    const falcon = await app.request('/api/kiosk/audio/falcon-transcriptions', { method: 'POST', headers: { 'Cookie': cookie, 'Content-Type': 'application/octet-stream' }, body: packet })
+    await expect(falcon.json()).resolves.toEqual({ text: '水餃一份', timing: { inferenceMs: 493.9, asrMs: 300.2 } })
+    expect(transcribeFalcon).toHaveBeenCalledTimes(1)
+    expect(transcribeFalcon).toHaveBeenCalledWith(packet, expect.any(AbortSignal))
   })
 
   it('retains every tool exchange of the current request and drops them when a new customer request begins', async () => {
@@ -1956,6 +1971,53 @@ describe('kiosk routes', () => {
     expect(tail).toContain('"text":"歡迎。","type":"assistant-delta"')
     expect(tail).toContain('"answer":"您好，歡迎。"')
     expect(tail).toContain('turn-finished')
+  })
+
+  // Report: this chat, 2026-11-16 — DEV-642583 — safe service replies must stream even with browser context.
+  it('streams a read-only service answer with browser context before provider DONE', async () => {
+    let upstream!: ReadableStreamDefaultController<Uint8Array>
+    const encoder = new TextEncoder()
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) { upstream = controller },
+    }), { headers: { 'Content-Type': 'text/event-stream' } }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { ...headers, Accept: 'text/event-stream' }, body: JSON.stringify({ content: '你是誰', decisionState: { phase: 'ordering', readOnly: true, serviceReply: true, browserContext: { taskId: 'service', sourceUtterance: '你是誰', phase: 'browsing', readOnly: true, catalog: { complete: false, products: [] }, allowedToolNames: ['browser_cart_get'] } }, tools: [{ type: 'function', function: { name: 'browser_cart_get', parameters: { type: 'object', properties: {} } } }] }) })
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    expect(decoder.decode((await reader.read()).value)).toContain('turn-started')
+    upstream.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"您好，"}}]}\n\n'))
+    expect(decoder.decode((await reader.read()).value)).toContain('reply-progress')
+    const firstDelta = await Promise.race([reader.read(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Safe service delta was withheld')), 1000))])
+    expect(decoder.decode(firstDelta.value)).toContain('"text":"您好，","type":"assistant-delta"')
+    upstream.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"歡迎。"}}]}\n\ndata: [DONE]\n\n'))
+    upstream.close()
+    let tail = ''
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done)
+        break
+      tail += decoder.decode(chunk.value)
+    }
+    expect(tail).toContain('"text":"歡迎。","type":"assistant-delta"')
+    expect(tail).toContain('"answer":"您好，歡迎。"')
+    expect(tail).toContain('turn-finished')
+    expect(complete.mock.calls[0]![0].body).not.toHaveProperty('tools')
+  })
+
+  // Report: this chat, Nov17 case 6 — payment facts must not allow unchecked service-success prose.
+  it.each(['payment', 'cart'])('requires a verified Host reply on %s pages even after a general-question decision', async (page) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: 'payment-reply', type: 'function', function: { name: 'reply_to_customer', arguments: JSON.stringify({ kind: 'checkout-guidance' }) } }] } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: '我要用信用卡付款', decisionState: { phase: 'ordering', readOnly: true, serviceReply: true, browserContext: { taskId: 'payment', sourceUtterance: '我要用信用卡付款', page, phase: page === 'payment' ? 'viewing_order' : 'configuring', readOnly: true, checkout: page === 'cart' ? { methods: [{ method: 'none', label: '無載具', selected: true }], fields: [], ready: false, missing: ['請選擇發票'], orderNote: '' } : undefined, order: page === 'payment' ? { reference: 'TEST-1', status: 20, total: 64, paymentStatus: 'pending', paymentMethods: ['信用卡'], invoice: {} } : undefined, catalog: { complete: false, products: [] }, allowedToolNames: ['reply_to_customer'] } }, tools: [{ type: 'function', function: { name: 'reply_to_customer', parameters: orderingTools.reply_to_customer.parameters } }] }) })
+    expect(complete.mock.calls[0]![0].body.tools).toEqual(expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: 'reply_to_customer' }) })]))
   })
 
   it('finishes a Kiosk SSE turn when the selected provider returns one JSON completion', async () => {

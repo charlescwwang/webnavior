@@ -5,7 +5,28 @@ import { describe, expect, it } from 'vitest'
 import { menu as sampleMenu } from '../../../order-menu/src/domain/order-machine'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
-import { createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
+import { browserRecoveryReply, createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
+
+// Report: this chat Nov17 — invoice/notification errors repeatedly told the customer to open the cart.
+it('preserves an actionable known rejection without appending generic cart recovery', () => {
+  const result = browserRecoveryReply({ operationAttempted: false, verifiedMessage: '請先填寫通知手機。' })
+  expect(result.content).toBe('請先填寫通知手機。')
+})
+
+it('asks staff to verify an uncertain submission without sending the customer back to the cart', () => {
+  const result = browserRecoveryReply({ operationAttempted: true, orderUnconfirmed: true })
+  expect(result.content).toContain('訂單紀錄')
+  expect(result.content).not.toContain('打開購物車')
+  expect(result.content).not.toContain('重新送出')
+})
+
+it('retains unknown order evidence through the Main tool loop', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('continue_checkout', { ok: false, status: 'unknown', effect: 'unknown', source: 'browser', execution: { documentId: 'doc', operationId: 'op', durationMs: 6000, steps: [{ id: 'step', action: 'submit', label: '送出訂單', effect: 'order', state: 'unknown', startedMs: 0 }] } })
+  const reply = replyFromConversation({ status: 'incomplete', reason: 'tool-rejected', agentMode: 'active', requestedTools: ['continue_checkout'] }, { menu, failureMessage: '未完成', browserRecovery: { operationAttempted: true, page: 'cart' } })
+  expect(reply.content).toContain('訂單紀錄')
+  expect(reply.content).not.toContain('打開購物車')
+})
 
 // Report: this chat, Nov15: 一份水餃有幾顆 was replaced by a missing-description disclaimer.
 it('answers known dumpling serving facts even when the merchant description is empty', () => {
@@ -596,4 +617,39 @@ it('does not repeat the last found dish when preserving an earlier missing searc
   const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['search_menu_items', 'search_menu_items'] }, { menu, outcome, failureMessage: '未完成。' })
   expect(reply.content).toContain('棺材板')
   expect(reply.content.split('魚丸湯')).toHaveLength(2)
+})
+
+// Report: this chat, Nov17 cases 4/5 — attempted execution is not proof of a write or unknown effect.
+it('keeps a verified no-effect rejection at the current form step', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('browser_question_answer', { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '請先修正捐贈碼格式。' })
+  const reply = replyFromConversation({ status: 'incomplete', reason: 'tool-rejected', agentMode: 'active', requestedTools: ['browser_question_answer'] }, { menu, failureMessage: '操作未完成', browserRecovery: { operationAttempted: true, page: 'cart' } })
+  expect(reply.content).toBe('請先修正捐贈碼格式。')
+  expect(reply.content).not.toContain('打開購物車')
+})
+
+// Report: this chat, Nov17 case 5 — a later missing receipt cannot inherit an earlier no-effect rejection.
+it('does not erase an unsettled operation with an earlier known no-effect receipt', () => {
+  const menu = createMenuReplyWindow()
+  menu.beginOperation('add_items_to_cart')
+  menu.record('add_items_to_cart', { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '份數不合法。' })
+  expect(menu.effectState()).toBe('none')
+  menu.beginOperation('add_items_to_cart')
+  expect(menu.effectState()).toBe('unknown')
+  menu.record('add_items_to_cart', { ok: true, source: 'browser', status: 'verified', effect: 'applied', effectMessage: '已加入一份雞腿飯。', customerMessage: '已加入一份雞腿飯。' })
+  expect(menu.effectState()).toBe('applied')
+  menu.beginOperation('add_items_to_cart')
+  menu.record('add_items_to_cart', { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '第二道未加入。' })
+  const reply = replyFromConversation({ status: 'incomplete', reason: 'tool-rejected', agentMode: 'active', requestedTools: ['add_items_to_cart'] }, { menu, failureMessage: '失敗', browserRecovery: { operationAttempted: true, page: 'cart' } })
+  expect(reply.content).toContain('已加入一份雞腿飯')
+  expect(reply.content).toContain('第二道未加入')
+  expect(reply.content).not.toContain('打開購物車')
+})
+
+it('keeps an unsettled final submission on order verification instead of cart recovery', () => {
+  const menu = createMenuReplyWindow()
+  menu.beginOperation('browser_question_answer', { maySubmit: true })
+  const reply = replyFromConversation({ status: 'incomplete', reason: 'provider-error', agentMode: 'active', requestedTools: ['browser_question_answer'] }, { menu, failureMessage: '失敗', browserRecovery: { operationAttempted: true, page: 'cart' } })
+  expect(reply.content).toContain('訂單紀錄')
+  expect(reply.content).not.toContain('打開購物車')
 })

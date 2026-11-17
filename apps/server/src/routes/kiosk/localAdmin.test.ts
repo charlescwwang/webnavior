@@ -53,6 +53,25 @@ it('saves settings with a server-verified PIN and device cookie without a user a
   expect(logs.find(log => log.action === 'device.settings.updated')).toMatchObject({ actorUserId: null, details: { source: 'local-pin' } })
 })
 
+// Report: this chat, 2026-11-18 — mouth assistance must persist through the existing authenticated settings API.
+it('persists mouth assistance on and off while leaving observation enabled', async () => {
+  const enrolled = await service.registerDevelopmentDevice({ registrationCode: '483929' })
+  const api = app()
+  const headers = { 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Origin': 'https://kiosk.example.test', 'Content-Type': 'application/json' }
+  const login = await api.request('/api/kiosk/admin/session', { method: 'POST', headers, body: '{"pin":"4812"}' })
+  const grant = login.headers.get('Set-Cookie')!.split(';')[0]
+  const before = await service.getDeviceSettings(enrolled.device.id)
+  expect(before.effective.mouthDetectionEnabled).toBe(false)
+  for (const enabled of [true, false]) {
+    const current = await service.getDeviceSettings(enrolled.device.id)
+    const response = await api.request('/api/kiosk/settings', { method: 'PUT', headers: { ...headers, Cookie: `${headers.Cookie}; ${grant}` }, body: JSON.stringify({ version: current.settings.version, overrides: { observationEnabled: true, mouthDetectionEnabled: enabled } }) })
+    expect(response.status).toBe(200)
+    const saved = await service.getDeviceSettings(enrolled.device.id)
+    expect(saved.effective.mouthDetectionEnabled).toBe(enabled)
+    expect(saved.effective.observationEnabled).toBe(true)
+  }
+})
+
 it('rejects wrong PINs, unregistered requests, cross-origin writes and repeated guesses', async () => {
   const enrolled = await service.registerDevelopmentDevice({ registrationCode: '483921' })
   const api = app()
@@ -112,4 +131,24 @@ it('keeps local access closed when no Server PIN is configured', async () => {
   const response = await app({ secret: 'test-server-secret' }).request('/api/kiosk/admin/session', { method: 'POST', headers: { 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Origin': 'https://kiosk.example.test', 'Content-Type': 'application/json' }, body: '{"pin":"4812"}' })
   expect(response.status).toBe(503)
   expect(response.headers.get('Set-Cookie')).toBeNull()
+})
+
+// Report: this chat, 2026-11-17 — the selected LAN entry must retain local PIN settings access.
+it('allows the selected LAN origin to unlock and save settings without weakening other origins', async () => {
+  const enrolled = await service.registerDevelopmentDevice({ registrationCode: '483930' })
+  const api = app()
+  const headers = { 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Origin': 'http://100.92.1.80:5169', 'Content-Type': 'application/json' }
+  const login = await api.request('/api/kiosk/admin/session', { method: 'POST', headers, body: '{"pin":"4812"}' })
+  expect(login.status).toBe(200)
+  expect(login.headers.get('Set-Cookie')).not.toContain('; Secure')
+  const grant = login.headers.get('Set-Cookie')!.split(';')[0]
+  const update = await api.request('/api/kiosk/settings', { method: 'PUT', headers: { ...headers, Cookie: `${headers.Cookie}; ${grant}` }, body: '{"version":1,"overrides":{"textOnlyMode":true}}' })
+  expect(update.status).toBe(200)
+  expect((await service.getDeviceSettings(enrolled.device.id)).effective.textOnlyMode).toBe(true)
+  const wrongOrigin = await api.request('/api/kiosk/admin/session', { method: 'POST', headers: { ...headers, Origin: 'http://100.92.1.81:5169' }, body: '{"pin":"4812"}' })
+  expect(wrongOrigin.status).toBe(403)
+  const locked = await api.request('/api/kiosk/admin/session', { method: 'DELETE', headers })
+  expect(locked.status).toBe(200)
+  expect(locked.headers.get('Set-Cookie')).toContain('Max-Age=0')
+  expect(locked.headers.get('Set-Cookie')).not.toContain('; Secure')
 })

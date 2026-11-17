@@ -31,7 +31,7 @@ describe('useKioskCustomerSession', () => {
   })
 
   // Report: this chat, Nov14; PB's successful in-document reset left the next customer on the menu.
-  it('reloads the configured entry after a native idle reset, before admitting the next customer', async () => {
+  it.each(['cart', 'paid', 'cancelled'] as const)('reloads the configured entry after a verified %s idle reset, before admitting the next customer', async (stage) => {
     vi.useFakeTimers()
     const calls: string[] = []
     interactiveServiceClient.activateTransport('https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table', () => {
@@ -39,11 +39,12 @@ describe('useKioskCustomerSession', () => {
       return {
         signal: lifetime.signal,
         dispose: reason => lifetime.abort(reason),
-        discover: async request => ({ ...request, documentId: 'native-document', toolsRevision: 1, tools: ['browser_recovery_context', 'browser_customer_reset'].map(name => ({ name, description: '', inputSchema: { type: 'object' } })) }),
+        discover: async request => ({ ...request, documentId: 'native-document', toolsRevision: 1, tools: (stage === 'cart' ? ['browser_recovery_context', 'browser_customer_reset'] : ['browser_state_get']).map(name => ({ name, description: '', inputSchema: { type: 'object' } })) }),
         inspect: async request => ({ connectionId: request.connectionId, documentId: request.documentId, pendingCount: 0, operations: [] }),
         execute: async (request) => {
           calls.push(request.name)
-          return { connectionId: request.connectionId, documentId: request.documentId, operationId: request.operationId, result: { ok: true, status: 'customer-reset', cartCleared: true, documentId: request.documentId } }
+          const result = stage === 'cart' ? { ok: true, status: 'customer-reset', cartCleared: true, documentId: request.documentId } : { ok: true, source: 'browser', page: 'order-result', documentId: request.documentId, restart: 'allowed', order: { reference: 'previous-order', status: stage === 'paid' ? 50 : 79, total: 50, paymentStatus: stage, paymentMethods: [], invoice: {} } }
+          return { connectionId: request.connectionId, documentId: request.documentId, operationId: request.operationId, result }
         },
       }
     })
@@ -73,7 +74,7 @@ describe('useKioskCustomerSession', () => {
     expect(session.state.value).toBe('awaiting-idle-confirmation')
     expect(calls).toEqual([])
     await vi.advanceTimersByTimeAsync(1)
-    expect(calls).toEqual(['browser_customer_reset', 'reload-entry', 'end-visitor', 'clear-conversation'])
+    expect(calls).toEqual([stage === 'cart' ? 'browser_customer_reset' : 'browser_state_get', 'reload-entry', 'end-visitor', 'clear-conversation'])
     expect(session.state.value).toBe('standby')
     expect(interactiveServiceClient.getDocumentId()).toBeUndefined()
     expect(interactiveServiceClient.tools.value).toEqual([])

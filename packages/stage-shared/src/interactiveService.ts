@@ -28,6 +28,8 @@ export const browserRecoveryContextSchema = strictObject({
   canRetry: boolean(),
   /** Explicitly discards an unfinished cart; never authorizes replay or an uncertain order submission. */
   canReset: boolean(),
+  /** Reason a verified restart is blocked; an uncertain submission must be checked with the merchant. */
+  blockedBy: optional(picklist(['order', 'reset', 'cart', 'operation'])),
   execution: optional(serviceOperationSchema),
 })
 

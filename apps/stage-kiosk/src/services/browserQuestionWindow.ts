@@ -18,6 +18,8 @@ export interface QuestionSnapshot {
   owner: string
   documentId: string
   cartVersion: string
+  /** Form values bind final consent only; filling a field must not discard its entry step. */
+  checkoutVersion?: string
   products: QuestionProduct[]
 }
 
@@ -71,7 +73,8 @@ export function createBrowserQuestionWindow(now = Date.now) {
       return
     const previous = ticket.binding
     const sameProducts = previous.products.every(product => snapshot.products.some(candidate => JSON.stringify(candidate) === JSON.stringify(product)))
-    if (ticket.question.expiresAt <= now() || previous.owner !== snapshot.owner || previous.documentId !== snapshot.documentId || previous.cartVersion !== snapshot.cartVersion || !sameProducts) {
+    const formChanged = ticket.kind === 'service' && ticket.purpose === 'submit-order' && previous.checkoutVersion !== snapshot.checkoutVersion
+    if (formChanged || ticket.question.expiresAt <= now() || previous.owner !== snapshot.owner || previous.documentId !== snapshot.documentId || previous.cartVersion !== snapshot.cartVersion || !sameProducts) {
       ticket = undefined
       return
     }
@@ -81,6 +84,8 @@ export function createBrowserQuestionWindow(now = Date.now) {
   return {
     /** A hint only; authority still requires pending(snapshot) to recheck freshness. */
     hasPending: () => ticket !== undefined,
+    /** Recovery hint only; fresh snapshot/token checks still own submission authority. */
+    hasSubmissionQuestion: () => ticket?.kind === 'service' && ticket.purpose === 'submit-order',
     /** A different service request drops this offer, preserving any unfinished dish underneath. */
     releaseService(snapshot: QuestionSnapshot, questionId: string) {
       const pending = current(snapshot)

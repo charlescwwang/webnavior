@@ -211,6 +211,16 @@ it('retains a rejected Start reason and never proceeds to clear the cart', async
 })
 
 // Report: this chat, Nov15; early preparation must preserve unknown merchant-effect barriers.
+it.each(['table', 'cart'])('explains an uncertain submission on %s instead of offering an ineffective reset', async (page) => {
+  const tools = ['browser_recovery_context', 'browser_cart_get', 'browser_customer_reset'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
+  const execute = vi.fn(async (tool: ServiceTool) => tool.name === 'browser_cart_get'
+    ? { ok: true, page, selectedTable: 'A1 桌', cart: { lines: [{}] } }
+    : { source: 'browser', documentId: 'current', contextKey: 'pending-order', canRetry: false, canReset: false, blockedBy: 'order' })
+  const client = { tools: shallowRef(tools), execute, refresh: vi.fn(), waitUntilReady: vi.fn(), getDocumentId: () => 'current' }
+  await expect(resetConversationService(client)).rejects.toThrow('核對 PB 訂單紀錄')
+  expect(execute).not.toHaveBeenCalledWith(tools[2], expect.anything())
+})
+
 it.each([false, true])('clears a retired document cart marker only through explicit reset (occupied=%s)', async (occupied) => {
   // A stored cart marker prohibits replaying the old purchase, but must not
   // prohibit the customer's separate request to discard that unfinished cart.
@@ -330,4 +340,36 @@ it('never grants retry authority from an unsettled browser receipt', async () =>
   const context = createRetryContext({ tools: shallowRef([tool]), execute })
   await expect(context.capture()).resolves.toBeUndefined()
   await expect(readConversationRetryContext({ tools: shallowRef([tool]), execute })).rejects.toThrow('not settled')
+})
+
+// Report: this chat, Nov17 cases 7/11 — result-only tools bypassed verified reception reset.
+it.each(['paid', 'cancelled'] as const)('permits entry reload after a fresh %s result without invoking editor tools', async (paymentStatus) => {
+  const tool = { name: 'browser_state_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
+  const execute = vi.fn(async () => ({ ok: true, source: 'browser', page: 'order-result', documentId: 'result-document', restart: 'allowed', order: { reference: 'order-1', status: paymentStatus === 'paid' ? 50 : 79, total: 50, paymentStatus, paymentMethods: [], invoice: {} } }))
+  const client = { tools: shallowRef([tool]), execute, refresh: vi.fn(), waitUntilReady: vi.fn(), getDocumentId: () => 'result-document' }
+  expect(await resetConversationService(client)).toBe('reload')
+  expect(execute).toHaveBeenCalledExactlyOnceWith(tool, { includeCatalog: false })
+  expect(client.refresh).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov17 cases 7/11 — Restart must not reload away an unresolved payment.
+it.each(['payment-pending', 'payment-unknown', 'operation-pending'] as const)('keeps the same customer on a result page when restart is %s', async (restart) => {
+  const tool = { name: 'browser_state_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
+  const execute = vi.fn(async () => ({ ok: true, source: 'browser', page: 'payment', documentId: 'result-document', restart, order: { reference: 'order-1', status: 20, total: 50, paymentStatus: 'pending', paymentMethods: [], invoice: {} } }))
+  const client = { tools: shallowRef([tool]), execute, refresh: vi.fn(), waitUntilReady: vi.fn(), getDocumentId: () => 'result-document' }
+  await expect(resetConversationService(client)).rejects.toThrow(restart === 'payment-pending' ? /尚未付款/ : /確認/)
+  expect(client.refresh).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov17 case 17 — stale or unavailable result reads cannot authorize entry reload.
+it.each(['read-failed', 'stale-document', 'missing-restart-policy', 'unpaid-with-allowed-policy'] as const)('rejects %s instead of falling back to an unchecked reload', async (failure) => {
+  const tool = { name: 'browser_state_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
+  const execute = vi.fn(async () => {
+    if (failure === 'read-failed')
+      throw new Error('Transport failed')
+    return { ok: true, source: 'browser', page: 'order-result', documentId: failure === 'stale-document' ? 'previous-document' : 'document', restart: failure === 'missing-restart-policy' ? undefined : 'allowed', order: { reference: 'order-1', status: 50, total: 50, paymentStatus: failure === 'unpaid-with-allowed-policy' ? 'pending' : 'paid', paymentMethods: [], invoice: {} } }
+  })
+  const client = { tools: shallowRef([tool]), execute, refresh: vi.fn(), waitUntilReady: vi.fn(), getDocumentId: () => 'document' }
+  await expect(resetConversationService(client)).rejects.toThrow(/訂單/)
+  expect(client.refresh).not.toHaveBeenCalled()
 })

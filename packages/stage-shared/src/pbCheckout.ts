@@ -1,7 +1,8 @@
 import type { InferOutput } from 'valibot'
 
-import { array, boolean, finite, literal, looseObject, minLength, minValue, number, object, optional, picklist, pipe, safeParse, strictObject, string, variant } from 'valibot'
+import { array, boolean, finite, literal, looseObject, minLength, minValue, nullable, number, object, optional, parse, picklist, pipe, safeParse, strictObject, string, variant } from 'valibot'
 
+import { isPbOrderResultUrl, readPbJourney } from './pbJourney'
 import { serviceOperationSchema } from './serviceOperation'
 
 /** Values name actual PB invoice controls, not merchant-provided ingredient facts. */
@@ -19,6 +20,19 @@ export const pbCheckoutSchema = object({
   confirmationToken: optional(string()),
 })
 export type PbCheckout = InferOutput<typeof pbCheckoutSchema>
+
+/** Business position is a hint, separate from expiring answer/submission authority. */
+export const pbCheckoutStepSchema = picklist(['review-checkout', 'cart-review', 'invoice-method', 'invoice-details', 'notification-details', 'notification-phone', 'notification-phone-confirm', 'checkout-details', 'submit-order'])
+export type PbCheckoutStep = InferOutput<typeof pbCheckoutStepSchema>
+
+/** Privacy-safe form facts for Jev; values and final confirmation authority stay with Host. */
+export const pbCheckoutProgressSchema = object({
+  source: literal('pb'),
+  step: optional(pbCheckoutStepSchema),
+  invoiceMethod: optional(pbInvoiceMethodSchema),
+  ready: boolean(),
+  fields: array(object({ kind: pbCheckoutSchema.entries.fields.item.entries.kind, present: boolean(), valid: boolean() })),
+})
 
 const submissionFields = {
   schemaVersion: literal(1),
@@ -89,4 +103,75 @@ export function readPbSubmissionResult(expected: PbSubmissionExpectation, curren
   const order = { hash: page.props.order.hash, ...(page.props.order.number === undefined ? {} : { number: page.props.order.number }), status: page.props.order.status, total: page.props.order.totalmoney }
   const conflict = order.total !== expected.total
   return { ...base, status: 'accepted', effect: 'applied', consistency: conflict ? 'conflict' : 'unavailable', reason: conflict ? 'amount-mismatch' : 'details-unverified', order, customerMessage: conflict ? '訂單已送出，但金額與剛才確認的內容不同，請先核對畫面上的訂單。' : `訂單已送出${order.number ? `，取餐編號 ${order.number}` : ''}。請查看畫面上的訂單與後續步驟。` }
+}
+
+/** Verified result-page facts, independent of a submission receipt or permission to pay. */
+export const pbOrderStateSchema = object({
+  reference: string(),
+  number: optional(string()),
+  status: number(),
+  total: number(),
+  paymentStatus: picklist(['pending', 'paid', 'cancelled', 'unknown']),
+  paymentMethod: optional(string()),
+  paymentMethods: array(string()),
+  invoice: object({ method: optional(pbInvoiceMethodSchema), code: optional(string()) }),
+})
+export type PbOrderState = InferOutput<typeof pbOrderStateSchema>
+
+/** Fresh result facts plus a read-only decision about retiring this reception. */
+export const pbOrderReceptionSchema = object({
+  ok: literal(true),
+  source: literal('browser'),
+  page: picklist(['payment', 'order-result']),
+  documentId: string(),
+  order: pbOrderStateSchema,
+  restart: picklist(['allowed', 'payment-pending', 'payment-unknown', 'operation-pending']),
+})
+
+/** Reads only the matching rendered order. Unknown payment evidence never becomes success. */
+export function readPbOrderState(entry: string, current: string, raw: unknown): PbOrderState {
+  const journey = readPbJourney(entry)
+  if (!journey || !isPbOrderResultUrl(entry, current))
+    throw new Error('PB order page is outside the configured journey.')
+  const page = parse(looseObject({
+    component: picklist(['Order/ChoosePayment', 'Order/Show']),
+    url: string(),
+    props: looseObject({ storeHash: string(), flowType: string(), order: looseObject({ hash: string(), number: optional(string()), status: number(), totalmoney: pipe(number(), finite(), minValue(0)), payment: optional(nullable(string())), has_refunded_payment: optional(boolean()), CarrierType: optional(number()), CarrierNum: optional(nullable(string())), CustomerIdentifier: optional(nullable(string())), LoveCode: optional(nullable(string())) }), payMethods: optional(array(looseObject({ title: string(), url: string() })), []) }),
+  }), raw)
+  const url = new URL(current)
+  const order = page.props.order
+  const orderPath = `${journey.basePath}orders/${order.hash}`
+  if (new URL(page.url, journey.origin).href !== url.href || page.props.storeHash !== journey.store || page.props.flowType !== journey.flow
+    || ![orderPath, `${orderPath}/choosePayment`].includes(url.pathname)
+    || (page.component === 'Order/ChoosePayment') !== url.pathname.endsWith('/choosePayment')) {
+    throw new Error('PB order snapshot identity does not match the current page.')
+  }
+  let paymentStatus: PbOrderState['paymentStatus'] = 'unknown'
+  // These statuses are captured PB business states, not inferred from page titles.
+  // A payment method alone proves neither a successful charge nor its final amount.
+  if (order.status === 20 && order.payment === null && page.component === 'Order/ChoosePayment')
+    paymentStatus = 'pending'
+  else if ([50, 60, 70].includes(order.status) && ['LinePay', 'Credit'].includes(order.payment ?? '') && order.has_refunded_payment === false)
+    paymentStatus = 'paid'
+  else if (order.status === 79 && order.payment === null && order.has_refunded_payment === false)
+    paymentStatus = 'cancelled'
+  const method = ({ 5: 'none', 2: 'citizen', 3: 'carrier', 4: 'tax', 6: 'donation' } as const)[order.CarrierType as 5 | 2 | 3 | 4 | 6]
+  let code: string | undefined
+  if (method === 'carrier' || method === 'citizen')
+    code = order.CarrierNum ?? undefined
+  else if (method === 'tax')
+    code = order.CustomerIdentifier ?? undefined
+  else if (method === 'donation')
+    code = order.LoveCode ?? undefined
+  const paymentMethods = paymentStatus === 'pending'
+    ? page.props.payMethods.filter((method) => {
+        try {
+          const target = new URL(method.url, journey.origin)
+          return target.origin === journey.origin && !target.username && !target.password && !target.search && !target.hash
+            && [`/order/linepay/redirect/${order.hash}/LinePay`, `/order/ecpay/redirect/${order.hash}/Credit`].includes(target.pathname)
+        }
+        catch { return false }
+      }).map(method => method.title)
+    : []
+  return { reference: order.hash, number: order.number, status: order.status, total: order.totalmoney, paymentStatus, paymentMethod: paymentStatus === 'paid' ? order.payment ?? undefined : undefined, paymentMethods: [...new Set(paymentMethods)], invoice: { method, code } }
 }

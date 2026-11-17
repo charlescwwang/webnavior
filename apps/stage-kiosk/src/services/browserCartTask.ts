@@ -18,11 +18,12 @@ import { contextReplySchema, replyToConversation } from '@proj-airi/stage-shared
 import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { explicitServingQuantities, normalizeSlotNumbers } from '@proj-airi/stage-shared/ordering-slots'
 import { customerReplySchema, servicePolicyReplySchema } from '@proj-airi/stage-shared/ordering-tools'
-import { pbCheckoutSchema, pbInvoiceMethodSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { pbCheckoutSchema, pbInvoiceMethodSchema, pbOrderStateSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { menuEntryReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
 import { describePbMeal, pbBasicServing, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { productConfigurationSchema } from '@proj-airi/stage-shared/product-configuration'
 import { browserPresentationInputSchema, productPresentationSchema } from '@proj-airi/stage-shared/product-presentation'
+import { serviceOperationSchema } from '@proj-airi/stage-shared/service-operation'
 import { resolveTableName } from '@proj-airi/stage-shared/table-names'
 import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
 import { array, boolean, literal, looseObject, minLength, number, object, optional, parse, picklist, pipe, safeParse, strictObject, string } from 'valibot'
@@ -31,6 +32,8 @@ import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages
 import { browserWriteToolNameSchema, cartLineLabelSchema, cartSnapshotSchema } from '../../../server/src/services/domain/browser-ordering/contracts'
 
 interface TaskQuestions {
+  /** Bound by the fresh result-page context; never reused as payment authority. */
+  orderReference?: string
   /** Set only by the Host after Jev selects a currently issued action. */
   intentSource?: 'jev'
 
@@ -244,7 +247,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         const deadline = Date.now() + 5000
         while (true) {
           const reader = client.tools.value.find(tool => tool.name === 'browser_cart_get')
-          const menu = safeParse(looseObject({ ok: literal(true), page: literal('menu'), menuReady: boolean(), cart: looseObject({ tableName: string() }) }), reader ? await client.execute(reader, { includeCatalog: false }) : undefined)
+          const menu = safeParse(looseObject({ ok: literal(true), page: literal('menu'), menuReady: boolean(), cart: looseObject({ tableName: string() }) }), reader ? await client.execute(reader, { includeCatalog: false, forAdmission: true }) : undefined)
           if (active !== task || !task.isCurrent())
             return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
           if (!menu.success || menu.output.cart.tableName !== name || (!menu.output.menuReady && Date.now() >= deadline))
@@ -494,7 +497,17 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
             throw new Error('目前網站尚未提供助手送出訂單。')
           // Only a consumed, current final-summary ticket reaches this branch.
           // Main has no public submission tool or model-controlled token.
-          return client.execute(submit, { confirmationToken: answer.confirmationToken })
+          const result = await client.execute(submit, { confirmationToken: answer.confirmationToken })
+          if (active !== task || !task.isCurrent())
+            return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
+          const rejection = safeParse(looseObject({ ok: literal(false), source: literal('browser'), status: literal('rejected'), effect: literal('none') }), result)
+          const execution = result && typeof result === 'object' && 'execution' in result ? safeParse(serviceOperationSchema, result.execution) : undefined
+          const dispatched = execution?.success && execution.output.steps.some(step => step.effect === 'order' && (step.dispatchMs !== undefined || ['executing', 'verifying', 'completed', 'unknown'].includes(step.state)))
+          // Only a verified pre-dispatch refusal may rebuild a draft summary.
+          // This reads/prepares, never presses Submit again in the same turn.
+          if (rejection.success && (!execution || execution.success) && !dispatched)
+            return executeBrowserCheckout(client, 'continue', { afterRejectedSubmit: true })
+          return result
         }
         return executeBrowserCheckout(client, answer.action, 'method' in answer ? { method: parse(pbInvoiceMethodSchema, answer.method) } : 'phone' in answer ? { phone: answer.phone } : {})
       }
@@ -909,7 +922,7 @@ export async function cancelBrowserItemSelection(client: Pick<ReturnType<typeof 
 /** Refreshes one task's model context without consuming answers or changing the page. */
 export async function readBrowserConversation(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, taskId: string, toolNames: readonly string[]): Promise<BrowserConversation> {
   const task = active
-  const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')
+  const read = client.tools.value.find(tool => tool.name === 'browser_state_get')
   if (!task || !read || !task.isCurrent())
     throw new Error('Current browser conversation is unavailable.')
   // This is an internal read, like master's host-only conversation-context read.
@@ -920,6 +933,21 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
   if (safeParse(browserSignInRequiredSchema, raw).success) {
     return parse(browserConversationSchema, { taskId, sourceUtterance: task.transcript, phase: 'sign_in_required', readOnly: true, catalog: { complete: false, products: [] }, allowedToolNames: browserToolNames({ phase: 'sign_in_required', readOnly: true }, toolNames) })
   }
+  const order = safeParse(looseObject({ ok: literal(true), source: literal('browser'), page: picklist(['payment', 'order-result']), observedAt: number(), order: pbOrderStateSchema }), raw)
+  if (order.success) {
+    const session = task.cartSession
+    const owner = session?.owner()
+    const serviceUrl = session?.serviceUrl()
+    if (session && (!owner || !serviceUrl || !session.gate.owns(owner, serviceUrl)))
+      return parse(browserConversationSchema, { taskId, sourceUtterance: task.transcript, phase: 'review_required', readOnly: true, catalog: { complete: false, products: [] }, allowedToolNames: ['browser_respond'] })
+    if (task.orderReference && task.orderReference !== order.output.order.reference)
+      throw new Error('Order context belongs to a different order.')
+    task.orderReference = order.output.order.reference
+    const state = { phase: 'viewing_order' as const, readOnly: true }
+    return parse(browserConversationSchema, { taskId, sourceUtterance: task.transcript, ...state, page: order.output.page, order: order.output.order, observedAt: order.output.observedAt, catalog: { complete: false, products: [] }, allowedToolNames: browserToolNames(state, toolNames) })
+  }
+  if (!client.tools.value.some(tool => tool.name === 'browser_cart_get'))
+    throw new Error('訂單結果頁尚未就緒，請先查看畫面，避免重複送單。')
   const tableEntry = safeParse(tableEntrySchema, raw)
   if (tableEntry.success) {
     task.tableSelectionRequired = true
@@ -989,10 +1017,12 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
     sourceUtterance: task.transcript,
     recommendationCriteria: task.dialogue?.recommendations.snapshot(),
     page: facts.page,
+    observedAt: typeof raw === 'object' && raw && 'observedAt' in raw ? raw.observedAt : undefined,
     ...dialogue,
     readOnly,
     providedSlots,
     itemSelectionOpen: facts.itemSelectionOpen,
+    checkoutStep: task.dialogue?.checkoutStep(raw),
     checkout: typeof raw === 'object' && raw && 'checkout' in raw ? safeParse(pbCheckoutSchema, raw.checkout).output : undefined,
     // Preserve native row/configuration identity and subtotal through the owning
     // shared projection, but never expose another visitor's cart to the model.
@@ -1179,7 +1209,7 @@ export async function executeBrowserConfirmedAddition(client: Pick<ReturnType<ty
 }
 
 /** Checkout drafts and final questions remain bound to the current visitor and native cart. */
-export async function executeBrowserCheckout(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, action: 'continue' | 'invoice-options' | 'invoice' | 'phone' | 'phone-confirmed', input: { method?: string, phone?: string } = {}) {
+export async function executeBrowserCheckout(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, action: 'continue' | 'invoice-options' | 'invoice' | 'phone' | 'phone-confirmed', input: { method?: string, phone?: string, afterRejectedSubmit?: true } = {}) {
   const task = active
   if (!task?.dialogue || !task.isCurrent())
     return { ok: false, source: 'host', effect: 'none' }
@@ -1207,10 +1237,13 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
     const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')!
     return executeBrowserCartTool(client, read, { includeCatalog: true })
   }
-  // A generic confirmation approves the cart, never an unspoken invoice method.
-  // This also covers an expired cart question: list the current choices again.
-  if (action === 'invoice' && /^(?:正確|沒錯|對|是的|確認|確認無誤|好|好的|好了|ok)[。！!，,\s]*$/i.test(task.transcript.trim()))
+  // Generic completion belongs to the current workflow question. It never
+  // supplies an unspoken invoice method, even if Main picked the wrong tool.
+  if (action === 'invoice' && /^(?:正確|沒錯|對|是的|確認|確認無誤|好|好的|好了|ok)[。！!，,\s]*$/i.test(task.transcript.trim())) {
+    if (pendingStep && pendingStep !== 'invoice-method')
+      return executeBrowserCheckout(client, 'continue')
     return executeBrowserCheckout(client, 'invoice-options')
+  }
   if (action === 'phone' && pendingStep === 'notification-phone-confirm')
     return { ok: true, source: 'browser', effect: 'none', customerMessage: orderingMessages['zh-Hant'].checkout.notificationPhone.confirmationRequired }
   const name = action === 'invoice' ? 'browser_invoice_select' : action === 'phone' || action === 'phone-confirmed' ? 'browser_notification_phone' : 'browser_checkout_prepare'
@@ -1233,12 +1266,12 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   if (!parsed.success)
     return result
   const checkout = parsed.output.checkout
-  const binding = { ...facts, cart: { ...facts.cart, ...parsed.output.cart } }
+  const binding = { ...facts, checkout, cart: { ...facts.cart, ...parsed.output.cart } }
   const pending = task.dialogue.conversation(binding).waitingFor
   if (pending)
     task.dialogue.releaseService(binding, pending.questionId)
   if (action === 'invoice-options' || !checkout.methods.some(method => method.selected)) {
-    const question = task.dialogue.presentService(binding, { purpose: 'invoice-method', request: task.transcript, question: `發票要用哪種方式？${checkout.methods.map(method => method.label).join('、')}。`, choices: checkout.methods.map(method => ({ id: method.method, description: `選擇${method.label}，只設定發票，不送出訂單。` })) })
+    const question = task.dialogue.presentService(binding, { purpose: 'invoice-method', request: task.transcript, question: `${orderingMessages['zh-Hant'].checkout.invoiceOptions.replace('{methods}', checkout.methods.map(method => method.label).join('、'))}${orderingMessages['zh-Hant'].checkout.entryModes}`, choices: checkout.methods.map(method => ({ id: method.method, description: `選擇${method.label}，只設定發票，不送出訂單。` })) })
     return { ...parsed.output, ...question, dataOnly: false }
   }
   const selected = checkout.methods.find(method => method.selected)!
@@ -1249,7 +1282,7 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   // real form before moving to contact details; it never fills a field or submits.
   if (selected.method !== 'none' && (!invoiceField || !invoiceField.valid)) {
     const entry = selected.method === 'carrier' || selected.method === 'citizen' ? '掃描或輸入' : '填寫'
-    entryQuestion = { purpose: 'invoice-details', question: `請在畫面${entry}${selected.label}，完成後告訴我「好了」。` }
+    entryQuestion = { purpose: 'invoice-details', question: invoiceField?.value ? orderingMessages['zh-Hant'].checkout.invalidInvoice.replace('{label}', selected.label).replace('{entry}', entry) : `請在畫面${entry}${selected.label}，完成後告訴我「好了」。` }
   }
   else if (contacts.some(field => field.value && !field.valid)) {
     const invalid = contacts.find(field => field.value && !field.valid)!
@@ -1271,7 +1304,7 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   const meals = cart.lines.map(line => describePbMeal(line)).join('、')
   const invoice = checkout.methods.find(method => method.selected)!.label
   const fields = checkout.fields.filter(field => field.value).map(field => `${field.label}${field.value}`).join('、')
-  const question = task.dialogue.presentService(binding, { purpose: 'submit-order', query: checkout.confirmationToken, request: task.transcript, question: `本次餐點：${meals}，總金額${checkout.total}元${cart.tableName ? `，${cart.tableName}` : ''}；發票${invoice}${fields ? `，${fields}` : ''}${checkout.orderNote ? `，訂單備註${checkout.orderNote}` : ''}。以上內容確認送出訂單嗎？`, choices: [{ id: 'yes', description: '確認剛才完整訂單摘要，現在按下送出訂單；不選擇或操作付款。' }, { id: 'no', description: '先不送出，保留餐點與發票通知資料，可以提出修改。' }] })
+  const question = task.dialogue.presentService(binding, { purpose: 'submit-order', query: checkout.confirmationToken, request: task.transcript, question: `${input.afterRejectedSubmit ? orderingMessages['zh-Hant'].checkout.notSubmitted : ''}本次餐點：${meals}，總金額${checkout.total}元${cart.tableName ? `，${cart.tableName}` : ''}；發票${invoice}${fields ? `，${fields}` : ''}${checkout.orderNote ? `，訂單備註${checkout.orderNote}` : ''}。以上內容確認送出訂單嗎？`, choices: [{ id: 'yes', description: '確認剛才完整訂單摘要，現在按下送出訂單；不選擇或操作付款。' }, { id: 'no', description: '先不送出，保留餐點與發票通知資料，可以提出修改。' }] })
   return { ...parsed.output, ...question, dataOnly: false }
 }
 
@@ -1281,6 +1314,22 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
   const task = active
   if (!task || !task.isCurrent())
     return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
+  const stateReader = client.tools.value.find(tool => tool.name === 'browser_state_get')
+  if (stateReader && (task.orderReference || !client.tools.value.some(tool => tool.name === 'browser_cart_get'))) {
+    const session = task.cartSession
+    const owner = session?.owner()
+    const serviceUrl = session?.serviceUrl()
+    if (session && (!owner || !serviceUrl || !session.gate.owns(owner, serviceUrl)))
+      return { ok: true, source: 'host', status: 'conversation', effect: 'none', customerMessage: session.message }
+    const fresh = await client.execute(stateReader, { includeCatalog: false })
+    if (active !== task || !task.isCurrent())
+      return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
+    const state = parse(looseObject({ ok: literal(true), order: pbOrderStateSchema }), fresh).order
+    if (task.orderReference && task.orderReference !== state.reference)
+      throw new Error('Order reply belongs to a different order.')
+    const messages = orderingMessages['zh-Hant'].orderState
+    return { ok: true, source: 'host', status: 'conversation', effect: 'none', order: state, customerMessage: messages[state.paymentStatus].replace('{methods}', state.paymentMethods.join('、') || messages.methodsUnknown) }
+  }
   const policy = safeParse(servicePolicyReplySchema, selected)
   if (policy.success) {
     if (!task.servicePolicyReply)

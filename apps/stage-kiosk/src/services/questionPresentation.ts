@@ -6,14 +6,28 @@ import type { ConversationTurnResult } from '../composables/useKioskInteractionR
 
 import { replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { nativeOrderingToolName } from '@proj-airi/stage-shared/ordering-tools'
+import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { describePbMeal, pbBasicServing, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
+import { serviceOperationSchema } from '@proj-airi/stage-shared/service-operation'
+import { safeParse } from 'valibot'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 
+/** Aggregated receipts distinguish a known refusal from an unsettled operation. */
+export type BrowserEffectState = 'none' | 'applied' | 'partial' | 'unknown'
+
 /** Customer recovery uses verified progress only; it never completes or replays an order. */
-export function browserRecoveryReply(input: { operationAttempted: boolean, page?: BrowserConversation['page'], verifiedMessage?: string }) {
+export function browserRecoveryReply(input: { operationAttempted: boolean, effect?: BrowserEffectState, orderUnconfirmed?: boolean, page?: BrowserConversation['page'], verifiedMessage?: string }) {
   const messages = orderingMessages['zh-Hant'].recovery
-  const guidance = input.operationAttempted ? messages.review : input.page ? messages[input.page] : messages.unavailable
+  if (!input.orderUnconfirmed && input.effect && input.effect !== 'unknown') {
+    if (input.verifiedMessage && input.effect !== 'partial')
+      return { role: 'assistant' as const, recovery: true as const, content: input.verifiedMessage }
+    const guidance = input.effect === 'partial' ? messages.partial : input.effect === 'applied' ? messages.applied : messages.noChange
+    return { role: 'assistant' as const, recovery: true as const, content: [...new Set([input.verifiedMessage, guidance].filter(Boolean))].join(' ') }
+  }
+  if (input.verifiedMessage && !input.operationAttempted)
+    return { role: 'assistant' as const, recovery: true as const, content: input.verifiedMessage }
+  const guidance = input.orderUnconfirmed ? messages.order : input.operationAttempted ? messages.review : input.page ? messages[input.page] : messages.unavailable
   return { role: 'assistant' as const, recovery: true as const, content: [...new Set([input.verifiedMessage, guidance].filter(Boolean))].join(' ') }
 }
 
@@ -108,8 +122,21 @@ export function createMenuReplyWindow() {
   let publicReadReply: string | undefined
   let presentationFailure: string | undefined
   let cartChange: unknown
+  let orderUnconfirmed = false
+  let effectState: BrowserEffectState | undefined
+  // Counts correlate repeated same-name operations in this one Host turn. An
+  // operation with no receipt remains unknown even after another call settled.
+  const pendingOperations = new Map<string, number>()
+  const pendingSubmissions = new Set<string>()
   const browserEffects = new Set<string>()
   return {
+    /** Marks entry into execution; this is deliberately not evidence of dispatch. */
+    beginOperation(name: string, options: { maySubmit?: boolean } = {}) {
+      const native = nativeOrderingToolName(name)
+      pendingOperations.set(native, (pendingOperations.get(native) ?? 0) + 1)
+      if (options.maySubmit)
+        pendingSubmissions.add(native)
+    },
     record(name: string, result: unknown) {
       const publicName = name
       name = nativeOrderingToolName(name)
@@ -121,7 +148,55 @@ export function createMenuReplyWindow() {
       }
       if (!result || typeof result !== 'object')
         return
+      const execution = safeParse(serviceOperationSchema, 'execution' in result ? result.execution : undefined)
+      if (execution.success && execution.output.steps.some(step => step.effect === 'order' && step.state === 'unknown'))
+        orderUnconfirmed = true
       const payload = result as Record<string, unknown>
+      const pending = pendingOperations.get(name) ?? 0
+      if (pending > 0)
+        pendingOperations.set(name, pending - 1)
+      let observedEffect: BrowserEffectState | undefined
+      if (['browser', 'host'].includes(String(payload.source))) {
+        if (payload.effect === 'unknown' || payload.effect === 'pending' || payload.status === 'unknown')
+          observedEffect = 'unknown'
+        else if (payload.effect === 'partial')
+          observedEffect = 'partial'
+        else if (payload.effect === 'applied' || payload.status === 'verified')
+          observedEffect = payload.effect === 'none' ? 'none' : 'applied'
+        else if (payload.effect === 'none' || payload.status === 'proposal_rejected')
+          observedEffect = 'none'
+      }
+      if (execution.success) {
+        const writes = execution.output.steps.filter(step => step.effect === 'cart' || step.effect === 'order')
+        if (!writes.length && !observedEffect)
+          observedEffect = 'none'
+        if (writes.some(step => step.state === 'unknown' || (step.dispatchMs !== undefined && step.state !== 'completed')))
+          observedEffect = 'unknown'
+        else if (writes.some(step => step.state === 'completed') && observedEffect === 'none')
+          observedEffect = 'applied'
+      }
+      if (payload.execution !== undefined && !execution.success && pending > 0)
+        observedEffect = 'unknown'
+      if (!observedEffect && pending > 0)
+        observedEffect = 'unknown'
+      if (observedEffect === 'unknown' && pendingSubmissions.has(name))
+        orderUnconfirmed = true
+      if (pending <= 1)
+        pendingSubmissions.delete(name)
+      if (observedEffect) {
+        if (effectState === 'unknown' || observedEffect === 'unknown')
+          effectState = 'unknown'
+        else if (effectState === 'partial' || observedEffect === 'partial')
+          effectState = 'partial'
+        else if (effectState === 'applied' || observedEffect === 'applied')
+          effectState = 'applied'
+        else
+          effectState = 'none'
+      }
+      const submission = safeParse(pbSubmissionResultSchema, payload)
+      if (submission.success && ['pending', 'unknown'].includes(submission.output.status))
+        orderUnconfirmed = true
+
       if (['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_confirm_add', 'browser_question_answer'].includes(name))
         cartChange = payload.ok === true && payload.status === 'verified' ? payload : undefined
       if (name === 'browser_present') {
@@ -131,13 +206,13 @@ export function createMenuReplyWindow() {
           presentationFailure = undefined
       }
       publicReadReply = browserReadSummary(publicName, payload) ?? publicReadReply
-      if ((name.startsWith('browser_cart_') || name === 'browser_confirm_add' || name === 'browser_question_answer') && payload.source === 'browser' && typeof payload.customerMessage === 'string') {
+      if ((name.startsWith('browser_cart_') || ['browser_confirm_add', 'browser_question_answer', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone'].includes(name)) && ['browser', 'host'].includes(String(payload.source)) && typeof payload.customerMessage === 'string') {
         if (payload.status === 'verified' || payload.status === 'preserved') {
           if (payload.status === 'verified' && typeof payload.effectMessage === 'string')
             browserEffects.add(payload.effectMessage)
           browserOutcome = operationReplyFrom(payload)
         }
-        else if (['unknown', 'rejected', 'clarification'].includes(String(payload.status))) {
+        else if (['unknown', 'rejected', 'proposal_rejected', 'clarification'].includes(String(payload.status)) || (payload.effect === 'none' && payload.ok === false)) {
           // A later refusal cannot erase an earlier verified effect. State
           // only completed effects here, never reuse an older cart as current.
           browserOutcome = [...browserEffects, payload.customerMessage].join(' ')
@@ -218,6 +293,8 @@ export function createMenuReplyWindow() {
     },
     hasReceipts: () => reads > 0 || cartReply !== undefined || publicReadReply !== undefined,
     browserOutcome: () => browserOutcome,
+    effectState: (): BrowserEffectState | undefined => [...pendingOperations.values()].some(count => count > 0) ? 'unknown' : effectState,
+    orderUnconfirmed: () => orderUnconfirmed || pendingSubmissions.size > 0,
     cartChange: () => cartChange,
     presentationFailure: () => presentationFailure,
     reply() {
@@ -262,7 +339,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   // actually checked in this turn. Preserve query facts before its next step.
   const searched = result.requestedTools.some(name => nativeOrderingToolName(name) === 'browser_search')
   const searchReply = searched && options.menu.hasReceipts() ? options.menu.reply() : ''
-  let outcome = options.outcome
+  let outcome = options.outcome ?? options.menu.browserOutcome()
   if (outcome && searchReply) {
     if (searchReply.includes(outcome))
       outcome = searchReply
@@ -285,7 +362,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
     : undefined
   const unresolved = clarification
     ? { role: 'assistant' as const, content: clarification.content, clarification: true as const }
-    : options.browserRecovery ? browserRecoveryReply({ ...options.browserRecovery, verifiedMessage: options.menu.hasReceipts() ? options.menu.reply() : undefined }) : { role: 'error' as const, content: options.failureMessage }
+    : options.browserRecovery ? browserRecoveryReply({ ...options.browserRecovery, effect: options.menu.effectState(), orderUnconfirmed: options.menu.orderUnconfirmed(), verifiedMessage: options.menu.browserOutcome() ?? (options.menu.hasReceipts() ? options.menu.reply() : undefined) }) : { role: 'error' as const, content: options.failureMessage }
   // A true menu receipt cannot complete a known mutation task. Preserve the
   // requested effect even when Main chooses a factual but unrelated lookup.
   const intent = options.handoff?.intent ?? ''
@@ -307,7 +384,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
     if (result.reason === 'tool-rejected' && passiveOnly && displayFailure && !operationRequired)
       return { role: 'assistant' as const, content: [receiptReply, displayFailure].filter(Boolean).join(' ') }
     if (options.browserRecovery)
-      return browserRecoveryReply({ ...options.browserRecovery, verifiedMessage: receiptReply || undefined })
+      return browserRecoveryReply({ ...options.browserRecovery, effect: options.menu.effectState(), orderUnconfirmed: options.menu.orderUnconfirmed(), verifiedMessage: receiptReply || undefined })
     return receiptReply
       ? { role: 'assistant' as const, content: `${receiptReply} ${options.failureMessage}` }
       : { role: 'error' as const, content: options.failureMessage }

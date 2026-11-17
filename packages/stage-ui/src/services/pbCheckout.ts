@@ -14,6 +14,17 @@ const methods = [
   { method: 'donation' as const, value: '6', label: '捐贈發票', placeholder: '請輸入3~7碼數字' },
 ]
 
+/** Resolves a unique visible contact field by its merchant label, independently of input type. */
+export function notificationField(kind: 'phone' | 'email') {
+  const label = kind === 'phone' ? '手機號碼' : 'E-mail'
+  // PB has rendered phone as both email and tel. Labels prevent overwriting email.
+  const fields = Array.from(document.querySelectorAll<HTMLElement>('.order-create .el-form-item, .order-create .field'))
+    .filter(item => Array.from(item.querySelectorAll('label')).some(node => node.textContent?.trim() === label))
+    .flatMap(item => Array.from(item.querySelectorAll<HTMLInputElement>('input')))
+    .filter(input => input.isConnected && input.getClientRects().length)
+  return fields.length === 1 ? fields[0] : undefined
+}
+
 /** One document's checkout draft and one-use submission ticket; no payment controls are exposed. */
 export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: () => number, onDispatch: () => void, onAccepted: () => void, canSubmit: boolean) {
   let confirmation: { token: string, fingerprint: string, expiresAt: number } | undefined
@@ -21,14 +32,6 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
   function unique<T extends HTMLElement>(elements: Iterable<T> | ArrayLike<T>) {
     const visible = Array.from(elements).filter(element => element.isConnected && element.getClientRects().length)
     return visible.length === 1 ? visible[0] : undefined
-  }
-  function field(kind: 'phone' | 'email') {
-    const label = kind === 'phone' ? '手機號碼' : 'E-mail'
-    // PB has rendered its phone as both email and tel. Resolve form labels,
-    // never DOM position or input type, so a phone cannot overwrite an email.
-    return unique(Array.from(document.querySelectorAll<HTMLElement>('.order-create .el-form-item, .order-create .field'))
-      .filter(item => Array.from(item.querySelectorAll('label')).some(node => node.textContent?.trim() === label))
-      .flatMap(item => Array.from(item.querySelectorAll<HTMLInputElement>('input'))))
   }
   function read(): PbCheckout | undefined {
     if (!location.pathname.endsWith('/orders/create') || !document.querySelector('.order-create'))
@@ -57,8 +60,8 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
       if (!valid)
         missing.push(`請在畫面${method.method === 'carrier' || method.method === 'citizen' ? '掃描或輸入' : '填寫'}${method.label}。`)
     }
-    const phone = field('phone')
-    const email = field('email')
+    const phone = notificationField('phone')
+    const email = notificationField('email')
     if (phone)
       fields.push({ kind: 'phone', label: '通知手機', value: phone.value.trim(), valid: /^\d{10,15}$/.test(phone.value.trim()) })
     if (email)
@@ -119,7 +122,7 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
           return unique(document.querySelectorAll<HTMLInputElement>(`.order-create input[placeholder="${definition.placeholder}"]`))
         }
         const invalidContact = state.fields.find(field => ['phone', 'email'].includes(field.kind) && field.value && !field.valid)
-        return field(invalidContact?.kind === 'email' ? 'email' : 'phone')
+        return notificationField(invalidContact?.kind === 'email' ? 'email' : 'phone')
       }
       if (!locate())
         return
@@ -136,11 +139,11 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
       if (!/^\d{10,15}$/.test(value))
         throw new Error('請提供完整通知手機號碼。')
       confirmation = undefined
-      await controls.act('note', '填寫通知手機', 'draft', () => field('phone'), (target) => {
+      await controls.act('note', '填寫通知手機', 'draft', () => notificationField('phone'), (target) => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(target, value)
         target.dispatchEvent(new Event('input', { bubbles: true }))
         target.dispatchEvent(new Event('change', { bubbles: true }))
-      }, () => field('phone')?.value === value)
+      }, () => notificationField('phone')?.value === value)
       return read()!
     },
     async prepare() {

@@ -1,15 +1,24 @@
 /** Copy for the standalone ordering runtime, without loading a Vue i18n instance. */
 export const orderingMessages = {
   'zh-Hant': {
+    restart: { pending: '這筆訂單尚未付款，請先在畫面完成付款；若不需要這筆訂單，請先選擇「放棄付款」並確認，再開始新訂單。', unknown: '付款或上一筆操作結果仍在確認，暫時無法開始新訂單，請先核對畫面或洽現場人員。', unavailable: '目前無法確認訂單狀態，暫時無法開始新訂單，請稍後再試或洽現場人員。' },
     incompleteRequest: '請把需求說完整，例如想點哪道餐點、幾份。',
     checkoutInvitation: { question: '要結帳嗎？', accept: '開啟購物車核對餐點，接著進行結帳；不送出訂單或付款。', decline: '繼續點餐，保留購物車裡的餐點。' },
-    recovery: { table: '請在畫面選擇桌號或櫃台自取，再點「開始點餐」。', menu: '您可以直接在畫面選餐，完成後打開購物車核對。', cart: '請在購物車畫面核對餐點與份數，也可以直接在畫面調整。', checkout: '請在畫面繼續填寫或修改結帳資料，需要協助時請洽現場人員。', review: '請先打開購物車，核對剛才調整的餐點與份數，避免重複操作；需要協助時請洽現場人員。', unavailable: '您可以先在畫面繼續點餐；如果畫面也無法操作，請洽現場人員。' },
+    orderState: { pending: '訂單資料已建立，尚待付款。請使用畫面提供的付款方式：{methods}。目前尚不能以語音選擇付款方式。', paid: '目前訂單顯示付款完成，請查看畫面的訂單進度。', cancelled: '目前訂單顯示未付款取消，請在畫面開始新訂單。', unknown: '目前無法核實付款結果，請先核對畫面或洽現場人員，避免重複付款或送單。', methodsUnknown: '以畫面為準' },
+    recovery: { 'noChange': '這次沒有送出訂單或變更餐點，請依目前畫面修正資料或告訴我要如何繼續。', 'applied': '已核實的操作已保留，其他需求尚未完成，請告訴我要繼續哪一步。', 'partial': '已完成的項目已保留，請先確認尚未完成的項目，避免重複操作。', 'payment': '請在付款畫面確認目前訂單與可用方式；付款結果未核實前，請勿重複付款。', 'order-result': '請核對畫面的訂單與付款狀態；結果不明時請洽現場人員，避免重複送單或付款。', 'order': '訂單送出結果尚未確認，請由現場人員核對 PB 訂單紀錄；確認前不要再次送出。', 'table': '請在畫面選擇桌號或櫃台自取，再點「開始點餐」。', 'menu': '您可以直接在畫面選餐，完成後打開購物車核對。', 'cart': '請核對購物車的餐點、份數與金額，正確請說「正確」，接著選擇發票並填寫通知資料。最後會再請您確認送出訂單；也可以依畫面操作。', 'checkout': '請在畫面繼續填寫或修改結帳資料，需要協助時請洽現場人員。', 'review': '請先打開購物車，核對剛才調整的餐點與份數，避免重複操作；需要協助時請洽現場人員。', 'unavailable': '您可以先在畫面繼續點餐；如果畫面也無法操作，請洽現場人員。' },
     targetChoice: '請選擇其中一項：{items}。請說餐點名稱或第幾項，也可以說取消。',
     queryActions: { clarify: '你想調整價位，還是換餐點種類？', exhausted: '目前條件下沒有其他餐點了。你想調整價位，還是換餐點種類？' },
     queryScope: { expired: '菜單或推薦已更新，請重新提出查詢。', question: '你想看剛才推薦的，還是整份菜單符合的餐點？', clarification: '剛才推薦的是只查剛才介紹的那幾道；整份菜單是查店裡所有餐點。你想查哪個範圍？', shown: '剛才推薦的', catalog: '整份菜單' },
     checkout: {
+      invalidInvoice: '{label}格式不正確，請在畫面重新{entry}，完成後告訴我「好了」。',
+      entryModes: '選好後會接著填寫通知資料；可手動填好再說「好了」由我接續，也可依畫面自行完成結帳。',
+      notSubmitted: '剛才尚未送出訂單，請重新核對並確認。',
+      invoiceOptions: '發票要用哪種方式？{methods}。',
+      resumeEntry: '請繼續填寫畫面上的發票或通知資料。完成後可以說「好了」讓我重新檢查，或依畫面自行繼續；送單前會另外確認。',
+
+      phoneKeypad: { title: '通知手機數字鍵盤', open: '開啟數字鍵盤', close: '關閉鍵盤', hint: '請輸入通知手機，填好後關閉鍵盤並說「好了」，接著核對訂單內容。', clear: '清除', delete: '刪除一碼' },
       notificationPhone: {
-        introduction: '接下來請提供通知手機，可以分段說；完整後我會覆誦確認。也可以在畫面填寫電子信箱，完成後告訴我「好了」。',
+        introduction: '接下來請提供通知手機，可以分段說；完整後我會覆誦確認。也可以點手機欄位旁的數字鍵盤輸入，或填寫電子信箱，完成後告訴我「好了」。',
         invalid: '號碼格式不正確，請重新報通知手機，從 0 9 開始，共 10 碼。',
         confirm: '通知手機是 {digits}，正確嗎？確認後才填入，不會送出訂單。',
         partial: '已收到 {digits}，共 {count} 碼，請繼續報後面的號碼；說「重來」可重新輸入。',
@@ -91,14 +100,23 @@ export const orderingMessages = {
     inquiryCorrection: '了解，您是在詢問，沒有要點這道。',
   },
   'en': {
+    restart: { pending: 'This order is unpaid. Complete payment on screen, or choose and confirm abandon payment before starting a new order.', unknown: 'Payment or an earlier operation is still unconfirmed. Check the order or ask staff before starting a new order.', unavailable: 'The order status could not be verified. Try again later or ask staff before starting a new order.' },
     incompleteRequest: 'Please state your full request, such as which dish you want and how many servings.',
-    recovery: { table: 'Choose your table or counter pickup on screen, then press Start ordering.', menu: 'You can select dishes on screen, then open the cart to review them.', cart: 'Review the dishes and quantities in your cart. You can adjust them on screen.', checkout: 'Continue entering or updating checkout details on screen, or ask a staff member for help.', review: 'Open the cart and check the dishes and quantities before continuing to avoid repeating changes. Ask a staff member for help if needed.', unavailable: 'You can continue ordering on screen. If the screen is also unavailable, please ask a staff member for help.' },
+    orderState: { pending: 'Order data has been created and payment is pending. Use the methods shown on screen: {methods}. Voice selection of payment methods is not available yet.', paid: 'The order currently shows payment completed. Check its progress on screen.', cancelled: 'The order shows cancellation before payment. Start a new order on screen.', unknown: 'The payment result cannot be verified. Check the screen or ask staff before submitting or paying again.', methodsUnknown: 'please refer to the screen' },
+    recovery: { 'noChange': 'This operation did not submit an order or change the meals. Correct the current form or tell me how to continue.', 'applied': 'Verified changes are retained. Tell me which unfinished step to continue.', 'partial': 'Completed changes are retained. Check the remaining steps before repeating an operation.', 'payment': 'Please check the current order and methods on the payment screen. Do not pay again while the result is unconfirmed.', 'order-result': 'Check the displayed order and payment status. Ask staff if unclear; avoid submitting or paying again.', 'order': 'The order submission is unconfirmed. Please ask staff to check PB order records before submitting again.', 'table': 'Choose your table or counter pickup on screen, then press Start ordering.', 'menu': 'You can select dishes on screen, then open the cart to review them.', 'cart': 'Check the meals, quantities and total, then say correct. Next choose an invoice method and enter contact details. You will confirm submission at the end; you can also follow the controls on screen.', 'checkout': 'Continue entering or updating checkout details on screen, or ask a staff member for help.', 'review': 'Open the cart and check the dishes and quantities before continuing to avoid repeating changes. Ask a staff member for help if needed.', 'unavailable': 'You can continue ordering on screen. If the screen is also unavailable, please ask a staff member for help.' },
     targetChoice: 'Choose one item: {items}. Say its name or position, or say cancel.',
     queryActions: { clarify: 'Would you like to change the price range or the type of food?', exhausted: 'There are no more dishes under the current conditions. Would you like to change the price range or the type of food?' },
     queryScope: { expired: 'The menu or recommendations have changed. Please start your query again.', question: 'Would you like to check the previous recommendations or matching dishes from the whole menu?', clarification: 'Previous recommendations means only the dishes just introduced; the whole menu means all dishes offered here. Which would you like to check?', shown: 'Previous recommendations', catalog: 'Whole menu' },
     checkout: {
+      invalidInvoice: 'The {label} format is invalid. Correct it on screen and say done.',
+      entryModes: 'Contact details follow the invoice choice. Fill the form and say done for help, or complete checkout on screen.',
+      notSubmitted: 'The order was not submitted. Review the current summary and confirm again. ',
+      invoiceOptions: 'Which invoice method would you like? {methods}.',
+      resumeEntry: 'Continue the invoice or contact form on screen. Say done for a fresh check, or continue manually. Submission requires a separate confirmation.',
+
+      phoneKeypad: { title: 'Notification phone keypad', open: 'Open numeric keypad', close: 'Close keypad', hint: 'Enter your notification phone, then close the keypad and say done to review your order.', clear: 'Clear', delete: 'Delete digit' },
       notificationPhone: {
-        introduction: 'Please provide your notification mobile number. You may say it in parts; I will read it back for confirmation. You can also enter an email address on screen and say done.',
+        introduction: 'Please provide your notification mobile number. You may say it in parts; I will read it back for confirmation. You can also use the keypad beside the phone field or enter an email address on screen and say done.',
         invalid: 'Please start again with a ten-digit mobile number beginning with 0 9.',
         confirm: 'Your notification number is {digits}. Is that correct? Confirmation fills the field only; it does not submit the order.',
         partial: 'Received {digits}, {count} digits so far. Please continue, or say start again to restart.',

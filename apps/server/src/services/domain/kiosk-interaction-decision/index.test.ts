@@ -469,6 +469,21 @@ describe('kiosk System One interaction decision', () => {
     }))
   })
 
+  // Report: this chat, Nov17 case 12 — PB donation/contact validity must survive the Jev prompt projection.
+  it('provides fresh PB field validity without serializing invoice or phone values', async () => {
+    let sentState = ''
+    const invoke = vi.fn(async (state: string) => {
+      sentState = state
+      return { answers: { route: { choice: 'intent:continue' } } }
+    })
+    await decideInteraction({ candidates: [{ id: 'intent:continue', description: '繼續檢查資料' }], decisionState: { phase: 'ordering', checkoutSnapshot: { source: 'pb', step: 'invoice-details', invoiceMethod: 'donation', ready: false, fields: [{ kind: 'donation', present: true, valid: true }, { kind: 'phone', present: true, valid: false }], phone: '0912345678', code: '12345' } }, invoke, policy, transcript: '好了' })
+    expect(sentState).toContain('"step":"invoice-details"')
+    expect(sentState).toContain('"invoiceMethod":"donation"')
+    expect(sentState).toContain('"kind":"phone","present":true,"valid":false')
+    expect(sentState).not.toContain('0912345678')
+    expect(sentState).not.toContain('12345')
+  })
+
   it('provides the visible checkout step without exposing scanned codes in the model state', async () => {
     let sentState = ''
     const invoke = vi.fn(async (state: string) => {

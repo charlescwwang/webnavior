@@ -17,12 +17,53 @@ function connection(documentId = 'document') {
 }
 
 describe('interactive service transport ownership', () => {
+  // Report: this chat, 2026-11-17 — DEV-334570 becomes stuck behind preparation/restart guards.
+  it.each(['browser_cart_get', 'browser_state_get'])('recovers a PB %s read that failed before reaching the journal without replaying a mutation', async (name) => {
+    const first = connection()
+    first.discover = vi.fn(async request => ({ ...request, documentId: 'document', toolsRevision: 1, tools: [{ name, description: '', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } }] }))
+    first.execute = vi.fn(async () => {
+      throw new Error('read transport interrupted')
+    })
+    const second = connection()
+    second.discover = first.discover
+    second.inspect = vi.fn<ServiceConnection['inspect']>(async request => ({ connectionId: request.connectionId, documentId: request.documentId, pendingCount: 0, operations: request.operationIds.map(operationId => ({ operationId, status: 'missing' })) }))
+    const client = createInteractiveServiceClient()
+    client.activateTransport('https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table', vi.fn().mockReturnValueOnce(first).mockReturnValue(second))
+    await client.waitUntilReady()
+    await expect(client.execute(client.tools.value[0], { includeCatalog: false })).rejects.toThrow('read transport interrupted')
+    await client.recover()
+    expect(client.availability.value).toBe('ready')
+    expect(first.execute).toHaveBeenCalledOnce()
+    expect(second.execute).not.toHaveBeenCalled()
+    client.activate()
+  })
+
+  it('does not use a read-only hint to discard an unconfirmed PB cart write', async () => {
+    const first = connection()
+    first.discover = vi.fn(async request => ({ ...request, documentId: 'document', toolsRevision: 1, tools: [{ name: 'browser_cart_add', description: '', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } }] }))
+    first.execute = vi.fn(async () => {
+      throw new Error('lost write receipt')
+    })
+    const second = connection()
+    second.discover = first.discover
+    second.inspect = vi.fn<ServiceConnection['inspect']>(async request => ({ connectionId: request.connectionId, documentId: request.documentId, pendingCount: 0, operations: request.operationIds.map(operationId => ({ operationId, status: 'missing' })) }))
+    const client = createInteractiveServiceClient()
+    client.activateTransport('https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table', vi.fn().mockReturnValueOnce(first).mockReturnValue(second))
+    await client.waitUntilReady()
+    await expect(client.execute(client.tools.value[0], {})).rejects.toThrow('lost write receipt')
+    await expect(client.recover()).rejects.toThrow('先前操作')
+    expect(client.availability.value).toBe('unavailable')
+    expect(second.execute).not.toHaveBeenCalled()
+    client.activate()
+  })
   it('retires cart tools after a same-document submission acknowledgement without treating it as payment', async () => {
     const first = connection('cart')
     first.discover = vi.fn(async request => ({ ...request, documentId: 'cart', toolsRevision: 1, tools: [{ name: 'browser_order_submit', description: '', inputSchema: { type: 'object' } }] }))
     first.execute = vi.fn(async request => ({ connectionId: request.connectionId, documentId: request.documentId, operationId: request.operationId, result: { ok: true, source: 'browser', schemaVersion: 1, code: 'order-submission-result', dispatch: 'dispatched', status: 'pending', consistency: 'unavailable', reason: 'result-not-ready', effect: 'pending', customerMessage: '已按下送出訂單。' } }))
+    const resultPeer = connection('result')
+    resultPeer.discover = vi.fn(async request => ({ ...request, documentId: 'result', toolsRevision: 1, tools: [{ name: 'browser_state_get', description: '', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } }, { name: 'browser_order_submit', description: '', inputSchema: { type: 'object' } }] }))
     const client = createInteractiveServiceClient()
-    client.activateTransport('http://127.0.0.1:5188/order/store/1kgJeql/internal_use/menu/select-table', () => first)
+    client.activateTransport('http://127.0.0.1:5188/order/store/1kgJeql/internal_use/menu/select-table', vi.fn().mockReturnValueOnce(first).mockReturnValue(resultPeer))
     await client.waitUntilReady()
     const stale = client.tools.value[0]
     const resolvedBinding = vi.fn()
@@ -32,9 +73,10 @@ describe('interactive service transport ownership', () => {
     })
     await expect(client.execute(stale, { confirmationToken: 'once' })).resolves.toMatchObject({ effect: 'pending' })
     expect(resolvedBinding).toHaveBeenCalledWith('cart')
-    expect(client.tools.value).toEqual([])
-    expect(client.getDocumentId()).toBeUndefined()
-    expect(client.availability.value).toBe('idle')
+    await client.waitUntilReady()
+    expect(client.tools.value.map(tool => tool.name)).toEqual(['browser_state_get'])
+    expect(client.getDocumentId()).toBe('result')
+    expect(client.availability.value).toBe('ready')
     expect(client.editorRetired.value).toBe(true)
     await expect(client.execute(stale, { confirmationToken: 'once' })).rejects.toThrow()
     expect(first.execute).toHaveBeenCalledOnce()

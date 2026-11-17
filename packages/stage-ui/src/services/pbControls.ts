@@ -115,8 +115,8 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
     throw new Error('PB control journey is unavailable.')
   const menuPath = `${match[1]}menu`
   const cartPath = `${match[1]}orders/create`
-  async function ready(check: () => boolean, accepted = false) {
-    const deadline = performance.now() + 5000
+  async function ready(check: () => boolean, accepted = false, timeoutMs = 5000) {
+    const deadline = performance.now() + timeoutMs
     while (!check()) {
       if ((!accepted && signal.aborted) || performance.now() >= deadline)
         throw new Error('PB 控制項尚未完成更新，請確認目前畫面；不會自動重試寫入。')
@@ -124,7 +124,9 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
     }
   }
   async function act(action: ServiceAction, label: string, effect: ServiceStep['effect'], locate: () => HTMLElement | undefined, dispatch: (target: HTMLElement) => void, check: () => boolean, target?: ServiceStep['target']) {
-    await operation.run(action, label, effect, locate, async () => dispatch(locate()!), async () => ready(check, effect === 'cart' || effect === 'order'), { target })
+    // Merchant submission can include official invoice validation and network
+    // processing. Await that one accepted click longer; never click it again.
+    await operation.run(action, label, effect, locate, async () => dispatch(locate()!), async () => ready(check, effect === 'cart' || effect === 'order', effect === 'order' ? 30_000 : 5000), { target })
   }
   const dialog = () => unique(Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).filter(element => element.querySelector('.menu-dialog') || element.matches('.menu-dialog')))
   const productDialog = (name: string) => {
@@ -447,5 +449,5 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
       }
     }, { deferredDispatch: true, target: { kind: 'field', ref: 'cart-clear' } })
   }
-  return { act, ready, canEdit, search, open, close, navigate, prepare, add, edit, clearCart, note: setNote }
+  return { act, ready, canEdit, search, open, close, dismissAnnouncement, navigate, prepare, add, edit, clearCart, note: setNote }
 }

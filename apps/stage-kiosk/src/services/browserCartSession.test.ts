@@ -1,8 +1,53 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 
 import { createBrowserCartSession } from './browserCartSession'
 
+// Report: this chat, 2026-11-17 — DEV-334570 shows generic preparation/reset failures.
+it('preserves the actual rejected read reason without admitting or changing the cart', async () => {
+  const { gate } = setup()
+  await expect(gate.prepare('visitor', 'https://app.esgpb.com/order/store/1kgJeql/internal_use/menu', async () => ({ ok: false, source: 'browser', error: 'PB 頁面已更新，請重新載入後再試。' }), () => true)).rejects.toThrow('PB 頁面已更新')
+  expect(gate.owns('visitor', 'https://app.esgpb.com/order/store/1kgJeql/internal_use/menu')).toBe(false)
+})
+
 const service = 'https://app.esgpb.com/order/store/test/pick_up/menu'
+
+// Report: this chat, 2026-11-17 — DEV-334570 19:21 reports
+// 「操作畫面已隱藏」: forAdmission on the menu tries to dismiss PB's notice
+// while the Host preparation cover deliberately hides the native view.
+it('reads the covered menu without requesting a visible announcement action', async () => {
+  const { gate } = setup()
+  const read = vi.fn(async (input: { includeCatalog: boolean, forAdmission?: boolean } = { includeCatalog: false, forAdmission: true }) => {
+    if (input.forAdmission)
+      throw new Error('操作畫面已隱藏，尚未派送下一步。')
+    return { ok: true, page: 'menu', cart: { version: 'empty', lines: [] } }
+  })
+  const entry = 'https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table'
+  expect(await gate.prepare('current', entry, read, () => true)).toBe('ready')
+  expect(read).toHaveBeenCalledExactlyOnceWith({ includeCatalog: false })
+  expect(gate.owns('current', entry)).toBe(true)
+})
+
+it('requests the private cart read only after observing the actual approved table page', async () => {
+  const { gate } = setup()
+  const read = vi.fn()
+    .mockResolvedValueOnce({ ok: true, page: 'table', code: 'table-selection-required' })
+    .mockResolvedValueOnce({ ok: true, page: 'table', cart: { version: 'occupied', lines: [{}] } })
+  const entry = 'https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table'
+  expect(await gate.prepare('current', entry, read, () => true)).toBe('blocked')
+  expect(read).toHaveBeenNthCalledWith(1, { includeCatalog: false })
+  expect(read).toHaveBeenNthCalledWith(2, { includeCatalog: false, forAdmission: true })
+  expect(gate.owns('current', entry)).toBe(false)
+})
+
+it('does not read a retired table document or grant table privileges to another service', async () => {
+  const { gate } = setup()
+  const read = vi.fn(async () => ({ ok: true, page: 'table', code: 'table-selection-required' }))
+  const entry = 'https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table'
+  expect(await gate.prepare('current', entry, read, () => false)).toBe('stale')
+  expect(read).toHaveBeenCalledTimes(1)
+  await expect(gate.prepare('current', 'https://example.com/menu', read, () => true)).rejects.toThrow()
+  expect(read).toHaveBeenCalledTimes(2)
+})
 function setup() {
   const records = new Map<string, string>()
   const storage = { getItem: (key: string) => records.get(key) ?? null, setItem: (key: string, value: string) => {

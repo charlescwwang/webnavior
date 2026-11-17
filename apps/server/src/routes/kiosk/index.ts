@@ -5,6 +5,7 @@ import type { KioskProfileSnapshot } from '../../schemas/kiosk'
 import type { createKioskPosGateway } from '../../services/adapters/kioskPos'
 import type { KioskService } from '../../services/domain/kiosk'
 import type { KioskAgentInteractionState, KioskReplyFailureReason } from '../../services/domain/kiosk-agent-interaction'
+import type { KioskAudioGateway } from '../../services/domain/kiosk-audio'
 import type { KioskConversationDecisionState } from '../../services/domain/kiosk-interaction-decision/contracts'
 import type { KioskMediaService } from '../../services/domain/kiosk-media'
 import type { createKioskSystemOneService } from '../../services/domain/kiosk-system-one'
@@ -223,10 +224,7 @@ export interface KioskRoutesOptions {
     modelFor: (capability: 'chat' | 'vision' | 'asr' | 'tts') => Promise<string | undefined>
   }
   /** Device-authenticated ASR/TTS transport; its configuration stays server-side. */
-  audioGateway?: {
-    speak: (input: { locale: string, modelName: string, text: string }) => Promise<Response>
-    transcribe: (input: { audio: File, modelName: string }) => Promise<string>
-  }
+  audioGateway?: KioskAudioGateway
   systemOne?: Pick<ReturnType<typeof createKioskSystemOneService>, 'decide' | 'getPolicy' | 'isEnabled' | 'maxActionCandidates' | 'routing'>
   /** Development-only trace of the tool protocol; never include customer content or tool arguments. */
   toolTraceObserver?: { record: (input: { phase: 'browser-results' | 'llm-requests' | 'tools-provided', toolNames: string[], visitorSessionId: string }) => void }
@@ -278,9 +276,10 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       return c.json({ error: 'POS Bridge unavailable.' }, 503)
     const origin = c.req.header('Origin')
     // Separate localhost Vite/API ports are an explicit development policy;
-    // a public deployment accepts only its exact configured origin.
+    // the selected LAN Kiosk is the only additional remote HTTP origin.
     const localDevelopmentOrigin = options.apiOrigin && origin && isLoopbackOrigin(options.apiOrigin) && isLoopbackOrigin(origin)
-    if (options.apiOrigin && origin && origin !== options.apiOrigin && !localDevelopmentOrigin)
+    const lanKioskOrigin = origin === 'http://100.92.1.80:5169'
+    if (options.apiOrigin && origin && origin !== options.apiOrigin && !localDevelopmentOrigin && !lanKioskOrigin)
       throw createForbiddenError('Untrusted POS origin')
     if (!isPublicPosRoute(path))
       await resolveAuthenticatedDevice(c, options.kioskService)
@@ -368,7 +367,8 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         httpOnly: true,
         path: '/api/kiosk',
         sameSite: 'Lax',
-        secure: options.secureCookies,
+        // LAN HTTP needs a host-only HTTP cookie; HTTPS entries retain Secure.
+        secure: options.secureCookies && c.req.header('Origin') !== 'http://100.92.1.80:5169',
       })
       device = replacement.device
     }
@@ -412,6 +412,24 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       source: 'local-pin',
       body: await c.req.json().catch(() => null),
     }))
+  })
+
+  routes.get('/audio/recognition-policy', async (c) => {
+    await resolveAuthenticatedDevice(c, options.kioskService)
+    if (!options.audioGateway)
+      throw createBadRequestError('Kiosk audio gateway is unavailable', 'KIOSK_AUDIO_GATEWAY_UNAVAILABLE')
+    c.header('Cache-Control', 'no-store')
+    return c.json(await options.audioGateway.recognitionPolicy())
+  })
+
+  routes.post('/audio/falcon-transcriptions', async (c) => {
+    await resolveAuthenticatedDevice(c, options.kioskService)
+    if (!options.audioGateway)
+      throw createBadRequestError('Kiosk audio gateway is unavailable', 'KIOSK_AUDIO_GATEWAY_UNAVAILABLE')
+    if (c.req.header('Content-Type')?.split(';')[0].trim() !== 'application/octet-stream')
+      throw createBadRequestError('Falcon requires binary synchronized audio/video.', 'KIOSK_FALCON_INVALID_CLIP')
+    const result = await options.audioGateway.transcribeFalcon(await c.req.arrayBuffer(), c.req.raw.signal)
+    return c.json(result)
   })
 
   routes.post('/audio/transcriptions', async (c) => {
@@ -943,7 +961,8 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       httpOnly: true,
       path: '/api/kiosk',
       sameSite: 'Lax',
-      secure: options.secureCookies,
+      // LAN HTTP needs a host-only HTTP cookie; HTTPS entries retain Secure.
+      secure: options.secureCookies && c.req.header('Origin') !== 'http://100.92.1.80:5169',
     })
     return c.json({
       device: {
@@ -1188,10 +1207,9 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
       try {
         emit({ type: 'turn-started' })
         const answer = await streamKioskReply(input, (text) => {
-          // Draft prose can contain false success claims. Context-owned turns
-          // paint progress only; the Host renders their verified final outcome.
-          if (!input.decisionState?.context)
-            emit({ text, type: 'assistant-delta' })
+          // streamKioskReply owns the safe-text policy. Rechecking context here
+          // would also suppress a tool-free service answer on an ordering page.
+          emit({ text, type: 'assistant-delta' })
         }, () => {
           if (!input.signal.aborted)
             emit({ type: 'reply-progress' })
@@ -1275,8 +1293,8 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
   // A draft can precede a later tool call. Only rounds with no commerce tools,
   // browser context or finite reply validation may expose incremental prose.
   // History is read-only and does not turn a draft into an operation receipt.
-  const canStreamText = !input.decisionState?.context
-    && !input.decisionState?.browserContext
+  const serviceAnswer = isServiceAnswer(input.decisionState)
+  const canStreamText = (serviceAnswer || (!input.decisionState?.context && !input.decisionState?.browserContext))
     && (!('tools' in toolPolicy) || !toolPolicy.tools?.some(tool => tool.function.name !== 'kiosk_session_history'))
     && !input.toolResults.some(result => result.name !== 'kiosk_session_history')
   const body = {
@@ -1320,7 +1338,7 @@ async function finishConversationReply(
   // Persist/dispatch native arguments; expose model names again in continuations.
   answer = { ...answer, toolCalls: answer.toolCalls.map(call => ({ ...call, function: { ...call.function, arguments: browserToolArguments(call.function.name, call.function.arguments, 'host') } })) }
   const context = input.decisionState?.context
-  if (!context)
+  if (!context || isServiceAnswer(input.decisionState))
     return answer
   const browserCalls = answer.toolCalls.filter(call => call.function.name !== replyTool.function.name)
   if (browserCalls.length || input.toolResults.some(result => result.name !== 'kiosk_session_history'))
@@ -1329,9 +1347,18 @@ async function finishConversationReply(
   return { ...answer, toolCalls: [], reply: selected.reply, replyRepairRequests: Number(selected.repaired) }
 }
 
+/** General service exchanges cannot select ordering effects or consume pending questions. */
+function isServiceAnswer(state: KioskConversationDecisionState | undefined) {
+  return state?.serviceReply === true && state.readOnly === true && !state.requireMenuRead
+    && !state.handoff && !state.waitingFor && !state.context?.waitingFor && !state.browserContext?.waitingFor && !state.browserContext?.order
+    && !state.browserContext?.checkout && !['cart', 'checkout'].includes(state.browserContext?.page ?? '')
+}
+
 // A semantic food handoff must obtain a fresh read before any generated
 // final answer or order change. Internal catalog reads do not finish presentation.
 function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], 'tools' | 'toolResults' | 'decisionState'>) {
+  if (isServiceAnswer(input.decisionState))
+    return {} // This round has conversation authority only; no browser/history tool can follow a visible draft.
   if (input.decisionState?.browserContext || input.tools?.some(tool => Object.hasOwn(orderingTools, tool.function.name) || tool.function.name === 'browser_observe')) {
     const context = input.decisionState?.browserContext
     const allowed = context && new Set(context.allowedToolNames)
@@ -1537,6 +1564,13 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
  * into one leading message so the same request shape works across providers.
  */
 function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKioskReply>[0], 'actionPrompt' | 'agentInteraction' | 'decisionState' | 'profile' | 'tools'>) {
+  if (isServiceAnswer(input.decisionState)) {
+    return [
+      createCharacterInstructions(input.profile.snapshot),
+      input.profile.snapshot.characterCard?.postHistoryInstructions,
+      '本輪僅回覆一般服務問題，直接以簡短繁體中文回覆。沒有任何操作工具，不得聲稱已查詢菜單、已修改訂單、已付款或已呼叫人員。店務資訊只引用角色與店別設定中已提供的資料；未知就請顧客向現場人員確認。',
+    ].filter(Boolean).join('\n\n')
+  }
   // Browser services publish their own capabilities. Owned Menu/POS prompts
   // refer to a different state machine and must not govern this external page.
   if (input.decisionState?.browserContext || input.tools?.some(tool => Object.hasOwn(orderingTools, tool.function.name) || tool.function.name === 'browser_observe')) {

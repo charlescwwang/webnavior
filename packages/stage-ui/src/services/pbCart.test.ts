@@ -488,6 +488,15 @@ describe('pb cart operations', () => {
 // Report: this chat, 2026-10-30; PB returns order:null before its first cart item.
 describe('pb empty order lifecycle', () => {
   const pickup = { date: 'today', time: 'noon' }
+  // Report: this chat, Nov17 — first add paused ordering when PB returned a nullable pickup field.
+  it.each(['pick_up_date', 'pick_up_time'] as const)('reads a draft with null %s using the current menu pickup context', (field) => {
+    const cart = readCartPage({ subtotal: 130, diningTable: 'B2 吧檯', order: { hash: 'draft', pick_up_date: 'today', pick_up_time: 'noon', [field]: null }, details: [{ id: 1, amount: 1, unit_price: 130, note: null, item_type: 'product', item: { id: 2504, name: '炸排骨便當' }, product_prices: [] }] }, pickup, 0)
+    expect(cart.context.date).toBe('today')
+    expect(cart.context.time).toBe('noon')
+    expect(cart.context.tableName).toBe('B2 吧檯')
+    expect(cart.lines[0].name).toBe('炸排骨便當')
+    expect(cart.lines[0].quantity).toBe(1)
+  })
   it('accepts an explicit null order only when no details and zero subtotal agree', () => {
     expect(readCartPage({ order: null, subtotal: 0 }, pickup, 3)).toEqual({ lines: [], subtotal: 0, context: { ...pickup, manualRevision: 3 } })
     expect(readCartPage({ order: null, details: null, subtotal: 0 }, pickup, 3).lines).toEqual([])
@@ -511,6 +520,41 @@ describe('pb empty order lifecycle', () => {
     const before = await operations.observe()
     expect(await operations.execute({ action: 'add', version: before.version, productRef: 'p-new', quantity: 1, unitPrice: 10, note: '', selection: { version: 'config', variantRef: '', choices: [] } })).toMatchObject({ status: transition === 'created-order' ? 'verified' : 'unknown' })
   })
+})
+
+// Report: this chat, Nov17 — the cart was locked permanently after a successful native add lost its readback.
+it('reconciles only the exact expected cart after a failed readback without replaying the add', async () => {
+  const { gateway, operations } = setup()
+  const originalPrepare = gateway.prepare
+  const originalRead = gateway.read
+  let rejectRead = false
+  let commits = 0
+  gateway.prepare = async (input) => {
+    const prepared = await originalPrepare(input)
+    return { ...prepared, commit: async (onDispatch) => {
+      await prepared.commit(onDispatch)
+      commits++
+      rejectRead = true
+    } }
+  }
+  gateway.read = async () => {
+    if (rejectRead) {
+      rejectRead = false
+      throw new Error('Invalid type: Expected string but received null')
+    }
+    return originalRead()
+  }
+  const before = await operations.observe()
+  expect(await operations.execute({ action: 'add', version: before.version, productRef: 'p-new', quantity: 1, unitPrice: 23, note: '', selection: { version: 'config', variantRef: '', choices: [] } })).toMatchObject({ status: 'unknown' })
+  expect(operations.canRecover()).toBe(false)
+  const after = await gateway.read()
+  expect(operations.verifyPending({ ...after, subtotal: after.subtotal + 23 })).toBe(false)
+  expect(operations.verifyPending({ ...after, context: { ...after.context, tableName: 'another table' } })).toBe(false)
+  expect(operations.canRecover()).toBe(false)
+  expect(operations.verifyPending(after)).toBe(true)
+  expect(operations.canRecover()).toBe(true)
+  expect(commits).toBe(1)
+  expect((await operations.observe()).lines.filter(line => line.productRef === 'p-new')[0].quantity).toBe(1)
 })
 
 // Report: PB Create-DccDhWl4.js / DetailProductPrice-DpUTh351.js, Nov3 row binding.

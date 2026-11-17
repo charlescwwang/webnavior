@@ -2,7 +2,7 @@ import type { ProductSelection } from '@proj-airi/stage-shared/product-configura
 
 import { errorMessageFrom } from '@moeru/std'
 import { describePbMeal } from '@proj-airi/stage-shared/pb-menu-presentation'
-import { array, looseObject, number, parse, string, unknown } from 'valibot'
+import { array, looseObject, nullable, number, parse, string, unknown } from 'valibot'
 
 import { cartConfiguration } from './pbProduct'
 
@@ -40,8 +40,11 @@ export function readCartPage(value: unknown, pickup: { date: string, time: strin
       throw new Error('PB 空訂單的明細與小計不一致。')
     return { lines: [], subtotal: 0, context: { ...pickup, manualRevision, ...tableContext } }
   }
-  const cart = parse(looseObject({ subtotal: number(), order: looseObject({ hash: string(), pick_up_date: string(), pick_up_time: string() }), details: array(looseObject({ id: number(), amount: number(), unit_price: number(), note: unknown(), item_type: string(), item: looseObject({ id: number(), name: string() }), product_prices: array(looseObject({ parent_id: unknown(), product_attrs: array(looseObject({ amount: number(), attr: looseObject({ name: string() }) })) })) })) }), value)
-  return { context: { orderRef: cart.order.hash, date: cart.order.pick_up_date, time: cart.order.pick_up_time, manualRevision, ...tableContext }, subtotal: cart.subtotal, lines: cart.details.map(line => ({ ref: String(line.id), productRef: `${line.item_type === 'product' ? 'p' : 'pg'}-${line.item.id}`, name: line.item.name, options: line.product_prices.flatMap(price => price.product_attrs.map(choice => ({ name: choice.attr.name, quantity: choice.amount }))), description: line.product_prices.flatMap(price => price.product_attrs.map(choice => `${choice.attr.name} ×${choice.amount}`)).join('、'), quantity: line.amount, unitPrice: line.unit_price, note: typeof line.note === 'string' ? line.note : '', configuration: cartConfiguration(typeof line.note === 'string' ? line.note : '', line.product_prices) })) }
+  const cart = parse(looseObject({ subtotal: number(), order: looseObject({ hash: string(), pick_up_date: nullable(string()), pick_up_time: nullable(string()) }), details: array(looseObject({ id: number(), amount: number(), unit_price: number(), note: unknown(), item_type: string(), item: looseObject({ id: number(), name: string() }), product_prices: array(looseObject({ parent_id: unknown(), product_attrs: array(looseObject({ amount: number(), attr: looseObject({ name: string() }) })) })) })) }), value)
+  // PB Create-CjexdErb.js leaves draft pickup fields null until checkout.
+  // Resolve only explicit nulls against a fresh menu context, as for the empty
+  // cart; persisted strings remain authoritative and malformed fields reject.
+  return { context: { orderRef: cart.order.hash, date: cart.order.pick_up_date ?? pickup.date, time: cart.order.pick_up_time ?? pickup.time, manualRevision, ...tableContext }, subtotal: cart.subtotal, lines: cart.details.map(line => ({ ref: String(line.id), productRef: `${line.item_type === 'product' ? 'p' : 'pg'}-${line.item.id}`, name: line.item.name, options: line.product_prices.flatMap(price => price.product_attrs.map(choice => ({ name: choice.attr.name, quantity: choice.amount }))), description: line.product_prices.flatMap(price => price.product_attrs.map(choice => `${choice.attr.name} ×${choice.amount}`)).join('、'), quantity: line.amount, unitPrice: line.unit_price, note: typeof line.note === 'string' ? line.note : '', configuration: cartConfiguration(typeof line.note === 'string' ? line.note : '', line.product_prices) })) }
 }
 
 /** Formats vendor-confirmed rows for both read-back and write receipts without merging configurations. */
@@ -93,6 +96,25 @@ export function verifyCartRowEdit(before: CartSnapshot, after: CartSnapshot, ref
   })
 }
 
+/** Verifies the complete result of one add, including first-order creation and unrelated rows. */
+function verifyAddition(before: CartSnapshot, after: CartSnapshot, selection: PreparedItem, quantity: number) {
+  const expectedContext = !before.lines.length && !before.context.orderRef
+    ? { ...before.context, orderRef: after.context.orderRef }
+    : before.context
+  if (after.context.orderRef !== expectedContext.orderRef || after.context.date !== expectedContext.date || after.context.time !== expectedContext.time || after.context.tableName !== expectedContext.tableName || after.context.manualRevision !== expectedContext.manualRevision)
+    return false
+  const matches = (line: CartLine) => line.productRef === selection.productRef && line.configuration === selection.configuration && line.unitPrice === selection.unitPrice
+  const count = (cart: CartSnapshot) => cart.lines.filter(matches).reduce((sum, line) => sum + line.quantity, 0)
+  const allowed = new Set(before.lines.map(line => line.ref))
+  // Compare currency in hundredths so valid decimal prices do not fail on float drift.
+  const expectedMinor = Math.round(before.subtotal * 100) + Math.round(selection.unitPrice * 100) * quantity
+  return count(after) - count(before) === quantity
+    && Math.round(after.subtotal * 100) === expectedMinor
+    && before.lines.filter(line => !matches(line)).every(line => after.lines.some(current => JSON.stringify(current) === JSON.stringify(line)))
+    && after.lines.every(line => allowed.has(line.ref) || matches(line))
+    && before.lines.filter(matches).every(line => after.lines.some(current => current.ref === line.ref && matches(current) && current.quantity >= line.quantity))
+}
+
 /**
  * Admits one write against a fresh observed cart and verifies its entire effect.
  * Unknown effects revoke further writes. Operation IDs are deduplicated by the
@@ -102,6 +124,10 @@ export function createCartOperations(gateway: CartGateway) {
   let advertised: { key: string, version: string } | undefined
   let busy = false
   let uncertain = false
+  // A lost readback retains only a verifier for a single admitted mutation.
+  // Recovery can prove its exact effect from fresh data; it never dispatches.
+  // Multi-step replacement/group edits and clears retain their existing barrier.
+  let pendingVerification: ((cart: CartSnapshot) => boolean) | undefined
 
   function publish(cart: CartSnapshot) {
     const key = fingerprint(cart)
@@ -112,6 +138,15 @@ export function createCartOperations(gateway: CartGateway) {
 
   return {
     canRecover: () => !busy && !uncertain,
+    /** Clears an unknown single-cart effect only against a fresh gateway observation. No writes are replayed. */
+    verifyPending(cart: CartSnapshot) {
+      if (busy || !uncertain || !pendingVerification?.(cart))
+        return false
+      uncertain = false
+      pendingVerification = undefined
+      publish(cart)
+      return true
+    },
     async observe() {
       return publish(await gateway.read())
     },
@@ -224,6 +259,15 @@ export function createCartOperations(gateway: CartGateway) {
         else if (!target) {
           throw new Error('指定購物車行已不存在，請重新讀取。')
         }
+        pendingVerification = undefined
+        if (prepared && operation === 'add') {
+          const selection = prepared
+          pendingVerification = cart => verifyAddition(before, cart, selection, quantity)
+        }
+        else if (!prepared && group.length === 1) {
+          const ref = target!.ref
+          pendingVerification = cart => verifyCartRowEdit(before, cart, ref, operation === 'quantity' ? quantity : 0)
+        }
         const onDispatch = () => {
           dispatched = true
         }
@@ -277,26 +321,9 @@ export function createCartOperations(gateway: CartGateway) {
           : before.context
         if (after.context.orderRef !== expectedContext.orderRef || after.context.date !== expectedContext.date || after.context.time !== expectedContext.time || after.context.tableName !== expectedContext.tableName || after.context.manualRevision !== expectedContext.manualRevision)
           throw new Error('購物車取餐情境或人工操作已變更。')
-        const unchanged = (line: CartLine) => {
-          const current = after.lines.find(candidate => candidate.ref === line.ref)
-          return current && JSON.stringify(current) === JSON.stringify(line)
-        }
         if (prepared) {
-          const selection = prepared
-          const matches = (line: CartLine) => line.productRef === selection.productRef && line.configuration === selection.configuration && line.unitPrice === selection.unitPrice
-          const count = (cart: CartSnapshot) => cart.lines.filter(matches).reduce((sum, line) => sum + line.quantity, 0)
-          const unrelated = before.lines.filter(line => !matches(line))
-          const allowed = new Set(before.lines.map(line => line.ref))
-          // Compare PB currency in hundredths to avoid binary float drift on
-          // daily decimal prices (for example 0.2 + 0.1 versus stored 0.3).
-          const expectedMinor = Math.round(before.subtotal * 100) + Math.round(selection.unitPrice * 100) * quantity
-          if (count(after) - count(before) !== quantity
-            || Math.round(after.subtotal * 100) !== expectedMinor
-            || unrelated.some(line => !unchanged(line))
-            || after.lines.some(line => !allowed.has(line.ref) && !matches(line))
-            || before.lines.filter(matches).some(line => !after.lines.some(current => current.ref === line.ref && matches(current) && current.quantity >= line.quantity))) {
+          if (!verifyAddition(before, after, prepared, quantity))
             throw new Error('PB 加購後的內容與預期不一致。')
-          }
           if (operation === 'replace') {
             const added = after
             verifiedAddition = added
@@ -332,6 +359,7 @@ export function createCartOperations(gateway: CartGateway) {
           if (fingerprint(after) !== fingerprint({ context: before.context, lines: expected, subtotal }))
             throw new Error('PB 修改後的內容與預期不一致。')
         }
+        pendingVerification = undefined
         const cart = publish(after)
         const summary = describeCartLines(cart.lines)
         const addedLine = prepared && after.lines.find(line => line.productRef === prepared.productRef && line.configuration === prepared.configuration && line.unitPrice === prepared.unitPrice)

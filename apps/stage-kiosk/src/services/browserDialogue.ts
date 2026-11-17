@@ -1,5 +1,6 @@
 import type { BrowserConversation } from '@proj-airi/stage-shared/browser-conversation'
 import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
+import type { PbCheckoutStep } from '@proj-airi/stage-shared/pb-checkout'
 
 import type { AnswerDecision, BrowserAnswer } from '../../../server/src/services/domain/browser-ordering/contracts'
 import type { AdditionProposal, QuestionSnapshot } from './browserQuestionWindow'
@@ -8,10 +9,11 @@ import { errorMessageFrom } from '@moeru/std'
 import { browserQuestionChoice } from '@proj-airi/stage-shared/browser-conversation'
 import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { explicitServingQuantities, normalizeSlotNumbers } from '@proj-airi/stage-shared/ordering-slots'
+import { pbCheckoutSchema, pbCheckoutStepSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { productFragment } from '@proj-airi/stage-shared/product-discovery'
 import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
-import { array, looseObject, number, parse, string } from 'valibot'
+import { array, looseObject, number, parse, safeParse, string } from 'valibot'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { createBrowserOrderDrafts, orderFactsSchema, orderSlotCount } from './browserOrderDrafts'
@@ -73,6 +75,10 @@ export function createBrowserDialogue(io: {
   // A quick-path read may consume a question before Main takes over the same
   // utterance. This evidence expires with that question and keeps its binding;
   // another turn, visitor, document or cart cannot inherit the selection.
+  // Workflow position survives entry-ticket expiry/cart revisions, but never a
+  // new visitor/document. It stores no submission token or buffered phone value.
+  let checkoutProgress: { owner: string, documentId: string, purpose: PbCheckoutStep, request: string, suspended: boolean } | undefined
+
   let acceptedSelection: { utteranceId: number, expiresAt: number, binding: QuestionSnapshot, selection: { productRef: string, request: string, requestTarget?: string, requestedQuantity: number, orderSelection?: true }, evidence: OrderEvidence } | undefined
 
   function snapshot(raw: unknown): QuestionSnapshot | undefined {
@@ -81,7 +87,28 @@ export function createBrowserDialogue(io: {
     const documentId = io.documentId()
     if (!owner || !documentId)
       return
-    return { owner, documentId, cartVersion: facts.cart.version, products: facts.products.filter(product => product.configurations.length === 1).map(product => ({ productRef: product.ref, name: product.name, configurationVersion: product.configurations[0].version, unitPrice: product.price })) }
+    const checkout = safeParse(pbCheckoutSchema, facts.checkout)
+    const checkoutVersion = checkout.success ? JSON.stringify({ ...checkout.output, confirmationToken: undefined }) : undefined
+    return { owner, documentId, cartVersion: facts.cart.version, checkoutVersion, products: facts.products.filter(product => product.configurations.length === 1).map(product => ({ productRef: product.ref, name: product.name, configurationVersion: product.configurations[0].version, unitPrice: product.price })) }
+  }
+
+  function pendingQuestion(raw: unknown, binding: QuestionSnapshot | undefined) {
+    if (!binding)
+      return
+    if (checkoutProgress && (checkoutProgress.owner !== binding.owner || checkoutProgress.documentId !== binding.documentId))
+      checkoutProgress = undefined
+    const pending = questions.pending(binding)
+    if (pending || !checkoutProgress || checkoutProgress.suspended)
+      return pending
+    const checkout = safeParse(pbCheckoutSchema, raw && typeof raw === 'object' && 'checkout' in raw ? raw.checkout : undefined)
+    if (!checkout.success)
+      return
+    const messages = orderingMessages['zh-Hant'].checkout
+    const methodStep = checkoutProgress.purpose === 'invoice-method'
+    const question = methodStep ? messages.invoiceOptions.replace('{methods}', checkout.output.methods.map(method => method.label).join('、')) : messages.resumeEntry
+    const choices = methodStep ? checkout.output.methods.map(method => ({ id: method.method, description: `選擇${method.label}，只設定發票，不送出訂單。` })) : [{ id: 'yes', description: '重新檢查目前填寫資料並繼續；不送出訂單。' }, { id: 'no', description: '保留資料，稍後繼續。' }]
+    questions.presentService(binding, { purpose: checkoutProgress.purpose, request: checkoutProgress.request, question, choices })
+    return questions.pending(binding)
   }
 
   // Complete only a literal purchase already requested before this choice.
@@ -111,6 +138,10 @@ export function createBrowserDialogue(io: {
     // these phrases never authorize submission or alter the form themselves.
     if (pending.kind === 'service' && checkoutEntryPurposes.has(pending.purpose)
       && /^(?:ok|okay|好|好的|好了|填好了|資料填好了)[。！!，,\s]*$/i.test(transcript.trim())) {
+      return 'yes'
+    }
+    if (pending.kind === 'service' && pending.purpose === 'cart-review'
+      && /^(?:這樣就好|就這樣|餐點正確|餐點沒問題)[。！!，,\s]*$/.test(transcript.trim())) {
       return 'yes'
     }
     if (pending.kind === 'service' && ['cart-review', 'notification-phone-confirm'].includes(pending.purpose)
@@ -149,18 +180,28 @@ export function createBrowserDialogue(io: {
 
   return {
     recommendations,
-    /** Returns only the current bound service step, never stale conversation text. */
+    hasSubmissionQuestion: questions.hasSubmissionQuestion,
+    /** Returns the current service question or its visitor/document-bound checkout position. */
     checkoutStep(raw: unknown) {
       const binding = snapshot(raw)
-      const pending = binding && questions.pending(binding)
-      return pending?.kind === 'service' ? pending.purpose : undefined
+      const pending = pendingQuestion(raw, binding)
+      if (pending) {
+        const step = safeParse(pbCheckoutStepSchema, pending.kind === 'service' ? pending.purpose : undefined)
+        return step.success ? step.output : undefined
+      }
+      return binding ? checkoutProgress?.purpose : undefined
     },
     releaseService(raw: unknown, questionId: string) {
       const binding = snapshot(raw)
-      if (binding)
+      if (binding) {
+        const pending = questions.pending(binding)
+        if (pending?.kind === 'service' && pending.question.questionId === questionId && checkoutProgress)
+          checkoutProgress.suspended = true
         questions.releaseService(binding, questionId)
+      }
     },
     reset: () => {
+      checkoutProgress = undefined
       questions.reset()
       orders.reset()
       orderEvidence = undefined
@@ -168,7 +209,7 @@ export function createBrowserDialogue(io: {
       answeredQuestion = undefined
       answeredUtteranceId = undefined
     },
-    hasPending: () => questions.hasPending(),
+    hasPending: () => questions.hasPending() || Boolean(checkoutProgress && !checkoutProgress.suspended && checkoutProgress.owner === io.owner() && checkoutProgress.documentId === io.documentId()),
     /** Recovers only the unchanged, accepted selection of this exact utterance. */
     selectionForTurn(raw: unknown, utteranceId?: number) {
       const fresh = snapshot(raw)
@@ -180,7 +221,7 @@ export function createBrowserDialogue(io: {
     /** Only closed literal answers can skip another planner round; freshness is rechecked on consumption. */
     canAnswerLocally(raw: unknown, transcript: string) {
       const binding = snapshot(raw)
-      const pending = binding && questions.pending(binding)
+      const pending = pendingQuestion(raw, binding)
       if (!pending)
         return false
       const choice = literalChoice(pending, transcript)
@@ -195,6 +236,8 @@ export function createBrowserDialogue(io: {
         || (pending.kind === 'slot' && orderSlotCount(transcript, pending.slot) !== undefined)
     },
     collectOrder(raw: unknown, input: unknown, source: string, provided?: { productRef: string, quantity?: number, answer?: string }) {
+      if (checkoutProgress)
+        checkoutProgress.suspended = true
       try {
         const binding = snapshot(raw)
         if (!binding)
@@ -211,7 +254,7 @@ export function createBrowserDialogue(io: {
     /** Read-only dialogue projection; the private ticket remains the only answer authority. */
     conversation(raw: unknown, utteranceId?: number): Pick<BrowserConversation, 'phase' | 'waitingFor' | 'draft' | 'drafts' | 'answeredQuestion'> {
       const binding = snapshot(raw)
-      const pending = binding && questions.pending(binding)
+      const pending = pendingQuestion(raw, binding)
       const queue = binding && orders.projection(binding)
       if (!pending) {
         if (queue)
@@ -233,7 +276,7 @@ export function createBrowserDialogue(io: {
     },
     validate(raw: unknown, questionId: string) {
       const binding = snapshot(raw)
-      const pending = binding && questions.pending(binding)
+      const pending = pendingQuestion(raw, binding)
       return pending?.question.questionId === questionId ? pending.question : undefined
     },
     accepts(binding: QuestionSnapshot, raw: unknown) {
@@ -241,6 +284,8 @@ export function createBrowserDialogue(io: {
       return !!fresh && binding.owner === fresh.owner && binding.documentId === fresh.documentId && binding.cartVersion === fresh.cartVersion && binding.products.every(product => fresh.products.some(candidate => JSON.stringify(candidate) === JSON.stringify(product)))
     },
     presentProducts(raw: unknown, query: string, request: string, offeredProductRefs?: readonly string[]) {
+      if (checkoutProgress)
+        checkoutProgress.suspended = true
       const binding = snapshot(raw)
       if (offeredProductRefs !== undefined) {
         // A recommendation question must preserve the actual presentation order
@@ -323,9 +368,17 @@ export function createBrowserDialogue(io: {
       const binding = snapshot(raw)
       if (!binding)
         throw new Error('目前接待或頁面已變更。')
+      const purpose = input.purpose === 'submit-order' ? 'checkout-details' : ['notification-phone', 'notification-phone-confirm'].includes(input.purpose) ? 'notification-details' : input.purpose
+      const step = safeParse(pbCheckoutStepSchema, purpose)
+      if (step.success && ['invoice-method', 'invoice-details', 'notification-details', 'checkout-details'].includes(step.output))
+        checkoutProgress = { owner: binding.owner, documentId: binding.documentId, purpose: step.output, request: input.request, suspended: false }
+      else if (checkoutProgress)
+        checkoutProgress.suspended = true
       return receipt(questions.presentService(binding, input))
     },
     presentQuantity(raw: unknown, productRef: string, request: string, requestTarget?: string, orderSelection?: true) {
+      if (checkoutProgress)
+        checkoutProgress.suspended = true
       const binding = snapshot(raw)
       const product = binding?.products.find(product => product.productRef === productRef)
       if (!binding || !product)
@@ -334,7 +387,7 @@ export function createBrowserDialogue(io: {
     },
     async answer(raw: unknown, transcript: string, observe: () => Promise<unknown>, isCurrent: () => boolean, utteranceId?: number, options: { selectedAnswer?: SelectedBrowserAnswer } = {}) {
       const binding = snapshot(raw)
-      const pending = binding && questions.pending(binding)
+      const pending = pendingQuestion(raw, binding)
       if (!binding || !pending || !isCurrent())
         return
       if (pending.kind === 'service' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pending.purpose)) {
@@ -413,6 +466,8 @@ export function createBrowserDialogue(io: {
       if (!fresh || !isCurrent() || !questions.pending(fresh))
         return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '餐點或購物車狀態已變更，請重新確認。' } }
       if (decision.kind === 'NEW_REQUEST') {
+        if (checkoutProgress)
+          checkoutProgress.suspended = true
         questions.reset()
         orders.reset()
         return pending.kind === 'addition' ? { kind: 'new-request' as const, previousProposal: pending.proposal } : undefined
@@ -448,10 +503,15 @@ export function createBrowserDialogue(io: {
           const question = questions.presentService(fresh, { purpose: selected.purpose, request: selected.request, question: pending.question.question, choices: pending.question.choices })
           return { kind: 'receipt' as const, result: { ...receipt(question), customerMessage: '好的，請慢慢填寫，完成後告訴我。' } }
         }
-        if (selected.purpose === 'submit-order' && selected.choiceId === 'yes' && selected.query)
+        if (selected.purpose === 'submit-order' && selected.choiceId === 'yes' && selected.query) {
+          if (checkoutProgress)
+            checkoutProgress.suspended = true
           return { kind: 'checkout' as const, action: 'submit' as const, confirmationToken: selected.query }
-        if (selected.purpose === 'submit-order' && selected.choiceId === 'no')
+        }
+        if (selected.purpose === 'submit-order' && selected.choiceId === 'no') {
+          checkoutProgress = undefined
           return { kind: 'receipt' as const, result: { ok: true, source: 'browser', effect: 'none', customerMessage: '先不送出，餐點與填寫資料都保留。您可以告訴我要修改什麼。' } }
+        }
         if (selected.purpose === 'purchase-recommendation' && selected.choiceId === 'yes' && selected.name) {
           const product = fresh.products.filter(product => product.name === selected.name)
           const count = purchaseAnswerCount(transcript) ?? selected.quantity

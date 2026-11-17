@@ -3,7 +3,7 @@ import type { ServiceConnection, ServiceTool, ToolExecution } from '@proj-airi/s
 import { errorMessageFrom } from '@moeru/std'
 import { discoveryResultSchema, executionResultSchema, inspectionResultSchema } from '@proj-airi/stage-shared/interactive-service'
 import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
-import { menuEntryReceiptSchema, readPbJourney } from '@proj-airi/stage-shared/pb-journey'
+import { menuEntryReceiptSchema, readPbJourney, readPbStateJourney } from '@proj-airi/stage-shared/pb-journey'
 import { parse, safeParse } from 'valibot'
 import { readonly, shallowRef, toRaw, watch } from 'vue'
 
@@ -28,7 +28,7 @@ export function createInteractiveServiceClient() {
   let failedBinding: typeof binding
   let recovery: Promise<void> | undefined
   let navigating = false
-  const unsettled = new Set<string>()
+  const unsettled = new Map<string, 'read' | 'effect'>()
 
   function publish(event: ToolExecution) {
     listeners.forEach(listener => listener(event))
@@ -75,14 +75,21 @@ export function createInteractiveServiceClient() {
           if (resume) {
             if (response.documentId !== resume.documentId)
               throw new Error('菜單頁面已更換，不能沿用先前的訂單操作。')
-            const status = parse(inspectionResultSchema, await current.inspect({ connectionId, documentId: resume.documentId, operationIds: [...unsettled] }, AbortSignal.timeout(1000)))
-            if (status.connectionId !== connectionId || status.documentId !== resume.documentId || status.pendingCount !== 0 || status.operations.length !== unsettled.size || status.operations.some(operation => !unsettled.has(operation.operationId) || operation.status !== 'settled'))
+            const status = parse(inspectionResultSchema, await current.inspect({ connectionId, documentId: resume.documentId, operationIds: [...unsettled.keys()] }, AbortSignal.timeout(1000)))
+            // A transport can fail before a PB read enters its journal. Its
+            // absence proves no commerce effect was lost; pending reads and
+            // every missing write still block. Hints alone grant no exemption.
+            if (status.connectionId !== connectionId || status.documentId !== resume.documentId || status.pendingCount !== 0
+              || status.operations.length !== unsettled.size || new Set(status.operations.map(operation => operation.operationId)).size !== unsettled.size
+              || status.operations.some(operation => !unsettled.has(operation.operationId)
+                || (operation.status !== 'settled' && (operation.status !== 'missing' || unsettled.get(operation.operationId) !== 'read')))) {
               throw new Error('先前操作仍未完成或結果無法確認，暫停恢復代操作。')
+            }
             unsettled.clear()
             failedBinding = undefined
           }
           binding = { connectionId, documentId: response.documentId, toolsRevision: response.toolsRevision }
-          tools.value = response.tools.map(tool => ({ ...tool, origin }))
+          tools.value = response.tools.filter(tool => !editorRetired.value || tool.name === 'browser_state_get').map(tool => ({ ...tool, origin }))
           availability.value = 'ready'
           return
         }
@@ -120,7 +127,9 @@ export function createInteractiveServiceClient() {
     if (!tools.value.includes(toRaw(tool)))
       throw new Error('工具已失效，請重新確認目前菜單。')
     const operationId = crypto.randomUUID()
-    unsettled.add(operationId)
+    const safeRead = issuedUrl && (tool.name === 'browser_state_get' ? readPbStateJourney(issuedUrl) : readPbJourney(issuedUrl)) && tool.annotations?.readOnlyHint === true
+      && ['browser_cart_get', 'browser_state_get', 'browser_recovery_context'].includes(tool.name)
+    unsettled.set(operationId, safeRead ? 'read' : 'effect')
     const correlation = { connectionId: currentBinding.connectionId, documentId: currentBinding.documentId, operationId }
     publish({ ...correlation, phase: 'called', tool, input })
     try {
@@ -159,11 +168,11 @@ export function createInteractiveServiceClient() {
       const submission = safeParse(pbSubmissionResultSchema, result)
       if (connection === current && issuedUrl && readPbJourney(issuedUrl)
         && tool.name === 'browser_order_submit' && submission.success) {
-        // SPA submission may never emit a document-loading event. The editor
-        // is still retired: no cart/reset command belongs on its result page.
-        // A new reception reloads the configured entry; native unknown-write
-        // markers remain independent and cannot be cleared by detaching here.
-        activate(undefined)
+        // SPA submission may never emit loading. Re-discover a read-only peer;
+        // even a delayed navigation cannot restore cart/reset/submit tools.
+        // Native unknown-write markers survive this transport replacement.
+        const reconnect = activeConnect
+        activate(issuedUrl, reconnect)
         editorRetired.value = true
       }
       return result
@@ -211,7 +220,10 @@ export function createInteractiveServiceClient() {
       if (recovery)
         return await recovery
       const resume = failedBinding
-      if (!resume)
+      // A failed first handshake has issued no tools. Reconnect that configured
+      // transport without inventing an old binding; accepted calls still require
+      // their original document and settled journal below.
+      if (!activeUrl || !activeConnect || (!resume && unsettled.size))
         throw new Error('請先確認菜單頁面已載入。')
       recovery = (async () => {
         activate(activeUrl, activeConnect, resume)

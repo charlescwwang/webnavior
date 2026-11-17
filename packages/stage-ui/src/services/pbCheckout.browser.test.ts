@@ -12,7 +12,7 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, totalmoney: 64 }) {
+function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, totalmoney: 64 }, submissionDelay = 0) {
   history.replaceState({}, '', '/order/store/1kgJeql/internal_use/orders/create')
   document.body.innerHTML = `<section class="order-create"><label><input type="radio" name="invoice" value="5" checked>無載具</label><label><input type="radio" name="invoice" value="3">手機載具</label><input placeholder="請輸入共8碼編號"><div class="el-form-item"><label>手機號碼</label><input type="email"></div><div class="el-form-item"><label>E-mail</label><input type="email"></div></section><p>總金額<span>$64</span></p><button>送出訂單</button>`
   const clicked = vi.fn()
@@ -20,11 +20,17 @@ function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, tot
     document.body.insertAdjacentHTML('beforeend', '<div role="dialog" aria-label="確認訂單"><div class="el-message-box__message">訂單送出後將無法修改，請確認所有資訊是否正確。</div><button>取消</button><button>確定</button></div>')
     document.querySelectorAll('[role="dialog"] button')[1].addEventListener('click', () => {
       clicked()
-      document.body.innerHTML = '<p>取餐編號：TEST-0001</p>'
-      history.replaceState({}, '', '/order/store/1kgJeql/internal_use/orders/TEST-123/choosePayment')
-      const root = document.createElement('div')
-      root.setAttribute('data-page', JSON.stringify({ component: 'Order/ChoosePayment', url: location.pathname, props: { storeHash: '1kgJeql', flowType: 'internal_use', order: result } }))
-      document.body.append(root)
+      const finish = () => {
+        document.body.innerHTML = '<p>取餐編號：TEST-0001</p>'
+        history.replaceState({}, '', '/order/store/1kgJeql/internal_use/orders/TEST-123/choosePayment')
+        const root = document.createElement('div')
+        root.setAttribute('data-page', JSON.stringify({ component: 'Order/ChoosePayment', url: location.pathname, props: { storeHash: '1kgJeql', flowType: 'internal_use', order: result } }))
+        document.body.append(root)
+      }
+      if (submissionDelay)
+        setTimeout(finish, submissionDelay)
+      else
+        finish()
     })
   })
   const cart: CartSnapshot = { lines: [{ ref: '1', productRef: 'p-2589', name: '周氏水餃(最低8顆)', quantity: 1, unitPrice: 64, configuration: '', options: [] }], subtotal: 64, context: { date: '2026-11-15', time: '12:00', manualRevision: 0, tableName: 'A3' } }
@@ -41,6 +47,17 @@ function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, tot
   const controls = createControls(operation, controller.signal)
   return { checkout, controls, cart, clicked, dispatched, accepted, touch: () => revision++ }
 }
+
+// Report: this chat Nov17 — DEV-642583 dispatched the final submit but timed out after five seconds.
+it('waits for a slow merchant submission result without clicking submit twice', async () => {
+  const { checkout, controls, clicked, accepted } = setup(undefined, 6000)
+  await checkout.phone('0912345678', controls)
+  const prepared = await checkout.prepare()
+  const result = await checkout.submit(prepared.confirmationToken!, controls)
+  expect(result.status).toBe('accepted')
+  expect(clicked).toHaveBeenCalledOnce()
+  expect(accepted).toHaveBeenCalledOnce()
+}, 10000)
 
 // Report: this chat, Nov15: cart confirmation never advanced to invoice or submission.
 it('fills the labeled notification phone, preserves email, and dispatches a confirmed order only once', async () => {

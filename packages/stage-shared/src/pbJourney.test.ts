@@ -1,6 +1,18 @@
 import { expect, it } from 'vitest'
 
-import { isPbJourneyPage, isPbOrderResultUrl, isPbTableEntryUrl, readPbJourney } from './pbJourney'
+import { isPbJourneyPage, isPbOrderResultUrl, isPbSimulatorHost, isPbTableEntryUrl, readPbJourney, readPbStateJourney } from './pbJourney'
+
+it('allows browser backup only for the owned simulator under an approved Kiosk parent', () => {
+  const simulator = 'https://webnavior.aikcitri.qzz.io/order/store/1kgJeql/internal_use/menu/select-table'
+  expect(isPbSimulatorHost(simulator, 'https://webnavior.aikcitri.qzz.io/kiosk/')).toBe(true)
+  expect(isPbSimulatorHost(simulator, 'https://webnavior.aikcitri.qzz.io/admin/')).toBe(false)
+  expect(isPbSimulatorHost(simulator, 'https://foreign.example/kiosk/')).toBe(false)
+  expect(isPbSimulatorHost(simulator, 'http://100.92.1.80:5169/kiosk/')).toBe(false)
+  expect(isPbSimulatorHost(simulator.replace('webnavior.aikcitri.qzz.io', 'app.esgpb.com'), 'https://webnavior.aikcitri.qzz.io/kiosk/')).toBe(false)
+  expect(isPbSimulatorHost(simulator.replace('/menu/select-table', '/orders/TEST-result'), 'https://webnavior.aikcitri.qzz.io/kiosk/')).toBe(true)
+  expect(isPbSimulatorHost(simulator, 'invalid')).toBe(false)
+  expect(isPbSimulatorHost('http://127.0.0.1:5188/order/store/1kgJeql/internal_use/menu', 'http://127.0.0.1:5188/kiosk/')).toBe(true)
+})
 
 const entry = 'https://app-205-rd.esgpb.com/order/store/1kAMNok/internal_use/menu/select-table'
 // Report: this chat, 2026-11-16 — the merchant checkout incorrectly required manual submission.
@@ -68,4 +80,27 @@ it('acknowledges the current payment chooser only within the configured order jo
   expect(isPbOrderResultUrl(local, result.replace('1kgJeql', 'other'))).toBe(false)
   expect(isPbOrderResultUrl(local, result.replace(':5188', ':5189'))).toBe(false)
   expect(isPbOrderResultUrl(local, result.replace('TEST-1', 'create'))).toBe(false)
+})
+
+// Report: this chat, 2026-11-17 — remote browsers need the public PB simulator.
+it('admits only the public simulator journey without crossing into merchant or admin pages', () => {
+  const entry = 'https://webnavior.aikcitri.qzz.io/order/store/1kgJeql/internal_use/menu/select-table'
+  expect(readPbJourney(entry)?.canSubmit).toBe(true)
+  expect(isPbJourneyPage(entry, entry.replace('/menu/select-table', '/orders/create'))).toBe(true)
+  expect(isPbJourneyPage(entry, entry.replace('webnavior.aikcitri.qzz.io', 'app.esgpb.com'))).toBe(false)
+  expect(readPbJourney(entry.replace('1kgJeql', 'other'))).toBeUndefined()
+  expect(readPbJourney('https://webnavior.aikcitri.qzz.io/admin')).toBeUndefined()
+})
+
+// Report: this chat, Nov17 cases 6/11: result reads must not reopen the cart editor.
+it('resolves read-only result scope separately from editor privileges', () => {
+  const menu = 'https://app.esgpb.com/order/store/1kgJeql/internal_use/menu'
+  const result = menu.replace('/menu', '/orders/TEST-order/choosePayment')
+  expect(readPbStateJourney(result)?.menuPath).toBe(new URL(menu).pathname)
+  expect(readPbJourney(result)).toBeUndefined()
+  expect(isPbJourneyPage(menu, result)).toBe(false)
+  expect(readPbStateJourney(`${result}?other=1`)).toBeUndefined()
+  expect(readPbStateJourney(result.replace('TEST-order', 'create'))).toBeUndefined()
+  expect(readPbStateJourney(result.replace('/orders/', '/other/'))).toBeUndefined()
+  expect(readPbStateJourney(result.replace('1kgJeql', 'other'))).toBeUndefined()
 })

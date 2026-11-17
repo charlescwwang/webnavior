@@ -1,6 +1,7 @@
 import type { BrowserConversation } from '@proj-airi/stage-shared/browser-conversation'
 import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
 import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
+import type { PbCheckoutStep } from '@proj-airi/stage-shared/pb-checkout'
 
 import type { FastPathSource } from './kiosk-fast-path'
 
@@ -9,7 +10,7 @@ import { browserQuestionChoice } from '@proj-airi/stage-shared/browser-conversat
 import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { normalizeSlotNumbers, quantityFromTranscript } from '@proj-airi/stage-shared/ordering-slots'
 import { orderingNextActions } from '@proj-airi/stage-shared/ordering-tools'
-import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { pbCheckoutSchema, pbOrderStateSchema, pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { parsePbDumplingServings, pbDumplingExtraName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { productConfigurationSchema } from '@proj-airi/stage-shared/product-configuration'
 import { productFragment, productMentions } from '@proj-airi/stage-shared/product-discovery'
@@ -38,6 +39,7 @@ export function createBrowserFastPathSource(io: {
   execute: (tool: ServiceTool, input: Record<string, unknown>) => Promise<unknown>
   hasPendingQuestion: () => boolean
   pendingQuestion: (facts: unknown) => BrowserConversation['waitingFor']
+  checkoutStep?: (facts: unknown) => PbCheckoutStep | undefined
   releaseService?: (facts: unknown, questionId: string) => void
   canAnswerLocally?: (facts: unknown, transcript: string) => boolean
   recommendationPool?: (products: { ref: string, name: string, configurations: { unitPrice: number }[] }[]) => string[]
@@ -76,7 +78,7 @@ export function createBrowserFastPathSource(io: {
       // return a question receipt with no cart and mislabel it as a Jev failure.
       let raw: unknown
       try {
-        raw = await io.read(tool('browser_cart_get'), { includeCatalog: true })
+        raw = await io.read(tool('browser_state_get'), { includeCatalog: true })
       }
       catch (error) {
         return { contextError: errorMessageFrom(error) ?? 'PB context read failed.' }
@@ -88,6 +90,12 @@ export function createBrowserFastPathSource(io: {
       }
       if (raw && typeof raw === 'object' && 'ok' in raw && raw.ok === false)
         return { contextError: 'customerMessage' in raw && typeof raw.customerMessage === 'string' ? raw.customerMessage : 'PB context read was rejected.' }
+      const order = safeParse(looseObject({ ok: literal(true), page: string(), order: pbOrderStateSchema }), raw)
+      if (order.success) {
+        return { phase: 'ordering', readOnly: true, requiresPlanner: true, paymentState: order.output.order.paymentStatus, allowedPaymentMethods: [], interactionState: { matchingCartLines: 0, screen: 'checkout', pendingAction: `訂單${order.output.order.number ?? ''}已建立；付款狀態：${order.output.order.paymentStatus}；畫面付款方式：${order.output.order.paymentMethods.join('、')}。僅能讀取，不可改單、送單或代付款。` }, candidates: [] }
+      }
+      if (!io.tools.some(tool => tool.name === 'browser_cart_get'))
+        return { contextError: '訂單結果頁尚未就緒，請先查看畫面，避免重複送單。' }
       if (raw && typeof raw === 'object' && 'page' in raw && raw.page === 'table') {
         const table = safeParse(looseObject({ page: literal('table'), tableChoices: array(string()), selectedTable: optional(string()) }), raw)
         if (!table.success || !table.output.tableChoices.length)
@@ -112,6 +120,8 @@ export function createBrowserFastPathSource(io: {
         return { phase: 'selecting_table', tableSelectionRequired: true, tableSelection: { choices: table.output.tableChoices, selectedTable: table.output.selectedTable }, candidates: offered.map(choice => ({ ...choice, description: plans[choice.id].name === 'browser_start_ordering' ? `使用${plans[choice.id].input.name}開始點餐` : `選擇${choice.description}，留在選桌頁，尚未開始點餐` })) }
       }
 
+      const checkout = safeParse(pbCheckoutSchema, raw && typeof raw === 'object' && 'checkout' in raw ? raw.checkout : undefined)
+      const formContext = checkout.success ? { checkoutSnapshot: { source: 'pb', step: io.checkoutStep?.(raw), invoiceMethod: checkout.output.methods.find(method => method.selected)?.method, ready: checkout.output.ready, fields: checkout.output.fields.map(field => ({ kind: field.kind, present: Boolean(field.value), valid: field.valid })) } } : {}
       const waitingFor = io.pendingQuestion(raw)
       const localAnswer = waitingFor && io.canAnswerLocally?.(raw, transcript)
       // A current search exposes recovery for every utterance. Jev decides
@@ -124,7 +134,7 @@ export function createBrowserFastPathSource(io: {
           const choice = { id, description: literal ? waitingFor.choices.find(choice => choice.id === literal)!.description : `回答目前問題「${waitingFor.question}」：${transcript}` }
           const name = literal === 'cancel' ? 'browser_close_product' : 'browser_answer_question'
           issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans: { [id]: { name, input: literal && name === 'browser_answer_question' ? { questionId: waitingFor.questionId, choiceId: literal } : {} } }, answerIds: [id] }
-          return { phase: 'ordering', waitingFor: { ...waitingFor, choices: [choice] }, candidates: [choice] }
+          return { ...formContext, phase: 'ordering', waitingFor: { ...waitingFor, choices: [choice] }, candidates: [choice] }
         }
         // The live question outranks its underlying search. Offer every issued
         // answer to Jev; unfamiliar wording must not erase confirmation context.
@@ -148,11 +158,11 @@ export function createBrowserFastPathSource(io: {
           plans['intent:new-request'] = { name: 'service-new-request', input: { questionId: waitingFor.questionId } }
         }
         issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans, answerIds: offered.map(choice => choice.id) }
-        return { phase: 'ordering', waitingFor, candidates: offered }
+        return { ...formContext, phase: 'ordering', waitingFor, candidates: offered }
       }
       if (activeSearch && io.tools.some(tool => tool.name === 'browser_return_menu')) {
         issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans: { 'intent:return-menu': { name: 'browser_return_menu', input: {} } } }
-        return { phase: 'ordering', menuSearch: { query: activeSearch.slice(0, 200) }, interactionState: { matchingCartLines: 0, screen: 'menu', pendingAction: `目前搜尋「${activeSearch}」。取消搜尋會清除關鍵字與未加入的選餐，保留購物車；刪除餐點、取消整單或新的餐點要求需要另外處理。` }, candidates: [{ id: 'intent:return-menu', description: '放棄目前搜尋，回到完整菜單；保留購物車。' }] }
+        return { ...formContext, phase: 'ordering', menuSearch: { query: activeSearch.slice(0, 200) }, interactionState: { matchingCartLines: 0, screen: 'menu', pendingAction: `目前搜尋「${activeSearch}」。取消搜尋會清除關鍵字與未加入的選餐，保留購物車；刪除餐點、取消整單或新的餐點要求需要另外處理。` }, candidates: [{ id: 'intent:return-menu', description: '放棄目前搜尋，回到完整菜單；保留購物車。' }] }
       }
       const parsed = safeParse(factsSchema, raw)
       if (!parsed.success)
@@ -329,7 +339,7 @@ export function createBrowserFastPathSource(io: {
           compiled = true
         }
       }
-      return { phase: 'ordering', ...(interactionState ? { interactionState } : {}), ...(!compiled && !candidates.some(candidate => candidate.id !== 'intent:search-menu') ? { requiresPlanner: true } : {}), candidates, references, productResolution: { status: discovery.length > 5 ? 'overflow' : matched.length === 1 ? 'exact' : discovery.length ? 'possible' : 'none', count: discovery.length, references }, catalogEvidence: { products: discovery.slice(0, 5).map(({ product, label, source }) => ({ label: product.name, matchedText: label, source })), categories } }
+      return { ...formContext, phase: 'ordering', ...(interactionState ? { interactionState } : {}), ...(!compiled && !candidates.some(candidate => candidate.id !== 'intent:search-menu') ? { requiresPlanner: true } : {}), candidates, references, productResolution: { status: discovery.length > 5 ? 'overflow' : matched.length === 1 ? 'exact' : discovery.length ? 'possible' : 'none', count: discovery.length, references }, catalogEvidence: { products: discovery.slice(0, 5).map(({ product, label, source }) => ({ label: product.name, matchedText: label, source })), categories } }
     },
     async execute(input) {
       const current = issued

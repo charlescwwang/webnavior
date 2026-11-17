@@ -5,7 +5,7 @@ import { array, boolean, check, integer, maxLength, minLength, minValue, number,
 import { conversationQuestionSchema } from './kioskConversation'
 import { normalizeSlotNumbers } from './orderingSlots'
 import { nativeOrderingToolName, orderingTools } from './orderingTools'
-import { pbCheckoutSchema, pbSubmissionResultSchema } from './pbCheckout'
+import { pbCheckoutSchema, pbCheckoutStepSchema, pbOrderStateSchema, pbSubmissionResultSchema } from './pbCheckout'
 import { productConfigurationSchema } from './productConfiguration'
 import { resolveTableName } from './tableNames'
 
@@ -17,14 +17,17 @@ export const browserConversationSchema = pipe(object({
   taskId: reference,
   sourceUtterance: pipe(string(), maxLength(8000)),
   /** Verified native page role, independent from the pending conversational task. */
-  page: optional(picklist(['table', 'menu', 'cart', 'checkout'])),
-  phase: picklist(['selecting_table', 'browsing', 'choosing_product', 'collecting_quantity', 'configuring', 'confirming_add', 'ready_to_add', 'review_required', 'sign_in_required']),
+  page: optional(picklist(['table', 'menu', 'cart', 'checkout', 'payment', 'order-result'])),
+  phase: picklist(['selecting_table', 'browsing', 'choosing_product', 'collecting_quantity', 'configuring', 'confirming_add', 'ready_to_add', 'review_required', 'sign_in_required', 'viewing_order']),
   tableChoices: optional(pipe(array(label), maxLength(200))),
   selectedTable: optional(label),
   itemSelectionOpen: optional(boolean()),
   /** Actual website keyword field, independent from persistent recommendation preferences. */
   search: optional(string()),
   checkout: optional(pbCheckoutSchema),
+  checkoutStep: optional(pbCheckoutStepSchema),
+  order: optional(pbOrderStateSchema),
+  observedAt: optional(number()),
   answeredQuestion: optional(object({
     question: string(),
     /** The customer's actual reply, separate from the resolved effect below. */
@@ -113,6 +116,7 @@ export function browserConversationInstructions(context: BrowserConversation) {
   const business = context.allowedToolNames.some(name => nativeOrderingToolName(name) !== name)
   const activities: Record<BrowserConversation['phase'], string> = {
     selecting_table: '等待顧客指定桌號或要求開始點餐，可使用語音操作，尚未讀取購物車',
+    viewing_order: '目前為已建立訂單的付款或結果頁，只能依核實狀態說明，不可改購物車、重送訂單或執行付款',
     browsing: '目前沒有待回答問題，可瀏覽餐點或處理顧客的新需求',
     choosing_product: '等待顧客選定是哪一道餐點',
     collecting_quantity: '等待顧客提供餐點份數',
@@ -129,15 +133,18 @@ export function browserConversationInstructions(context: BrowserConversation) {
   const facts = {
     currentActivity: activities[context.phase],
     availableActions: context.allowedToolNames,
-    currentPage: context.page ? { table: '選桌', menu: '菜單', cart: '購物車', checkout: '發票與結帳' }[context.page] : undefined,
+    currentPage: context.page ? { 'table': '選桌', 'menu': '菜單', 'cart': '購物車', 'checkout': '發票與結帳', 'payment': '選擇付款方式', 'order-result': '訂單結果' }[context.page] : undefined,
     tableChoices: context.tableChoices,
     // Name normalization is verified input evidence, not a website selection.
     requestedTable: context.phase === 'selecting_table' ? resolveTableName(context.sourceUtterance, context.tableChoices ?? []) : undefined,
     selectedTable: context.selectedTable,
     customerUtterance: context.sourceUtterance,
     requestIsReadOnly: context.readOnly,
+    order: context.order,
+    observedAt: context.observedAt,
     recommendationCriteria: context.recommendationCriteria,
     cart: modelCart(context.cart, business),
+    currentCheckoutStep: context.checkoutStep,
     checkout: context.checkout ? { ...context.checkout, confirmationToken: undefined } : undefined,
     catalog: { itemListComplete: context.catalog.complete, products: context.catalog.products.map(product => modelProduct(product, business)) },
     mentionedItem: business && context.providedSlots ? { name: context.providedSlots.name, quantity: context.providedSlots.quantity } : context.providedSlots,
@@ -370,6 +377,10 @@ export function browserToolParameters(name: string, parameters: unknown): unknow
 export function browserToolNames(state: Pick<BrowserConversation, 'phase' | 'readOnly' | 'providedSlots'>, names: readonly string[]) {
   const writes = new Set(['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_confirm_add', 'browser_set_note'])
   return names.filter((name) => {
+    if (name === 'browser_state_get')
+      return false
+    if (state.phase === 'viewing_order')
+      return name === 'browser_respond'
     if (name === 'browser_order_submit')
       return false
     if (state.phase === 'selecting_table')

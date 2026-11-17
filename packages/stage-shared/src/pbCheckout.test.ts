@@ -1,7 +1,7 @@
 import { safeParse } from 'valibot'
 import { describe, expect, it } from 'vitest'
 
-import { pbSubmissionResultSchema, readPbSubmissionResult } from './pbCheckout'
+import { pbSubmissionResultSchema, readPbOrderState, readPbSubmissionResult } from './pbCheckout'
 
 const expected = { origin: 'https://app.esgpb.com', store: '1kgJeql', flow: 'internal_use', cartPath: '/order/store/1kgJeql/internal_use/orders/create', total: 64 }
 const url = 'https://app.esgpb.com/order/store/1kgJeql/internal_use/orders/HASH/choosePayment'
@@ -29,5 +29,29 @@ describe('pb merchant submission outcomes', () => {
   })
   it('cannot parse a pending acknowledgement as an applied merchant outcome', () => {
     expect(safeParse(pbSubmissionResultSchema, { ...readPbSubmissionResult(expected, url, undefined), effect: 'applied' }).success).toBe(false)
+  })
+})
+
+// Report: this chat, Nov17, cases 6/7/11 — payment pages have no automatic readable state.
+describe('fresh PB order state without submission authority', () => {
+  it('reads pending payment and only same-order approved payment entrances', () => {
+    const raw = page({ CarrierType: 6, LoveCode: '123', payment: null, has_refunded_payment: false })
+    const snapshot = { ...raw, props: { ...raw.props, payMethods: [{ title: '信用卡', url: 'https://app.esgpb.com/order/ecpay/redirect/HASH/Credit' }, { title: '別單', url: 'https://app.esgpb.com/order/ecpay/redirect/OTHER/Credit' }, { title: '外站', url: 'https://example.com/pay' }] } }
+    const state = readPbOrderState(`https://app.esgpb.com${expected.cartPath}`, url, snapshot)
+    expect(state.paymentStatus).toBe('pending')
+    expect(state.invoice.method).toBe('donation')
+    expect(state.invoice.code).toBe('123')
+    expect(state.paymentMethods).toEqual(['信用卡'])
+    expect(state).not.toHaveProperty('confirmationToken')
+  })
+
+  it('requires matched page identity and verified payment evidence', () => {
+    const entry = `https://app.esgpb.com${expected.cartPath}`
+    const paid = { ...page({ status: 50, payment: 'LinePay', has_refunded_payment: false }), component: 'Order/Show', url: url.replace('/choosePayment', '') }
+    expect(readPbOrderState(entry, paid.url, paid).paymentStatus).toBe('paid')
+    expect(readPbOrderState(entry, paid.url, { ...paid, props: { ...paid.props, order: { ...paid.props.order, payment: null } } }).paymentStatus).toBe('unknown')
+    expect(() => readPbOrderState(entry, url, { ...paid, url })).toThrow()
+    expect(() => readPbOrderState(entry, url.replace('HASH', 'OTHER'), page())).toThrow()
+    expect(() => readPbOrderState(entry, url, { ...page(), props: { ...page().props, storeHash: 'other' } })).toThrow()
   })
 })

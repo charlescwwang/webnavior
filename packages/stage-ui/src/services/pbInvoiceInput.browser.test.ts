@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { page } from 'vitest/browser'
 
 import { installInvoiceInput } from './pbInvoiceInput'
 
@@ -89,4 +90,57 @@ it('leaves carrier input before a meal change without erasing values or stealing
   expect(submit).not.toHaveBeenCalled()
   field.focus()
   expect(input!.pending()).toBe(true)
+})
+
+// Report: this chat, Nov17 — touching/typing a phone invalidated checkout and no touch keyboard appeared.
+it('owns phone editing from the first touch and fills the real field through a touch keypad without submitting', async () => {
+  const { submit } = setup()
+  const phone = document.querySelector<HTMLInputElement>('#phone')!
+  const row = document.createElement('div')
+  row.className = 'el-form-item'
+  row.innerHTML = '<label for="phone">手機號碼</label>'
+  phone.replaceWith(row)
+  row.append(phone)
+  await vi.waitFor(() => expect(page.getByRole('button', { name: '開啟數字鍵盤' }).query()).not.toBeNull())
+  const formHeight = row.getBoundingClientRect().height
+  expect(page.getByRole('group', { name: '通知手機數字鍵盤' }).query()).toBeNull()
+  await page.getByRole('button', { name: '開啟數字鍵盤' }).click()
+  const panel = page.getByRole('group', { name: '通知手機數字鍵盤' })
+  await expect.element(panel).toBeVisible()
+  expect(getComputedStyle(panel.element()).position).toBe('fixed')
+  expect(row.getBoundingClientRect().height).toBe(formHeight)
+  await page.screenshot({ path: '__screenshots__/floating-phone-keypad.png' })
+  await panel.getByRole('button', { name: '關閉鍵盤' }).click()
+  expect(panel.query()).toBeNull()
+  await page.getByRole('button', { name: '開啟數字鍵盤' }).click()
+  expect(input!.owns(new PointerEvent('pointerdown'))).toBe(false)
+  const touch = new PointerEvent('pointerdown', { bubbles: true })
+  let owned = false
+  phone.addEventListener('pointerdown', event => owned = input!.owns(event), { once: true })
+  phone.dispatchEvent(touch)
+  expect(owned).toBe(true)
+  const changed = vi.fn()
+  phone.addEventListener('input', changed)
+  const keypad = page.getByRole('group', { name: '通知手機數字鍵盤' })
+  for (const digit of '0912345678')
+    await keypad.getByRole('button', { name: digit, exact: true }).click()
+  expect(phone.value).toBe('0912345678')
+  expect(changed).toHaveBeenCalledTimes(10)
+  expect(document.querySelector<HTMLInputElement>('#email')!.value).toBe('')
+  // Report: this chat, Nov17 — the floating panel obscured the native submit control.
+  input!.leave()
+  expect(keypad.query()).toBeNull()
+  expect(phone.value).toBe('0912345678')
+  expect(submit).not.toHaveBeenCalled()
+  phone.focus()
+  expect(keypad.query()).toBeNull()
+  await page.getByRole('button', { name: '開啟數字鍵盤' }).click()
+  await keypad.getByRole('button', { name: '刪除一碼' }).click()
+  expect(phone.value).toBe('091234567')
+  await keypad.getByRole('button', { name: '清除' }).click()
+  expect(phone.value).toBe('')
+  expect(submit).not.toHaveBeenCalled()
+  history.pushState({}, '', '/order/store/1kAMNok/internal_use/menu')
+  row.append(document.createElement('span'))
+  await vi.waitFor(() => expect(page.getByRole('group', { name: '通知手機數字鍵盤' }).query()).toBeNull())
 })
