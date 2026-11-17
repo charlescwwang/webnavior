@@ -13,8 +13,10 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@ennuicastr/webrtcaec3.js": "catalog:",
     "@formkit/auto-animate": "catalog:",
     "@mediapipe/tasks-vision": "catalog:",
+    "@moeru/eventa": "catalog:",
     "@moeru/std": "catalog:",
     "@pinia/colada": "catalog:",
     "@proj-airi/font-cjkfonts-allseto": "workspace:^",
@@ -33,6 +35,7 @@
     "@xsai-ext/providers": "catalog:",
     "@xsai/shared-chat": "catalog:",
     "@xsai/tool": "catalog:",
+    "fft.js": "catalog:",
     "pinia": "catalog:",
     "valibot": "catalog:",
     "vue": "catalog:",
@@ -45,6 +48,7 @@
     "@iconify-json/solar": "catalog:",
     "@intlify/unplugin-vue-i18n": "catalog:",
     "@proj-airi/unplugin-live2d-sdk": "catalog:",
+    "@types/audioworklet": "catalog:",
     "@unocss/reset": "catalog:",
     "@vitejs/plugin-vue": "catalog:",
     "@vitest/browser-playwright": "catalog:vitest",

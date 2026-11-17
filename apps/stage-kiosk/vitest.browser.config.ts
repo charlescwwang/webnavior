@@ -14,16 +14,17 @@ export default defineConfig({
   // it after a browser test starts reloads that test and invalidates imports.
   // Keep it prebundled while Kiosk presentation uses this dependency.
   // Resolve from stage-ui, which owns OpenCC under pnpm's strict dependencies.
-  optimizeDeps: { include: ['@proj-airi/stage-ui > opencc-js'] },
+  optimizeDeps: { include: ['@proj-airi/stage-ui > opencc-js', '@ennuicastr/webrtcaec3.js', 'fft.js', '@mediapipe/tasks-vision'] },
   // Shared components consume build metadata; use the same provider as Vite.
   plugins: [Vue(), Info(), Yaml(), Unocss()],
   test: {
+    env: { VITEST_FAKE_MEDIA: env.VITEST_FAKE_MEDIA ?? '' },
     api: { host: '127.0.0.1' },
     include: ['src/**/*.browser.test.ts'],
     browser: {
       enabled: true,
       headless: true,
-      provider: playwright({ launchOptions: { channel: env.VITEST_BROWSER_CHANNEL } }),
+      provider: playwright({ launchOptions: { channel: env.VITEST_BROWSER_CHANNEL, args: env.VITEST_FAKE_MEDIA === '1' ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] : [] } }),
       instances: [{ browser: 'chromium' }],
     },
   },

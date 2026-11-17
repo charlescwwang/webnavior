@@ -1,0 +1,7 @@
+diff --git a/dist/webrtcaec3-0.3.0.js b/dist/webrtcaec3-0.3.0.js
+--- a/dist/webrtcaec3-0.3.0.js
++++ b/dist/webrtcaec3-0.3.0.js
+@@ -103,1 +103,3 @@
+  */
++// NOTICE: Declare the embedded WASM payload locally for strict ESM bundles.
++var WebRtcAec3Wasm;

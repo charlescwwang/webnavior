@@ -15,6 +15,9 @@ export default defineConfig({
     '**/.venv/**',
     '**/.cache/**',
     '**/.vitest-attachments/**',
+    // The synthetic DSP oracle is SHA-verified against the supplied source;
+    // formatting it would invalidate the independent numerical reference.
+    'apps/stage-kiosk/src/audio/fixtures/spatialMask/reference.js',
     'test_prompt/turnClassifierPoc/models/**',
     'cspell.config.yaml',
     'cspell.config.yml',

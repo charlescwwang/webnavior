@@ -2,6 +2,7 @@ import type { Ref } from 'vue'
 
 import { onScopeDispose, shallowRef, watch } from 'vue'
 
+import { attachReferencePlayback } from '../audio/playbackReference'
 import { transcribeKioskUtterance } from '../services/kiosk-audio'
 import { createSpeechPlayer } from '../services/kioskSpeech'
 
@@ -16,7 +17,7 @@ export function useKioskVoiceTest(io: {
 }) {
   const speaking = shallowRef(false)
   let controller = new AbortController()
-  const player = createSpeechPlayer({ synthesize: io.synthesize, onPlaying: () => speaking.value = true, onSource: () => undefined })
+  const player = createSpeechPlayer({ synthesize: io.synthesize, onPlaying: () => speaking.value = true, onSource: player => player ? attachReferencePlayback(player) : undefined })
   function stop() {
     controller.abort()
     controller = new AbortController()

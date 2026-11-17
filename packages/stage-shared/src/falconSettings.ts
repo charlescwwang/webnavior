@@ -1,8 +1,8 @@
 import type { InferOutput } from 'valibot'
 
-import { boolean, check, integer, literal, maxLength, maxValue, minValue, number, object, picklist, pipe, string, url } from 'valibot'
+import { boolean, check, integer, maxLength, maxValue, minValue, number, object, picklist, pipe, string, url } from 'valibot'
 
-/** Connection draft only. Saving this configuration does not activate the AV pipeline. */
+/** Server-owned recognition mode and Falcon connection. Provider credentials stay server-side. */
 export const falconSettingsSchema = object({
   mode: picklist(['legacy', 'falcon']),
   baseURL: pipe(string(), url(), maxLength(500), check((value) => {
@@ -20,16 +20,24 @@ export const falconSettingsSchema = object({
 /** Public settings never contain a plaintext or encrypted provider key. */
 export type FalconSettings = InferOutput<typeof falconSettingsSchema>
 
-export const falconSettingsSnapshotSchema = object({ settings: falconSettingsSchema, hasApiKey: boolean(), ready: literal(false), responseStatus: literal('pending') })
+export const falconSettingsSnapshotSchema = object({ settings: falconSettingsSchema, hasApiKey: boolean(), ready: boolean(), responseStatus: picklist(['pending', 'supported']) })
 
 export type FalconSettingsSnapshot = InferOutput<typeof falconSettingsSnapshotSchema>
 
 /** Editable connection fields; an empty key preserves the stored credential. */
 export type FalconSettingsInput = FalconSettings & { plaintextKey?: string, clearApiKey?: boolean }
 
+/** Device capture policy only; no provider address, key or response parser settings. */
+export const speechRecognitionPolicySchema = object({
+  mode: falconSettingsSchema.entries.mode,
+  maxUtteranceSeconds: falconSettingsSchema.entries.maxUtteranceSeconds,
+  timeoutMs: falconSettingsSchema.entries.timeoutMs,
+})
+export type SpeechRecognitionPolicy = InferOutput<typeof speechRecognitionPolicySchema>
+
 export const defaultFalconSettings: Readonly<FalconSettings> = {
   mode: 'legacy',
-  baseURL: 'http://192.168.8.64:8766',
+  baseURL: 'http://192.168.8.64:8767',
   path: '/api/falcon/extract',
   engine: 'onnx',
   precision: 'fp32',

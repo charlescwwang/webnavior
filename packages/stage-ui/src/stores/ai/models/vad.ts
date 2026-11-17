@@ -1,14 +1,18 @@
 import type { MaybeRefOrGetter } from 'vue'
 
-import type { BaseVADConfig } from '../../../libs/audio/vad'
+import type { BaseVADConfig, VADEvents } from '../../../libs/audio/vad'
 
 import { merge } from '@moeru/std'
 import { errorMessageFromValue } from '@proj-airi/stage-shared'
-import { ref, toRef, watch } from 'vue'
+import { ref, toRef, toValue, watch } from 'vue'
 
 import { createVAD, createVADStates } from '../../../workers/vad'
 
 interface UseVADOptions {
+  /** External PCM owns capture/resampling; no second AudioContext or microphone graph is allocated. */
+  externalPCM?: MaybeRefOrGetter<boolean>
+  /** Gates new phrases before inference; an admitted phrase still runs through its ending silence. */
+  canStartSpeech?: (endTimeMs?: number) => boolean
   threshold?: MaybeRefOrGetter<number>
   minSilenceDurationMs?: MaybeRefOrGetter<number>
   speechPadMs?: MaybeRefOrGetter<number>
@@ -16,8 +20,10 @@ interface UseVADOptions {
   maxSpeechDurationS?: MaybeRefOrGetter<number>
 
   onSpeechStart?: () => void
+  /** Every inferred score, even when unchanged; local interruption must not count the VAD silence tail as speech. */
+  onSpeechProbability?: (probability: number, timeMs: number) => void
   onSpeechEnd?: () => void
-  onSpeechReady?: (event: { buffer: Float32Array, duration: number }) => void
+  onSpeechReady?: (event: VADEvents['speech-ready']) => void
 }
 
 const DEFAULT_VAD_THRESHOLD = 0.52
@@ -73,6 +79,7 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
   const speechPadMs = toRef(options.speechPadMs)
   const minSpeechDurationMs = toRef(options.minSpeechDurationMs)
   const maxSpeechDurationS = toRef(options.maxSpeechDurationS)
+  let generation = 0
 
   async function init() {
     if (loaded.value || loading.value || manager.value)
@@ -80,6 +87,7 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
 
     loading.value = true
     inferenceError.value = ''
+    const owner = ++generation
 
     try {
       const vadConfig = resolveVADConfig(
@@ -90,10 +98,15 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
         maxSpeechDurationS.value,
       )
 
-      vad.value = await createVAD({
+      const processor = await createVAD({
         sampleRate: 16000,
         ...vadConfig,
       })
+      if (owner !== generation) {
+        await processor.dispose()
+        return
+      }
+      vad.value = processor
 
       // Set up event handlers
       vad.value.on('speech-start', () => {
@@ -113,6 +126,7 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
       vad.value.on('debug', ({ data }) => {
         if (data?.probability !== undefined) {
           isSpeechProb.value = data.probability
+          options?.onSpeechProbability?.(data.probability, performance.now())
 
           // Update VAD history for visualization
           isSpeechHistory.value.push(data.probability)
@@ -128,9 +142,15 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
         }
       })
 
+      if (toValue(options?.externalPCM)) {
+        loaded.value = true
+        return
+      }
+
       // Create and initialize audio manager
       const m = createVADStates(vad.value, workerUrl, {
         minChunkSize: 512,
+        canStartSpeech: options?.canStartSpeech,
         // NOTICE: VAD will have it's own audio context since
         // it needs special sample rate and latency settings
         audioContextOptions: {
@@ -140,14 +160,21 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
       })
 
       await m.initialize()
+      if (owner !== generation) {
+        m.dispose()
+        await processor.dispose()
+        return
+      }
       manager.value = m
       loaded.value = true
     }
     catch (error) {
-      inferenceError.value = errorMessageFromValue(error)
+      if (owner === generation)
+        inferenceError.value = errorMessageFromValue(error)
     }
     finally {
-      loading.value = false
+      if (owner === generation)
+        loading.value = false
     }
   }
 
@@ -156,10 +183,20 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
       await manager.value.start(stream)
   }
 
+  /** Feeds externally processed, source-clocked PCM without a second browser resampler. */
+  async function processAudio(input: Float32Array, endTimeMs: number, recording = input) {
+    if (!vad.value || !loaded.value)
+      throw new Error('VAD must be loaded before external PCM can be processed.')
+    await vad.value.processAudio(input, endTimeMs, recording, options?.canStartSpeech?.(endTimeMs) ?? true)
+  }
+
   function dispose() {
+    generation++
     manager.value?.stop()
     manager.value?.dispose()
     manager.value = undefined
+    void vad.value?.dispose().catch(error => console.error('Failed to release VAD model:', error))
+    vad.value = undefined
 
     isSpeech.value = false
     isSpeechProb.value = 0
@@ -212,6 +249,7 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
     maxSpeechDurationS,
 
     init,
+    processAudio,
     start,
     dispose,
   }

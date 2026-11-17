@@ -5,6 +5,7 @@ import Tres from '@tresjs/core'
 
 import { autoAnimatePlugin } from '@formkit/auto-animate/vue'
 import { PiniaColada } from '@pinia/colada'
+import { useAudioContext } from '@proj-airi/stage-ui/stores/audio'
 import { createPinia } from 'pinia'
 import { setupLayouts } from 'virtual:generated-layouts'
 import { createApp } from 'vue'
@@ -33,12 +34,21 @@ router.beforeEach((to) => {
     return '/'
 })
 
+// Initialize before any Stage/avatar captures the shared context. UMA-8 AEC3
+// requires 48 kHz; playback and discrete capture must use this same clock.
+const pinia = createPinia()
+const audio = useAudioContext(pinia)
+if (audio.audioContext.sampleRate !== 48000) {
+  void audio.audioContext.close()
+  audio.audioContext = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' })
+}
+
 createApp(App)
   // NOTICE: Shared chat components use v-auto-animate for message transitions.
   // The directive must be registered by every application entrypoint that
   // renders them; Stage Web and the desktop renderer use the same plugin.
   .use(autoAnimatePlugin as unknown as Plugin)
-  .use(createPinia())
+  .use(pinia)
   .use(router)
   .use(PiniaColada)
   .use(i18n)

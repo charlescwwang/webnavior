@@ -1,18 +1,21 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
+import { effectScope } from 'vue'
 
+import { useKioskInteractionTurn } from '../composables/useKioskInteractionTurn'
 import { createSpeechPlayer } from './kioskSpeech'
+import { createSpeechInterruption } from './speechInterruption'
 
 afterEach(() => document.body.replaceChildren())
 
 // Silent, real WAV media exercises HTMLAudioElement lifecycle without replacing
 // browser globals or depending on the configured merchant/audio provider.
-function silence() {
-  const buffer = new ArrayBuffer(844)
+function silence(samples = 800) {
+  const buffer = new ArrayBuffer(44 + samples)
   const data = new DataView(buffer)
   const text = (offset: number, value: string) => [...value].forEach((char, index) => data.setUint8(offset + index, char.charCodeAt(0)))
   text(0, 'RIFF')
-  data.setUint32(4, 836, true)
+  data.setUint32(4, 36 + samples, true)
   text(8, 'WAVEfmt ')
   data.setUint32(16, 16, true)
   data.setUint16(20, 1, true)
@@ -22,10 +25,57 @@ function silence() {
   data.setUint16(32, 1, true)
   data.setUint16(34, 8, true)
   text(36, 'data')
-  data.setUint32(40, 800, true)
+  data.setUint32(40, samples, true)
   new Uint8Array(buffer, 44).fill(128)
   return new Blob([buffer], { type: 'audio/wav' })
 }
+
+// Report: this chat, 2026-11-17 — local interruption must stop real playback without cancelling the order or consulting a model.
+it.each(['off', 'observe', 'enforce'] as const)('applies %s to local TTS interruption while preserving the active tool and speech candidate', async (mode) => {
+  const scope = effectScope()
+  const turn = scope.run(useKioskInteractionTurn)!
+  const order = turn.begin('conversation', 'using-tool')
+  const candidate = turn.beginCustomerVoiceCandidate()
+  const interruption = createSpeechInterruption()
+  interruption.begin(candidate.id)
+  const onPlaying = vi.fn()
+  let audio: HTMLAudioElement | undefined
+  const player = createSpeechPlayer({ synthesize: async () => silence(16000), onPlaying, onSource: (source) => {
+    audio = source
+    source!.muted = true
+    return undefined
+  } })
+  let playback: ReturnType<typeof player.play> | undefined
+  const button = document.createElement('button')
+  button.textContent = `開始 ${mode} 播放`
+  button.onclick = () => {
+    playback = player.play({ text: '正在處理餐點。', locale: 'zh-TW', signal: order.signal })
+  }
+  document.body.append(button)
+  try {
+    await page.getByRole('button', { name: button.textContent }).click()
+    await vi.waitFor(() => expect(onPlaying).toHaveBeenCalledOnce())
+    for (let time = 0; time <= 300; time += 50) {
+      if (interruption.observe(candidate.id, time, 0.9, 0.5, true, mode))
+        player.stop()
+    }
+    if (mode === 'enforce') {
+      expect(audio!.paused).toBe(false)
+      player.stop()
+    }
+    expect(await playback).toBe('cancelled')
+    expect(audio!.paused).toBe(true)
+    expect(order.signal.aborted).toBe(false)
+    expect(turn.isCurrent(order)).toBe(true)
+    expect(turn.isCurrentVoiceCandidate(candidate)).toBe(true)
+    expect(turn.phase.value).toBe('using-tool')
+  }
+  finally {
+    player.stop()
+    scope.stop()
+    button.remove()
+  }
+})
 it('starts the first sentence while only the next sentence is prefetched and cancels its pending synthesis', async () => {
   const controller = new AbortController()
   const onPlaying = vi.fn()

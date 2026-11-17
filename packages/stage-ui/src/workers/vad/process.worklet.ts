@@ -23,7 +23,7 @@ class VADProcessor extends AudioWorkletProcessor {
 
     if (buffer.length > MIN_CHUNK_SIZE) {
       // If the buffer is larger than the minimum chunk size, send the entire buffer
-      this.port.postMessage({ buffer })
+      this.port.postMessage({ buffer, endTime: currentTime + buffer.length / sampleRate })
     }
     else {
       const remaining = MIN_CHUNK_SIZE - globalPointer
@@ -32,7 +32,7 @@ class VADProcessor extends AudioWorkletProcessor {
         globalBuffer.set(buffer.subarray(0, remaining), globalPointer)
 
         // Send the global buffer
-        this.port.postMessage({ buffer: globalBuffer })
+        this.port.postMessage({ buffer: globalBuffer, endTime: currentTime + remaining / sampleRate })
 
         // Reset the global buffer and set the remaining buffer
         globalBuffer.fill(0)

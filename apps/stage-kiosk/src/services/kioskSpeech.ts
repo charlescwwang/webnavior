@@ -1,3 +1,5 @@
+import { applyAudioOutput } from './kioskAudioOutput'
+
 /**
  * Plays verified reply sentences with one bounded lookahead. The current audio
  * gateway returns MP3 bodies without a negotiated streaming protocol: these are
@@ -8,11 +10,21 @@ export function createSpeechPlayer(options: {
   onSynthesis?: (index: number) => void
   onReady?: () => void
   onPlaying: (text: string, first: boolean) => void
-  onSource: (player: HTMLAudioElement | undefined) => (() => void) | undefined
+  /** Fires synchronously when audible output stops, including cancellation. */
+  onStopped?: () => void
+  onSource: (player: HTMLAudioElement | undefined) => (() => void) | undefined | Promise<(() => void) | undefined>
 }) {
   let active: AbortController | undefined
+  let audible = false
+  function notifyStopped() {
+    if (!audible)
+      return
+    audible = false
+    options.onStopped?.()
+  }
   function stop() {
     active?.abort()
+    notifyStopped()
     active = undefined
   }
   return {
@@ -55,8 +67,10 @@ export function createSpeechPlayer(options: {
           const next = index + 1 < segments.length ? synthesize(index + 1).then(audio => ({ audio }), error => ({ error })) : undefined
           const url = URL.createObjectURL(audio)
           const player = new Audio(url)
-          const disposeSource = options.onSource(player)
+          let disposeSource: (() => void) | undefined
           try {
+            await applyAudioOutput(player)
+            disposeSource = await options.onSource(player)
             await new Promise<void>((resolve) => {
               let settled = false
               const finish = () => {
@@ -74,6 +88,7 @@ export function createSpeechPlayer(options: {
               }
               player.onplaying = () => {
                 if (!signal.aborted) {
+                  audible = true
                   options.onPlaying(segments[index], first)
                   first = false
                 }
@@ -107,8 +122,10 @@ export function createSpeechPlayer(options: {
       }
       finally {
         owner.abort()
-        if (active === owner)
+        if (active === owner) {
+          notifyStopped()
           active = undefined
+        }
       }
     },
   }

@@ -63,6 +63,9 @@ export function useAudioDevice(requestPermission: boolean = false) {
       selectedAudioInput.value = resolvePreferredAudioInput(audioInputs.value)
   }
 
+  // The owning surface may request a raw array. Other applications retain
+  // browser echo/noise processing unless they explicitly supply constraints.
+  const inputConstraints = ref<MediaTrackConstraints>()
   const deviceConstraints = computed<MediaStreamConstraints>(() => ({
     audio: selectedAudioInput.value
       ? {
@@ -70,11 +73,13 @@ export function useAudioDevice(requestPermission: boolean = false) {
           autoGainControl: true,
           echoCancellation: true,
           noiseSuppression: true,
+          ...inputConstraints.value,
         }
       : {
           autoGainControl: true,
           echoCancellation: true,
           noiseSuppression: true,
+          ...inputConstraints.value,
         },
   }))
   const { stream, stop: stopStream, start: startUserMediaStream } = useUserMedia({ constraints: deviceConstraints, enabled: false, autoSwitch: true })
@@ -138,6 +143,10 @@ export function useAudioDevice(requestPermission: boolean = false) {
       return await startUserMediaStream()
     }
     catch (error) {
+      // An explicitly requested channel layout belongs to the selected device.
+      // Switching to another input would silently invalidate its DSP geometry.
+      if (inputConstraints.value?.channelCount)
+        throw error
       const fallbackDeviceId = resolvePreferredAudioInput(audioInputs.value)
       if (fallbackDeviceId && fallbackDeviceId !== selectedAudioInput.value) {
         selectedAudioInput.value = fallbackDeviceId
@@ -160,6 +169,7 @@ export function useAudioDevice(requestPermission: boolean = false) {
     selectedAudioInput,
     stream,
     deviceConstraints,
+    inputConstraints,
     permissionGranted,
     permissionState,
 

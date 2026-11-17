@@ -23,7 +23,7 @@ export interface VADEvents {
   // Emitted when speech has ended
   'speech-end': void
   // Emitted when a complete speech segment is ready for transcription
-  'speech-ready': { buffer: Float32Array, duration: number }
+  'speech-ready': { buffer: Float32Array, duration: number, startTimeMs?: number, capturedSamples?: number, preSpeechSamples?: number, truncated?: boolean }
   // Emitted for status updates and errors
   'status': { type: string, message: string }
   // Debug info
@@ -34,7 +34,12 @@ export type VADEventCallback<K extends keyof VADEvents> = (event: VADEvents[K]) 
 
 export interface BaseVAD {
   initialize: () => Promise<void>
-  processAudio: (inputBuffer: Float32Array) => Promise<void>
+  /**
+   * Detection/recording PCM share source samples and timestamps. A false start
+   * gate skips inference while idle, retaining bounded pre-roll; an admitted
+   * phrase continues through its normal ending silence.
+   */
+  processAudio: (inputBuffer: Float32Array, endTimeMs?: number, recordingBuffer?: Float32Array, allowSpeechStart?: boolean) => Promise<void>
   on: <K extends keyof VADEvents>(event: K, callback: VADEventCallback<K>) => void
   off: <K extends keyof VADEvents>(event: K, callback: VADEventCallback<K>) => void
 }
@@ -54,6 +59,9 @@ export interface VADAudioOptions {
    * VAD configuration options
    */
   vadConfig?: Partial<BaseVADConfig>
+
+  /** Evaluated on each source-clocked block, before VAD inference may start a new phrase. */
+  canStartSpeech?: (endTimeMs?: number) => boolean
 }
 
 export function createVADStates(vad: BaseVAD, vadAudioWorkletUrl: string, options?: VADAudioOptions) {
@@ -85,9 +93,15 @@ export function createVADStates(vad: BaseVAD, vadAudioWorkletUrl: string, option
 
       audioWorkletNode = new AudioWorkletNode(audioContext, 'vad-audio-worklet-processor')
       audioWorkletNode.port.onmessage = async (event) => {
-        const { buffer } = event.data
+        const { buffer, endTime } = event.data
         if (buffer && buffer.length > 0) {
-          await vad.processAudio(new Float32Array(buffer))
+          // Worklet time identifies the captured samples, not message arrival
+          // or asynchronous VAD completion. Map it onto the camera's monotonic
+          // performance clock before inference can introduce variable delay.
+          const endTimeMs = Number.isFinite(endTime)
+            ? performance.now() + (endTime - audioContext.currentTime) * 1000
+            : undefined
+          await vad.processAudio(new Float32Array(buffer), endTimeMs, undefined, options?.canStartSpeech?.(endTimeMs) ?? true)
         }
       }
     }
@@ -151,6 +165,7 @@ export function createVADStates(vad: BaseVAD, vadAudioWorkletUrl: string, option
   function dispose() {
     disconnectInputGraph()
     if (audioWorkletNode) {
+      audioWorkletNode.port.onmessage = null
       audioWorkletNode.disconnect()
       audioWorkletNode = null
     }

@@ -1,3 +1,15 @@
+/** Upstream-reported stage durations, in milliseconds; neither measures WAV delivery. */
+export interface FalconTiming {
+  inferenceMs?: number
+  asrMs?: number
+}
+
+/** Final text and optional upstream telemetry from the Falcon+ASR service. */
+export interface FalconTranscription {
+  text: string
+  timing?: FalconTiming
+}
+
 /** Fixed-window geometry shared with the deployed whole-clip protocol. */
 export const falconAudioLimits = {
   sampleRate: 16_000,
@@ -6,7 +18,24 @@ export const falconAudioLimits = {
   pixelsPerFrame: 96 * 96,
   audioBytes: 64_000,
   packetBytes: 294_404,
+  maxClipSeconds: 30,
+  maxClipBytes: 4 + 30 * (64_000 + 25 * 96 * 96),
 } as const
+
+/** Validates untrusted whole-clip bytes before the server forwards them upstream. */
+export function validateFalconClip(packet: ArrayBuffer, maxSeconds: number): number {
+  if (packet.byteLength < 4 || packet.byteLength > falconAudioLimits.maxClipBytes)
+    throw new Error('Falcon clip size is invalid.')
+  const view = new DataView(packet)
+  const frames = view.getUint32(0, true)
+  if (frames < 25 || frames > Math.min(maxSeconds, falconAudioLimits.maxClipSeconds) * 25 || packet.byteLength !== 4 + frames * (640 * 4 + 96 * 96))
+    throw new Error('Falcon clip frame count or length is invalid.')
+  for (let offset = 4; offset < 4 + frames * 640 * 4; offset += 4) {
+    if (!Number.isFinite(view.getFloat32(offset, true)))
+      throw new Error('Falcon clip contains non-finite audio.')
+  }
+  return frames
+}
 
 /** Encodes exactly one synchronized window, without padding, overlap policy or normalization. */
 export function encodeFalconWindow(audio: Float32Array, mouths: readonly Uint8Array[]): ArrayBuffer {
