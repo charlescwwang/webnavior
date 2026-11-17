@@ -199,7 +199,7 @@ export class ServiceSurface {
     const entry = this.serviceEntry!
     const beforeUrl = new URL(view.webContents.getURL())
     const before = readPbJourney(beforeUrl.href)
-    const approved = () => this.view === view && !this.failed && !this.documentLoading && this.navigation === generation && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey && isPbJourneyPage(entry, view.webContents.getURL())
+    const approved = () => this.view === view && !this.failed && !this.documentLoading && this.navigation === generation && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey && (isPbJourneyPage(entry, view.webContents.getURL()) || (isPbOrderResultUrl(entry, view.webContents.getURL()) && (input.command.kind !== 'execute' || input.command.request.name === 'browser_state_get')))
     if (!approved())
       throw new Error('Native automation is restricted to the approved PB menu/cart journey.')
     // All JavaScript is bundled application code. The untrusted renderer can
@@ -228,7 +228,7 @@ export class ServiceSurface {
         && beforeUrl.pathname === before?.cartPath && submissionTarget && isPbOrderResultUrl(entry, submissionTarget)
         && this.view === view && this.hostGeneration === hostGeneration && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey) {
         // This acknowledges one native click, not merchant acceptance/payment.
-        // The result page has no automation privileges and cannot revive tools.
+        // The result page permits only the separate Host state reader, never editor tools.
         return result
       }
       const started = receipt.success && safeParse(menuEntryReceiptSchema, receipt.output.result)

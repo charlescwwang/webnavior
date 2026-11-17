@@ -11,7 +11,7 @@ const settingsSchema = strictObject({
       return url.pathname.endsWith('/kiosk/') && !url.search && !url.hash
     }
     catch { return false }
-  }, 'kioskUrl must be an HTTPS Kiosk URL ending in /kiosk/.')),
+  }, 'kioskUrl must be an approved Kiosk URL ending in /kiosk/.')),
   windowed: boolean(),
   diagnosticPort: pipe(number(), integer(), check(value => value === 0 || (value >= 1024 && value <= 65535), 'diagnosticPort must be 0 or 1024..65535.')),
 })

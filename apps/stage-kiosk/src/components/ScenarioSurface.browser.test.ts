@@ -1,6 +1,8 @@
 import { afterEach, expect, it } from 'vitest'
 import { render } from 'vitest-browser-vue'
+import { createI18n } from 'vue-i18n'
 
+import zhHant from '../../../../packages/i18n/src/locales/zh-Hant/stage.yaml'
 import ScenarioSurface from './ScenarioSurface.vue'
 
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
@@ -21,7 +23,7 @@ it('revokes assistant handles on same-service reload and unmount without blockin
     // it must not create carts or orders on the external service.
     serviceUrl: new URL('/favicon.ico', location.origin).href,
   }])
-  const screen = render(ScenarioSurface)
+  const screen = render(ScenarioSurface, { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
   const frame = screen.container.querySelector('iframe')
   expect(frame?.getAttribute('allow')).toContain('geolocation')
   expect(frame?.getAttribute('sandbox')).toBeNull()
@@ -43,4 +45,13 @@ it('revokes assistant handles on same-service reload and unmount without blockin
   screen.unmount()
   expect(interactiveServiceClient.availability.value).toBe('idle')
   expect(interactiveServiceClient.tools.value).toEqual([])
+})
+
+it('explains that merchant PB requires EXE without attempting an unsupported browser connection', async () => {
+  scenarioRegistry.setServices([{ enabled: true, id: 'pb', title: 'PB', description: 'Merchant ordering', serviceUrl: 'https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table' }])
+  const screen = render(ScenarioSurface, { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
+  await expect.element(screen.getByRole('status')).toHaveTextContent('PB 正式網站請使用 Kiosk EXE')
+  expect(screen.container.querySelector('iframe')).toBeNull()
+  expect(interactiveServiceClient.availability.value).toBe('idle')
+  screen.unmount()
 })

@@ -52,20 +52,21 @@ def package(runtime_zip, output):
         (app / 'resources/default_app.asar').unlink(missing_ok=True)
         payload = app / 'resources/app'
         payload.mkdir(parents=True)
-        (payload / 'package.json').write_text(json.dumps({'name': 'webnavior-kiosk', 'version': '0.1.0', 'type': 'module', 'main': 'out/main/index.js'}), encoding='utf-8')
+        app_version = json.loads((ROOT / 'apps/stage-kiosk-desktop/package.json').read_text())['version']
+        (payload / 'package.json').write_text(json.dumps({'name': 'webnavior-kiosk', 'version': app_version, 'type': 'module', 'main': 'out/main/index.js'}), encoding='utf-8')
         for relative in outputs:
             target = payload / 'out' / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(built / relative, target)
-        settings = {'kioskUrl': 'https://webnavior.aikcitri.qzz.io/kiosk/', 'windowed': True, 'diagnosticPort': 0}
+        settings = {'kioskUrl': 'http://100.92.1.80:5169/kiosk/', 'windowed': True, 'diagnosticPort': 0}
         for name in ['kiosk.settings.json', 'kiosk.settings.example.json']:
             (app / name).write_text(json.dumps(settings, ensure_ascii=False, indent=2) + '\n', encoding='utf-8-sig')
         (app / 'Edit Settings.cmd').write_bytes(b'@echo off\r\nnotepad.exe "%~dp0kiosk.settings.json"\r\n')
-        (app / '管理後台.url').write_bytes(b'[InternetShortcut]\r\nURL=https://webnavior.aikcitri.qzz.io/admin/system/models\r\n')
+        (app / '管理後台.url').write_bytes(b'[InternetShortcut]\r\nURL=http://100.92.1.80:5169/admin/system/models\r\n')
         guide = (ROOT / 'scripts/windows/portableQuickStart.txt').read_text(encoding='utf-8')
         (app / '先看我.txt').write_text(guide.replace('\n', '\r\n'), encoding='utf-8-sig', newline='')
         # The whitelist above deliberately excludes source trees, environment files, keys and profiles.
-        manifest = {'createdAt': datetime.now().astimezone().isoformat(), 'gitCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'electron': VERSION, 'embeddedNode': '24.22.1', 'architecture': 'win32-x64', 'runtimeArchiveSha256': RUNTIME_SHA256, 'signed': False, 'windowsPhysicalValidation': False, 'files': {str(path.relative_to(app)): digest(path) for path in sorted(app.rglob('*')) if path.is_file()}}
+        manifest = {'version': app_version, 'createdAt': datetime.now().astimezone().isoformat(), 'gitCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'electron': VERSION, 'embeddedNode': '24.22.1', 'architecture': 'win32-x64', 'runtimeArchiveSha256': RUNTIME_SHA256, 'signed': False, 'windowsPhysicalValidation': False, 'files': {str(path.relative_to(app)): digest(path) for path in sorted(app.rglob('*')) if path.is_file()}}
         (app / 'PACKAGE-MANIFEST.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
         with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=5) as target:
             for path in sorted(app.rglob('*')):

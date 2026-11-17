@@ -25,7 +25,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[2]
 STATE = ROOT / 'pb-test.local'
 ORIGIN = 'http://127.0.0.1:15169'
-SHARED_ORIGIN = 'https://webnavior.aikcitri.qzz.io'
+SHARED_ORIGIN = 'http://100.92.1.80:5169'
 ELECTRON_UNITS = {
     'electron': 'webnavior-pb-test-electron.service',
     'shared-electron': 'webnavior-pb-shared-electron.service',

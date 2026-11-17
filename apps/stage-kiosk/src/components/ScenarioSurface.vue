@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { ProductPresentation } from '@proj-airi/stage-shared/product-presentation'
 
-import { onUnmounted, useTemplateRef, watch } from 'vue'
+import { isPbSimulatorHost, readPbJourney } from '@proj-airi/stage-shared/pb-journey'
+import { computed, onUnmounted, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import BrowserProductPresentation from './browserProductPresentation.vue'
 import CustomerPhoneModal from './customerPhoneModal.vue'
@@ -17,6 +19,11 @@ const emit = defineEmits<{ activity: [] }>()
 const customerEntry = useKioskCustomerEntry(interactiveServiceClient)
 const scenarioFrame = useTemplateRef<HTMLIFrameElement>('scenarioFrame')
 const desktop = window.airiKioskDesktop
+const { t } = useI18n()
+const browserPbUnsupported = computed(() => {
+  const url = scenarioRegistry.activeScenario.value?.serviceUrl
+  return !desktop && Boolean(url && readPbJourney(url) && !isPbSimulatorHost(url, location.href))
+})
 function attachFrame() {
   scenarioRegistry.attachActiveFrame(scenarioFrame.value?.contentWindow ?? null)
   interactiveServiceClient.activate(scenarioRegistry.activeScenario.value?.serviceUrl, scenarioFrame.value?.contentWindow)
@@ -60,6 +67,10 @@ onUnmounted(() => {
       @navigating="interactiveServiceClient.beginNavigation()"
       @unavailable="interactiveServiceClient.activate(undefined)"
     />
+    <div v-else-if="browserPbUnsupported" role="status" :class="['flex flex-col items-center justify-center gap-4 p-6 text-center']">
+      <p>{{ t('stage.kiosk.browser-pb-backup') }}</p>
+      <a href="https://webnavior.aikcitri.qzz.io/kiosk/" :class="['text-primary-600 underline']">{{ t('stage.kiosk.browser-pb-backup-link') }}</a>
+    </div>
     <iframe
       v-else
       ref="scenarioFrame"

@@ -1,0 +1,18 @@
+{
+  "name": "@proj-airi/pb-order-lab",
+  "type": "module",
+  "private": true,
+  "description": "Isolated PB ordering simulator for browser acceptance testing.",
+  "scripts": {
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:run": "vitest run --config vitest.config.js"
+  },
+  "dependencies": {
+    "uuid": "catalog:"
+  },
+  "devDependencies": {
+    "vite": "catalog:",
+    "vitest": "catalog:vitest"
+  }
+}

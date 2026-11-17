@@ -1,7 +1,12 @@
+import { v4 as uuid } from 'uuid'
+
+import { installSimulatorBridge } from '../../packages/stage-ui/src/services/pbSimulatorBridge'
 import { basePath, categories, products, revision, tables } from './catalog.js'
 import { runCompatibilityCheck } from './contractCheck.js'
 import { pageSnapshot, routeRegistry, sessionSchemaVersion } from './fixtureProtocol.js'
 import { abandonPayment, invoiceError, pay, selection, setCartQuantity, submit } from './order.js'
+
+const assets = import.meta.glob('./assets/*', { eager: true, query: '?url', import: 'default' })
 
 const storageKey = 'pb-order-lab:v2'
 const app = document.querySelector('#app')
@@ -9,7 +14,7 @@ const modalRoot = document.querySelector('#modal-root')
 const invoiceLabels = { none: '無載具 (存入綠界電子發票載具)', citizen: '自然人憑證', carrier: '手機載具', tax: '統一編號', donation: '捐贈發票' }
 const paymentLabels = { unpaid: '尚未付款', succeeded: '模擬付款成功', failed: '模擬付款失敗', cancelled: '已取消模擬付款', uncertain: '模擬結果不明，請核對', abandoned: '已放棄付款，訂單已取消' }
 const emptyInvoice = () => ({ type: 'none', code: '', phone: '', email: '' })
-const fresh = () => ({ schemaVersion: sessionSchemaVersion, draftStarted: false, tables, table: '', cart: [], invoice: emptyInvoice(), note: '', orders: [], checkoutKey: crypto.randomUUID() })
+const fresh = () => ({ schemaVersion: sessionSchemaVersion, draftStarted: false, tables, table: '', cart: [], invoice: emptyInvoice(), note: '', orders: [], checkoutKey: uuid() })
 let state = fresh()
 let query = ''
 let category = ''
@@ -20,7 +25,7 @@ let searchTimer
 let restoreFocus
 let sessionRevision = 0
 let syncQueue = Promise.resolve()
-const renderToken = crypto.randomUUID().slice(0, 8)
+const renderToken = uuid().slice(0, 8)
 
 // The simulator owns the browser-profile session; sessionStorage is a reload/
 // restart backup. A stale tab cannot overwrite a newer server revision. Corrupt
@@ -52,12 +57,12 @@ function save() {
   }
   const snapshot = structuredClone(state)
   syncQueue = syncQueue.then(async () => {
-    const response = await fetch('/__lab/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: sessionRevision, state: snapshot }) })
+    const response = await fetch(`${import.meta.env.BASE_URL}__lab/state`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: sessionRevision, state: snapshot }) })
     const result = await response.json()
     if (!response.ok)
       throw new Error(result.error ?? '測試伺服器未完成同步，請重新整理核對。')
     sessionRevision = result.revision
-    document.querySelector('#app').setAttribute('data-page', JSON.stringify(pageSnapshot(state, location.pathname + location.search)))
+    document.querySelector('#app').setAttribute('data-page', JSON.stringify(pageSnapshot(state, location.href)))
   }).catch((error) => {
     document.querySelector('#storage-warning').hidden = false
     document.querySelector('#storage-warning').textContent = error.message
@@ -71,10 +76,10 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': 
 const money = value => `$${value.toLocaleString('en-US')}`
 const total = () => state.cart.reduce((sum, line) => sum + line.subtotal, 0)
 const date = value => new Date(value).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })
-const now = () => ({ id: crypto.randomUUID(), now: new Date().toISOString() })
+const now = () => ({ id: uuid(), now: new Date().toISOString() })
 const button = (label, action, attrs = '') => `<button type="button" data-action="${action}" ${attrs}>${label}</button>`
-const icon = name => `<img class="icon" src="/assets/${name}.svg" alt="" aria-hidden="true">`
-const image = product => product.image ? `<img src="${product.image}" alt="${escape(product.name)}">` : '<div class="no-image">無圖片</div>'
+const icon = name => `<img class="icon" src="${assets[`./assets/${name}.svg`]}" alt="" aria-hidden="true">`
+const image = product => product.image ? `<img src="${assets[`.${product.image}`]}" alt="${escape(product.name)}">` : '<div class="no-image">無圖片</div>'
 const stepper = (name, value, min, max, label) => `<div class="stepper"><span role="button" tabindex="0" data-action="step" data-field="${name}" data-delta="-1" aria-label="減少${label}">${icon('minus')}</span><input type="number" id="${name}" name="${name}" data-testid="${name}" aria-label="${label}" min="${min}" max="${max}" step="1" value="${value}"><span role="button" tabindex="0" data-action="step" data-field="${name}" data-delta="1" aria-label="增加${label}">${icon('plus')}</span></div>`
 
 function notify(message) {
@@ -111,7 +116,7 @@ function closeModal() {
 }
 
 function render() {
-  app.setAttribute('data-page', JSON.stringify(pageSnapshot(state, location.pathname + location.search)))
+  app.setAttribute('data-page', JSON.stringify(pageSnapshot(state, location.href)))
   clearTimeout(searchTimer)
   query = ''
   category = ''
@@ -402,11 +407,11 @@ document.addEventListener('click', async (event) => {
       const result = selection(target.dataset.productId, Number(document.querySelector('#quantity').value), Number(document.querySelector('#extra')?.value ?? 0), document.querySelector('#product-note').value)
       state.draftStarted = true
       if (state.orders.some(order => order.checkoutKey === state.checkoutKey))
-        state.checkoutKey = crypto.randomUUID()
+        state.checkoutKey = uuid()
       if (line)
         Object.assign(line, result)
       else
-        state.cart.push({ ...result, lineId: crypto.randomUUID(), vendorLineId: Math.max(0, ...state.cart.map(item => item.vendorLineId)) + 1 })
+        state.cart.push({ ...result, lineId: uuid(), vendorLineId: Math.max(0, ...state.cart.map(item => item.vendorLineId)) + 1 })
       await save()
       closeModal()
       location.pathname.endsWith('/orders/create') ? renderCheckout() : renderMenu()
@@ -479,7 +484,7 @@ document.addEventListener('click', async (event) => {
       showModal(`<div class="dialog-content"><h2>訂單資料</h2><pre data-testid="order-json">${escape(JSON.stringify(order, null, 2))}</pre></div>`)
     }
     else if (action === 'new') {
-      state.checkoutKey = crypto.randomUUID()
+      state.checkoutKey = uuid()
       state.invoice = emptyInvoice()
       state.note = ''
       state.draftStarted = false
@@ -489,8 +494,8 @@ document.addEventListener('click', async (event) => {
     else if (action === 'drift') {
       closeModal()
       document.querySelectorAll('#app button, #app input, .menu-card').forEach((element) => {
-        element.classList.add(`render-${crypto.randomUUID().slice(0, 8)}`)
-        element.dataset.renderId = crypto.randomUUID()
+        element.classList.add(`render-${uuid().slice(0, 8)}`)
+        element.dataset.renderId = uuid()
       })
       notify('已擾動外觀識別；固定 ID、name、data-testid 不變。')
     }
@@ -533,7 +538,7 @@ Object.defineProperty(window, 'pbTest', { value: Object.freeze({
 
 // NOTICE: First render must wait for the cookie-owned snapshot, never a fresh empty cart.
 // eslint-disable-next-line antfu/no-top-level-await
-const initial = await fetch('/__lab/state').then(response => response.json())
+const initial = await fetch(`${import.meta.env.BASE_URL}__lab/state`).then(response => response.json())
 sessionRevision = initial.revision
 if (initial.state)
   state = initial.state
@@ -551,6 +556,7 @@ registry.type = 'application/json'
 registry.textContent = `const Ziggy=${JSON.stringify(routeRegistry(location.origin))};`
 document.head.append(registry)
 
-if (location.pathname === '/')
+if (location.pathname === import.meta.env.BASE_URL)
   history.replaceState({}, '', `${basePath}/menu/select-table`)
 render()
+installSimulatorBridge()

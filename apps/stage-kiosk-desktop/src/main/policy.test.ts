@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { clipBounds, isHostClipboardWrite, isHostMediaRequest, isHostPage, isTextConsoleRequest, parsePageUrl } from './policy'
+import { clipBounds, connectionChoices, isHostClipboardWrite, isHostMediaRequest, isHostPage, isTextConsoleRequest, parsePageUrl } from './policy'
+
+it('offers both Kiosk connections without dropping an explicitly configured deployment', () => {
+  const choices = connectionChoices('http://100.92.1.80:5169/kiosk/')
+  expect(choices.map(choice => choice.url)).toEqual(['http://100.92.1.80:5169/kiosk/', 'https://webnavior.aikcitri.qzz.io/kiosk/'])
+  expect(connectionChoices('https://webnavior.aikcitri.qzz.io/kiosk/')).toEqual(choices)
+  expect(connectionChoices('https://other.example/kiosk/')[2]).toEqual({ label: '設定的其他入口', url: 'https://other.example/kiosk/' })
+  expect(() => connectionChoices('http://other.example/kiosk/')).toThrow()
+})
 
 // Report: this chat, 2026-11-16 — public HTTPS Electron has no floating text console.
 it('admits the HTTPS host text console when Chromium omits the blank-page referrer', () => {
@@ -23,6 +31,14 @@ describe('kiosk desktop navigation policy', () => {
     expect(() => parsePageUrl('http://public.example/menu')).toThrow()
     expect(() => parsePageUrl('file:///etc/passwd')).toThrow()
     expect(() => parsePageUrl('https://user:secret@example.com')).toThrow()
+  })
+
+  it('admits only the configured LAN Kiosk over HTTP', () => {
+    expect(parsePageUrl('http://100.92.1.80:5169/kiosk/').origin).toBe('http://100.92.1.80:5169')
+    expect(() => parsePageUrl('http://100.92.1.80/kiosk/')).toThrow()
+    expect(() => parsePageUrl('http://100.92.1.81:5169/kiosk/')).toThrow()
+    expect(() => parsePageUrl('http://100.92.1.80:5169/menu/')).toThrow()
+    expect(() => parsePageUrl('http://100.92.1.80:5169/kiosk-attacker/')).toThrow()
   })
 
   it('keeps privileged navigation inside the Kiosk path and exact origin', () => {

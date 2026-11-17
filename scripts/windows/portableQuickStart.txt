@@ -1,25 +1,28 @@
-Webnavior Kiosk — Windows 10/11 Intel x64 可攜版
+Webnavior Kiosk 0.2.0 — Windows 10/11 Intel x64 可攜版
 
 第一次使用，只要做三件事
 1. 將整個 ZIP 解壓縮到 C:\Webnavior-Kiosk。不要直接在 ZIP 裡執行。
 2. 雙擊「Webnavior Kiosk.exe」。不需要 Setup、Build、Node 或 pnpm。
-3. 依畫面建立／配對設備；需要時登入商家網站。
+3. 選擇 Tailscale 內網或 Webnavior 公開網域，再依畫面建立／配對設備。
 
 請保留 EXE 旁的所有檔案與資料夾，不能只複製 EXE。
-使用時需要能連上公開網站與商家網站的網路。
+Tailscale 內網：http://100.92.1.80:5169/kiosk/（需先連上 Tailscale）
+公開網域：https://webnavior.aikcitri.qzz.io/kiosk/（一般網際網路）
+每次啟動先選擇本次連線；不會在點餐途中自動切換。
+兩個入口的設備配對分開保存，首次切換可能需要另外配對。
 
 如何修改設定
 先關閉程式，再雙擊「Edit Settings.cmd」，修改 kiosk.settings.json，儲存後重開 EXE。
 一般使用不用改，網址已設定為：
-https://webnavior.aikcitri.qzz.io/kiosk/
+http://100.92.1.80:5169/kiosk/
 
-kioskUrl：網站網址。一般保持原值，最後必須保留 /kiosk/。
+kioskUrl：啟動選擇預設的網站網址，最後必須保留 /kiosk/。不會覆蓋本次手動選擇。
 windowed：true 是一般視窗；false 是全螢幕 Kiosk。布林值不用加引號。
 diagnosticPort：保持 0。只有工程師協助檢查時才改，完成後改回 0 並重開。
 
-模型、ASR、TTS、Falcon 與 API Key 都在網域後台設定，不填在這台電腦：
-https://webnavior.aikcitri.qzz.io/admin/system/models
-可以雙擊「管理後台.url」開啟。Falcon 影音模式目前仍未開放，保持舊模式。
+模型、ASR、TTS、Falcon 與 API Key 都在伺服器後台設定，不填在這台電腦：
+http://100.92.1.80:5169/admin/system/models
+可以雙擊「管理後台.url」開啟；語音模式依後台實際配置。
 
 如何關閉
 一般視窗按右上角 X；全螢幕可按 Alt+F4。
@@ -27,7 +30,7 @@ https://webnavior.aikcitri.qzz.io/admin/system/models
 以後如何更新
 1. 先關閉舊版程式。
 2. 將新 ZIP 解壓到另一個資料夾，不要覆蓋正在執行的 EXE。
-3. 若有改過設定，將舊的 kiosk.settings.json 複製到新資料夾。
+3. 若有改過視窗設定，可手動套用；kioskUrl 可保留本包的預設網址。
 4. 雙擊新版 EXE。同一個 Windows 帳號會沿用設備與商家登入資料。
 資料保存在 %LOCALAPPDATA%\Webnavior\Kiosk-Pilot。不要刪除這個資料夾。
 不要在同時執行的舊版中操作購物車，也不要把其他機器的登入資料複製過來。
@@ -42,4 +45,6 @@ https://webnavior.aikcitri.qzz.io/admin/system/models
 ・本包已做封包、編碼、設定與 Linux 同版 Electron 驗證；Windows 實機的麥克風、
   相機、觸控與真實點餐仍須在目標機器測試。Build 成功不代表實機全部驗收。
 
-本機自建測試站需要另外啟動，這個 EXE 包只連線網域服務，不會開啟測試站。
+自建 PB 統一連線公開 HTTPS 測試站，不使用 Windows 的 127.0.0.1。
+網頁版備援：用瀏覽器開公開 Kiosk，選擇自建 PB；正式 PB 點餐請使用 EXE。
+http://100.92.1.80:5169/kiosk/ 的普通瀏覽器不具備 EXE 的安全來源特例，備援請用 HTTPS。

@@ -45,3 +45,8 @@ it('rejects invalid JSON and a missing file instead of silently using another se
   await rm(path)
   await expect(readPortableSettings(path)).rejects.toThrow()
 })
+
+it('reads the configured LAN Kiosk entry', async () => {
+  const settings = { kioskUrl: 'http://100.92.1.80:5169/kiosk/', windowed: true, diagnosticPort: 0 }
+  expect(await readPortableSettings(await settingsFile(JSON.stringify(settings)))).toEqual(settings)
+})

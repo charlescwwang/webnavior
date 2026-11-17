@@ -24,8 +24,9 @@ function Get-KioskSettings {
         throw 'kioskUrl must be an absolute URL.'
     }
     $loopback = @('127.0.0.1', 'localhost', '[::1]') -contains $url.Host
-    if ($url.UserInfo -or ($url.Scheme -ne 'https' -and -not ($url.Scheme -eq 'http' -and $loopback))) {
-        throw 'Use HTTPS, or HTTP on loopback. Do not put credentials in kioskUrl.'
+    $lanKiosk = $url.GetLeftPart([UriPartial]::Authority) -eq 'http://100.92.1.80:5169'
+    if ($url.UserInfo -or ($url.Scheme -ne 'https' -and -not ($url.Scheme -eq 'http' -and ($loopback -or $lanKiosk)))) {
+        throw 'Use HTTPS, loopback HTTP, or the configured LAN Kiosk. Do not put credentials in kioskUrl.'
     }
     if (-not $url.AbsolutePath.EndsWith('/kiosk/') -or $url.Query -or $url.Fragment) {
         throw 'kioskUrl must end in /kiosk/ without a query or fragment.'

@@ -176,7 +176,7 @@ class IsolationTests(unittest.TestCase):
         ready.assert_called_once_with('http://127.0.0.1:5169/readyz')
         self.assertNotIn(('web',), [call.args for call in record.call_args_list])
         command = launch.call_args.args[0]
-        self.assertIn('--setenv=KIOSK_DESKTOP_URL=https://webnavior.aikcitri.qzz.io/kiosk/', command)
+        self.assertIn('--setenv=KIOSK_DESKTOP_URL=http://100.92.1.80:5169/kiosk/', command)
         self.assertIn('--setenv=KIOSK_DESKTOP_USER_DATA=' + str(self.state / 'shared-desktop-profile'), command)
         self.assertNotIn('--no-sandbox', command)
         self.assertEqual(json.loads((self.state / 'shared-electron.pid.json').read_text())['unit'], 'webnavior-pb-shared-electron.service')

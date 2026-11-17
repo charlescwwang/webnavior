@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>PB browser bridge test harness</title>
+  <style>body { margin: 0; } iframe { width: 800px; height: 1000px; border: 0; }</style>
+</head>
+<body>
+  <iframe title="PB simulator" src="/order/store/1kgJeql/internal_use/menu/select-table"></iframe>
+  <script type="module">
+    import { createInteractiveServiceClient } from '../../../packages/stage-ui/src/services/interactiveServiceClient'
+    const frame = document.querySelector('iframe')
+    window.fixtureClient = createInteractiveServiceClient()
+    frame.addEventListener('load', () => window.fixtureClient.activate(frame.src, frame.contentWindow))
+  </script>
+</body>
+</html>

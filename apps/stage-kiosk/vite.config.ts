@@ -14,11 +14,21 @@ import VueRouter from 'vue-router/vite'
 import { DownloadLive2DSDK } from '@proj-airi/unplugin-live2d-sdk/vite'
 import { defineConfig } from 'vite'
 
-export default defineConfig((): UserConfig => {
+export default defineConfig(({ command }): UserConfig => {
   return {
     base: '/kiosk/',
     // Webnavior records ordering interactions through its own API, not AIRI cloud credits/chat sync.
-    define: { 'import.meta.env.VITE_AIRI_CLOUD_ENABLED': JSON.stringify('false') },
+    define: {
+      'import.meta.env.VITE_AIRI_CLOUD_ENABLED': JSON.stringify('false'),
+      // Built Kiosk pages share the entry's reverse proxy for API and assets.
+      // This lets LAN and public entries use the same bundle without crossing origins.
+      ...(command === 'build'
+        ? {
+            'import.meta.env.VITE_API_SERVER_URL': 'globalThis.location.origin',
+            'import.meta.env.VITE_SERVER_URL': 'globalThis.location.origin',
+          }
+        : {}),
+    },
     optimizeDeps: {
       exclude: [
       // stage-ui's provider registry can reference DuckDB settings helpers,

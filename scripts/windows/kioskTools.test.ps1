@@ -31,10 +31,10 @@ try {
     $passed++
     $example = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'kiosk.windows.example.json') -Raw | ConvertFrom-Json
     $settings = Get-KioskSettings -Path (Save-Settings $example)
-    Assert-Equal $settings.kioskUrl 'https://webnavior.aikcitri.qzz.io/kiosk/'
+    Assert-Equal $settings.kioskUrl 'http://100.92.1.80:5169/kiosk/'
     Assert-Rejected { Get-TunnelArguments -Settings $settings }
     $passed++
-    foreach ($url in @('http://192.168.8.1:15169/kiosk/', 'https://user:secret@example.test/kiosk/', 'https://example.test/admin/', 'https://example.test/kiosk/?key=secret', '/kiosk/')) {
+    foreach ($url in @('http://100.92.1.80/kiosk/', 'http://100.92.1.81:5169/kiosk/', 'http://192.168.8.1:15169/kiosk/', 'https://user:secret@example.test/kiosk/', 'https://example.test/admin/', 'https://example.test/kiosk/?key=secret', '/kiosk/')) {
         $example.kioskUrl = $url
         Assert-Rejected { Get-KioskSettings -Path (Save-Settings $example) }
         $passed++

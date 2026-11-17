@@ -10,9 +10,9 @@
   <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <aside class="test-banner">測試環境・24 小時開放・不會扣款或傳送店家訂單 <button id="open-tools" data-testid="open-tools">測試工具</button></aside>
-  <header><a href="/" class="brand"><img src="/assets/logo.png" alt="PB點餐標誌"><strong>周氏蝦捲AI創新店-智慧販售點</strong></a><span class="location">台南市歸仁區十五路5號</span><button id="history" data-testid="order-history">點餐紀錄</button></header>
-  <div class="cover"><img src="/assets/store-cover.png" alt="商家圖片"><div class="cover-message"><strong>準備中!</strong><span>未正式營運</span><small>☆ 敬請期待 ☆</small></div></div>
+  <aside class="test-banner" role="note" aria-label="自建測試環境"><strong>自建測試環境｜非商家正式網站</strong><span>24 小時開放・不會扣款或傳送店家訂單</span> <button id="open-tools" data-testid="open-tools">測試工具</button></aside>
+  <header><a href="%BASE_URL%" class="brand"><img src="/assets/logo.png" alt="測試站標誌"><strong>PB 自建點餐測試站</strong></a><span class="location">點餐流程模擬・非正式營運</span><button id="history" data-testid="order-history">點餐紀錄</button></header>
+  <div class="cover"><img src="/assets/store-cover.png" alt="商家圖片"><div class="cover-message"><strong>自建測試站</strong><span>所有操作均為模擬</span><small>不建立商家訂單、不扣款</small></div></div>
   <div id="storage-warning" role="alert" hidden></div>
   <main id="app"></main>
   <div id="modal-root"></div>

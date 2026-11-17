@@ -10,10 +10,16 @@ import { desktopServiceRequestSchema, desktopSurfaceActivity, desktopSurfaceNavi
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { parse } from 'valibot'
 
-import { isHostClipboardWrite, isHostMediaRequest, isHostPage, parsePageUrl } from './policy'
+import { connectionChoices, isHostClipboardWrite, isHostMediaRequest, isHostPage, parsePageUrl } from './policy'
 import { readPortableSettings } from './portableSettings'
 import { ServiceSurface } from './surface'
 import { TextConsoleWindow } from './textConsole'
+
+// NOTICE: Packaged settings are read asynchronously and can finish after Electron's ready event.
+// Chromium must receive this exact-origin exception synchronously, before any startup await,
+// or the LAN renderer loses crypto.randomUUID, mediaDevices and AudioWorklet support.
+// https://www.electronjs.org/docs/latest/api/command-line-switches/
+app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', 'http://100.92.1.80:5169')
 
 async function start() {
   app.setName('Webnavior Kiosk')
@@ -50,8 +56,26 @@ async function start() {
     return
   }
 
+  let entry = parsePageUrl(portableSettings?.kioskUrl ?? process.env.KIOSK_DESKTOP_URL ?? 'http://100.92.1.80:5169/kiosk/')
   await app.whenReady()
-  const entry = parsePageUrl(portableSettings?.kioskUrl ?? process.env.KIOSK_DESKTOP_URL ?? 'http://localhost:5169/kiosk/')
+  if (portableSettings) {
+    const choices = connectionChoices(entry.href)
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      title: `Webnavior Kiosk ${app.getVersion()}`,
+      message: '選擇本次連線方式',
+      detail: 'Tailscale 需先連上內網；公開網域使用一般網路。兩個入口的設備配對各自保存。自建 PB 統一使用公開測試站。',
+      buttons: [...choices.map(choice => choice.label), '取消'],
+      defaultId: Math.max(0, choices.findIndex(choice => choice.url === entry.href)),
+      cancelId: choices.length,
+      noLink: true,
+    })
+    if (response === choices.length) {
+      app.quit()
+      return
+    }
+    entry = parsePageUrl(choices[response].url)
+  }
   if (!entry.pathname.endsWith('/'))
     throw new Error('KIOSK_DESKTOP_URL must name the Kiosk base directory, ending with /.')
   const window = new BrowserWindow({

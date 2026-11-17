@@ -16,7 +16,7 @@ elseif (-not [IO.Path]::IsPathRooted($Config)) { $Config = Join-Path $root $Conf
 if (-not (Test-Path -LiteralPath $Config)) {
     if ($Action -ne 'Setup') { throw 'Run -Action Setup first to create kiosk.windows.local.json.' }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'kiosk.windows.example.json') -Destination $Config
-    Write-Host 'Created kiosk.windows.local.json for the shared HTTPS backend. SSH settings are only needed for optional Tunnel mode.'
+    Write-Host 'Created kiosk.windows.local.json for the shared LAN backend. SSH settings are only needed for optional Tunnel mode.'
 }
 Import-Module (Join-Path $PSScriptRoot 'kioskTools.psm1') -Force
 $settings = Get-KioskSettings -Path $Config
