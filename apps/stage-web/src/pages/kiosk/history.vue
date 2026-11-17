@@ -1,18 +1,23 @@
 <script setup lang="ts">
 import { Button } from '@proj-airi/ui'
+import { useTimeoutFn } from '@vueuse/core'
 import { AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogOverlay, AlertDialogPortal, AlertDialogRoot, AlertDialogTitle } from 'reka-ui'
-import { computed, onMounted, shallowRef, watch } from 'vue'
+import { computed, onMounted, onScopeDispose, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import KioskVisitorSessionList from '../../components/Webnavior/kioskVisitorSessionList.vue'
 import KioskVisitorSessionTranscript from '../../components/Webnavior/kioskVisitorSessionTranscript.vue'
 
 import { useKioskManagement } from '../../composables/useKioskManagement'
 
+const { t } = useI18n()
+
 const {
   load,
   deleteVisitorSessions,
   downloadTrainingDataset,
   loadVisitorSessions,
+  refreshVisitorHistory,
   selectedSiteId,
   selectSite,
   selectVisitorSession,
@@ -29,6 +34,40 @@ const selectedVisitorSessionIds = shallowRef<string[]>([])
 const selectedDeviceId = shallowRef('')
 const historyFilter = shallowRef<'all' | 'greeting_only' | 'interactive'>('interactive')
 const historyReady = shallowRef(false)
+const live = shallowRef(false)
+const liveUpdatedAt = shallowRef<string>()
+const liveError = shallowRef(false)
+let liveRequest: AbortController | undefined
+const liveTimer = useTimeoutFn(async () => {
+  const controller = new AbortController()
+  liveRequest = controller
+  try {
+    const refreshed = await refreshVisitorHistory(selectedDeviceId.value, controller.signal)
+    if (refreshed && !controller.signal.aborted) {
+      liveUpdatedAt.value = new Date().toLocaleTimeString('zh-TW')
+      liveError.value = false
+    }
+  }
+  catch {
+    if (!controller.signal.aborted)
+      liveError.value = true
+  }
+  finally {
+    if (live.value && !controller.signal.aborted)
+      liveTimer.start()
+  }
+}, 3000, { immediate: false })
+watch(live, (enabled) => {
+  liveRequest?.abort()
+  liveTimer.stop()
+  if (enabled)
+    liveTimer.start()
+})
+onScopeDispose(() => {
+  live.value = false
+  liveRequest?.abort()
+  liveTimer.stop()
+})
 const deleteDialogOpen = shallowRef(false)
 const pendingDeleteSessionId = shallowRef<string>()
 const filteredVisitorSessions = computed(() => historyFilter.value === 'all'
@@ -89,6 +128,13 @@ watch(historyFilter, () => {
         查看系統封存的顧客文字對話、語音轉錄、服務事件與原始錄音／影像。前台連結到期不會自動刪除這些紀錄。
       </p>
     </section>
+
+    <label :class="['flex flex-wrap items-center gap-3 rounded-lg border border-cyan-600 p-3 text-sm']">
+      <input v-model="live" type="checkbox">
+      {{ t('stage.kiosk.monitor.live') }}
+      <span v-if="liveUpdatedAt">{{ t('stage.kiosk.monitor.updated', { time: liveUpdatedAt }) }}</span>
+      <span v-if="liveError" role="status">{{ t('stage.kiosk.monitor.error') }}</span>
+    </label>
 
     <label :class="['flex max-w-md flex-col gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200']">
       店別

@@ -291,7 +291,9 @@ export function useKioskManagement() {
     }
   }
 
+  let visitorHistoryGeneration = 0
   async function loadVisitorSessions(deviceId?: string) {
+    visitorHistoryGeneration++
     if (!selectedSiteId.value) {
       visitorSessions.value = []
       visitorSessionDetail.value = undefined
@@ -314,6 +316,7 @@ export function useKioskManagement() {
   }
 
   async function selectVisitorSession(visitorSessionId: string) {
+    visitorHistoryGeneration++
     visitorHistoryLoading.value = true
     visitorHistoryError.value = ''
     try {
@@ -327,7 +330,30 @@ export function useKioskManagement() {
     }
   }
 
+  /** Refreshes an operator's current view without clearing it or interrupting the kiosk. */
+  async function refreshVisitorHistory(deviceId: string, signal: AbortSignal) {
+    const siteId = selectedSiteId.value
+    const sessionId = visitorSessionDetail.value?.session.id
+    const generation = visitorHistoryGeneration
+    if (!siteId || visitorHistoryLoading.value)
+      return
+    const query = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : ''
+    const [sessions, detail] = await Promise.all([
+      request<KioskVisitorSessionSummary[]>(`/sites/${siteId}/visitor-sessions${query}`, { signal }),
+      sessionId ? request<KioskVisitorSessionDetail>(`/visitor-sessions/${sessionId}`, { signal }) : Promise.resolve(undefined),
+    ])
+    // A late poll cannot restore a selection that the operator changed/deleted,
+    // or put another Site's records into the new Site's view.
+    if (signal.aborted || generation !== visitorHistoryGeneration || siteId !== selectedSiteId.value || sessionId !== visitorSessionDetail.value?.session.id)
+      return
+    visitorSessions.value = sessions
+    if (detail)
+      visitorSessionDetail.value = detail
+    return true
+  }
+
   async function deleteVisitorSessions(visitorSessionIds: string[]) {
+    visitorHistoryGeneration++
     if (!selectedSiteId.value || visitorSessionIds.length === 0)
       return
 
@@ -643,6 +669,7 @@ export function useKioskManagement() {
     downloadTrainingDataset,
     load,
     loadVisitorSessions,
+    refreshVisitorHistory,
     loading,
     message,
     profileDraft,

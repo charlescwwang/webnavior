@@ -6,6 +6,7 @@ import type { Tool } from '@xsai/shared-chat'
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
 import type { KioskAgentInteractionMode, KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolDefinition } from '../services/kiosk-device'
+import type { KioskUtterance } from '../services/kioskUtteranceQueue'
 
 import { browserToolResult } from '@proj-airi/stage-shared/browser-conversation'
 import { browserSignInRequiredSchema } from '@proj-airi/stage-shared/interactive-service'
@@ -54,6 +55,9 @@ interface ConversationPresentationCallbacks {
 /**
  * Owns a device-authenticated visitor session and its ordered durable records.
  *
+ * Diagnostic uploads have a separate FIFO; they never authorize browser work
+ * and must not hold customer evidence behind public-network round trips.
+ *
  * The kiosk never creates its own transcript identifier: the Server derives
  * Site, device, and released Profile from the HttpOnly device credential.
  */
@@ -77,6 +81,11 @@ export function useKioskInteractionRecording() {
   let lifecycle = 0
   let pendingStart: Promise<string | undefined> | undefined
   let pendingAppend: Promise<unknown> = Promise.resolve()
+  let pendingDiagnostics: Promise<unknown> = Promise.resolve()
+  // Only timing/runtime observations may use the independent upload lane.
+  // User input, action claims, tool receipts and questions keep their original
+  // order; no generic service_event is assumed to be optional evidence.
+  const diagnosticSources = new Set(['browser_tool_metrics', 'voice_recognition_timing', 'utterance_timing', 'audio_runtime', 'main_task_metrics', 'main_presentation_metrics'])
 
   async function start(serviceId: string) {
     if (visitorSessionId.value)
@@ -120,13 +129,17 @@ export function useKioskInteractionRecording() {
 
     const sessionId = visitorSessionId.value
     const generation = lifecycle
+    const diagnostic = kind === 'service_event' && typeof metadata?.source === 'string' && diagnosticSources.has(metadata.source)
+    // Server sequence remains arrival order. Preserve observation time because
+    // a delayed diagnostic may arrive after the customer reply it describes.
+    const entryMetadata = diagnostic ? { ...metadata, observedAt: new Date().toISOString() } : metadata
     const save = async () => {
       try {
         const { entry } = await appendKioskInteraction({
           visitorSessionId: sessionId,
           kind,
           content,
-          ...(metadata ? { metadata } : {}),
+          ...(entryMetadata ? { metadata: entryMetadata } : {}),
         })
         return entry
       }
@@ -135,15 +148,18 @@ export function useKioskInteractionRecording() {
           error.value = '互動資料暫時無法保存。'
       }
     }
-    const nextAppend = pendingAppend.then(save, save)
-    pendingAppend = nextAppend.catch(() => undefined)
+    const nextAppend = (diagnostic ? pendingDiagnostics : pendingAppend).then(save, save)
+    if (diagnostic)
+      pendingDiagnostics = nextAppend.catch(() => undefined)
+    else
+      pendingAppend = nextAppend.catch(() => undefined)
     return await nextAppend
   }
 
   // This map belongs to one reception. Multiple routes can record the same
   // utterance, but its audio must link to exactly one durable transcript entry.
   const transcripts = new Map<number, Promise<{ entry: Awaited<ReturnType<typeof appendKioskInteraction>>['entry'], visitorSessionId: string } | undefined>>()
-  function recordTranscript(input: { id: number, text: string, source: 'asr' | 'simulation' }) {
+  function recordTranscript(input: Pick<KioskUtterance, 'id' | 'text' | 'source' | 'recognitionMode'>) {
     const existing = transcripts.get(input.id)
     if (existing)
       return existing
@@ -152,7 +168,7 @@ export function useKioskInteractionRecording() {
     const pending = (async () => {
       if (!sessionId)
         return
-      const entry = await append('asr_transcript', input.text, { utteranceId: input.id, source: input.source })
+      const entry = await append('asr_transcript', input.text, { utteranceId: input.id, source: input.source, ...(input.recognitionMode ? { recognitionMode: input.recognitionMode } : {}) })
       if (entry && generation === lifecycle && visitorSessionId.value === sessionId)
         return { entry, visitorSessionId: sessionId }
     })()
@@ -167,6 +183,7 @@ export function useKioskInteractionRecording() {
     // Old appends retain their captured session, but cannot serialize the next
     // reception behind a provider/network acknowledgement that may never arrive.
     pendingAppend = Promise.resolve()
+    pendingDiagnostics = Promise.resolve()
     activeControl?.controller.abort()
     visitorSessionId.value = undefined
     pendingStart = undefined
@@ -605,7 +622,7 @@ export function useKioskInteractionRecording() {
       // Record orchestration latency (models, context refresh and browser tools),
       // separately from provider-round timing. Never attach an old turn to a new visitor.
       if (visitorSessionId.value === sessionId)
-        await append('service_event', JSON.stringify({ kind: 'main_task_metrics', ...(metricTaskId ? { taskId: metricTaskId } : {}), ...(terminalReason ? { reason: terminalReason, failureStage: stage } : {}), durationMs: performance.now() - startedAt, modelRounds: rounds, requestedToolCount: requestedTools.length, interrupted: control.manual || control.controller.signal.aborted || deadline?.aborted === true || callbacks.signal?.aborted === true }), { source: 'main_task_metrics', utteranceId: callbacks.utteranceId })
+        void append('service_event', JSON.stringify({ kind: 'main_task_metrics', ...(metricTaskId ? { taskId: metricTaskId } : {}), ...(terminalReason ? { reason: terminalReason, failureStage: stage } : {}), durationMs: performance.now() - startedAt, modelRounds: rounds, requestedToolCount: requestedTools.length, interrupted: control.manual || control.controller.signal.aborted || deadline?.aborted === true || callbacks.signal?.aborted === true }), { source: 'main_task_metrics', utteranceId: callbacks.utteranceId })
       // An older cancelled turn cannot release its replacement's controls.
       if (activeControl === control) {
         activeControl = undefined

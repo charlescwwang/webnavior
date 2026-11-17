@@ -1183,6 +1183,109 @@ it('does not clear the new reception when the previous session end returns late'
   finally { scope.stop() }
 })
 
+// Report: this chat, 2026-11-18 — public-domain replies wait behind diagnostic uploads.
+it('saves customer evidence without waiting for an unrelated diagnostic upload', async () => {
+  vi.resetAllMocks()
+  kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'public-latency' } })
+  let finishDiagnostic!: (value: { entry: { id: string } }) => void
+  kioskApi.appendKioskInteraction.mockImplementation(({ metadata }) => metadata?.source === 'browser_tool_metrics'
+    ? new Promise(resolve => finishDiagnostic = resolve)
+    : Promise.resolve({ entry: { id: 'customer-evidence' } }))
+  const recording = useKioskInteractionRecording()
+  await recording.start('ordering')
+  const diagnostic = recording.append('service_event', '{"kind":"browser_tool_metrics"}', { source: 'browser_tool_metrics' })
+  await vi.waitFor(() => expect(finishDiagnostic).toBeTypeOf('function'))
+  const transcript = recording.recordTranscript({ id: 31, source: 'asr', text: '雞腿便當一份' })
+  try {
+    await vi.waitFor(() => expect(kioskApi.appendKioskInteraction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'asr_transcript' })))
+    expect(await transcript).toMatchObject({ visitorSessionId: 'public-latency', entry: { id: 'customer-evidence' } })
+  }
+  finally {
+    finishDiagnostic({ entry: { id: 'diagnostic' } })
+    await diagnostic
+    await transcript
+  }
+})
+
+// Report: this chat, 2026-11-18 — a completed model task waits for metrics before presentation.
+it('releases completed Main work while its task diagnostic acknowledgement is pending', async () => {
+  vi.resetAllMocks()
+  kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'public-main' } })
+  kioskApi.streamKioskConversationMessage.mockResolvedValue({ agentMode: 'active', toolCalls: [], answer: '您好' })
+  let finishDiagnostic!: (value: { entry: { id: string } }) => void
+  kioskApi.appendKioskInteraction.mockImplementation(({ metadata }) => metadata?.source === 'main_task_metrics'
+    ? new Promise(resolve => finishDiagnostic = resolve)
+    : Promise.resolve({ entry: { id: 'evidence' } }))
+  const recording = useKioskInteractionRecording()
+  let completed = false
+  const pending = recording.send('ordering', '你好', []).then((result) => {
+    completed = true
+    return result
+  })
+  await vi.waitFor(() => expect(finishDiagnostic).toBeTypeOf('function'))
+  try {
+    await vi.waitFor(() => expect(completed).toBe(true))
+    expect(recording.controlState.value).toBe('idle')
+    expect(await pending).toMatchObject({ status: 'completed' })
+  }
+  finally {
+    finishDiagnostic({ entry: { id: 'metric' } })
+    await pending
+  }
+})
+
+// Report: this chat, 2026-11-18 — diagnostics must not reorder durable order evidence.
+it('keeps each upload lane ordered while customer records pass a pending diagnostic', async () => {
+  vi.resetAllMocks()
+  kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'separate-lanes' } })
+  let finishDiagnostic!: (value: { entry: { id: string } }) => void
+  let finishCustomer!: (value: { entry: { id: string } }) => void
+  kioskApi.appendKioskInteraction.mockImplementation(({ content }) => {
+    if (content === 'diagnostic-one')
+      return new Promise(resolve => finishDiagnostic = resolve)
+    if (content === 'customer-one')
+      return new Promise(resolve => finishCustomer = resolve)
+    return Promise.resolve({ entry: { id: content } })
+  })
+  const recording = useKioskInteractionRecording()
+  await recording.start('ordering')
+  const diagnosticOne = recording.append('service_event', 'diagnostic-one', { source: 'browser_tool_metrics' })
+  const diagnosticTwo = recording.append('service_event', 'diagnostic-two', { source: 'utterance_timing' })
+  const customer = recording.append('user_text', 'customer-one')
+  // Even a diagnostic-looking source cannot exempt a tool receipt from durable ordering.
+  const receipt = recording.append('tool_result', 'order-receipt', { source: 'browser_tool_metrics' })
+  await vi.waitFor(() => expect(kioskApi.appendKioskInteraction).toHaveBeenCalledTimes(2))
+  expect(kioskApi.appendKioskInteraction.mock.calls[0][0]).toMatchObject({ content: 'diagnostic-one', metadata: { observedAt: expect.any(String) } })
+  expect(kioskApi.appendKioskInteraction.mock.calls[1][0]).toMatchObject({ content: 'customer-one' })
+  finishCustomer({ entry: { id: 'customer' } })
+  await customer
+  expect(await receipt).toMatchObject({ id: 'order-receipt' })
+  expect(kioskApi.appendKioskInteraction).toHaveBeenCalledTimes(3)
+  finishDiagnostic({ entry: { id: 'diagnostic' } })
+  await diagnosticOne
+  await diagnosticTwo
+  expect(kioskApi.appendKioskInteraction.mock.calls[3][0]).toMatchObject({ content: 'diagnostic-two' })
+})
+
+// Report: this chat, 2026-11-18 — old network failures must stay with their captured reception.
+it('isolates a late diagnostic failure from the replacement reception', async () => {
+  vi.resetAllMocks()
+  kioskApi.startKioskVisitorSession.mockResolvedValueOnce({ session: { id: 'old-diagnostics' } }).mockResolvedValueOnce({ session: { id: 'next-diagnostics' } })
+  let fail!: (reason: Error) => void
+  kioskApi.appendKioskInteraction.mockImplementationOnce(() => new Promise((_resolve, reject) => fail = reject)).mockResolvedValue({ entry: { id: 'next-event' } })
+  const recording = useKioskInteractionRecording()
+  await recording.start('ordering')
+  const old = recording.append('service_event', 'old runtime', { source: 'audio_runtime' })
+  await vi.waitFor(() => expect(fail).toBeTypeOf('function'))
+  await recording.end('cancelled')
+  await recording.start('ordering')
+  expect(await recording.append('service_event', 'new runtime', { source: 'audio_runtime' })).toMatchObject({ id: 'next-event' })
+  fail(new Error('Old upload failed'))
+  await old
+  expect(recording.error.value).toBeUndefined()
+  expect(recording.visitorSessionId.value).toBe('next-diagnostics')
+})
+
 // Report: Nov14 recording/text association; one utterance can pass through several routes.
 it('records a transcript once and returns its exact session before a delayed old result', async () => {
   vi.clearAllMocks()
@@ -1215,6 +1318,23 @@ it('does not attach an old transcript acknowledgement to the replacement recepti
   expect(await pending).toBeUndefined()
   expect(recording.visitorSessionId.value).toBe('new-evidence')
   expect(kioskApi.appendKioskInteraction).toHaveBeenCalledWith(expect.objectContaining({ visitorSessionId: 'old-evidence', metadata: { source: 'asr', utteranceId: 11 } }))
+})
+
+it('retains Falcon text in the existing ASR history contract exactly once without mouth images', async () => {
+  vi.clearAllMocks()
+  kioskApi.startKioskVisitorSession.mockResolvedValueOnce({ session: { id: 'falcon-history' } })
+  kioskApi.appendKioskInteraction.mockResolvedValue({ entry: { id: 'falcon-transcript' } })
+  const recording = useKioskInteractionRecording()
+  await recording.start('ordering')
+  const input = { id: 700, text: '水餃一份', source: 'asr' as const, recognitionMode: 'falcon' as const }
+  await recording.recordTranscript(input)
+  await recording.recordTranscript(input)
+  expect(kioskApi.appendKioskInteraction).toHaveBeenCalledTimes(1)
+  expect(kioskApi.appendKioskInteraction).toHaveBeenCalledWith(expect.objectContaining({
+    kind: 'asr_transcript',
+    content: '水餃一份',
+    metadata: { source: 'asr', utteranceId: 700, recognitionMode: 'falcon' },
+  }))
 })
 
 // Report: Nov14 reception isolation; an old pending append must not block the new customer's records.
