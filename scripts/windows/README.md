@@ -1,5 +1,13 @@
 # Windows 遠端 Kiosk 建置與啟動
 
+目前區域網路連線使用 **`http://100.92.1.80:5169/kiosk/`**。5169 是 Kiosk 與 API
+的統一入口；5168 只供主機本機反向代理。新建立設定／可攜包已預設此網址。
+既有安裝需更新本次 Electron 編譯檔，並修改 `kiosk.settings.json` 的 `kioskUrl`；
+原始碼啟動則改 `kiosk.windows.local.json`。只有此指定 HTTP 入口獲准，其他非
+loopback 的 HTTP 網站仍拒絕。新版 Kiosk 網頁 API 隨入口 origin 連線。
+下方公開 HTTPS 與 SSH 流程仍可選用。
+
+
 ## 想直接執行 EXE：使用可攜版 ZIP
 
 一般機台請使用本次提供的 `Webnavior-Kiosk-Windows-x64-*.zip`，將整包解壓縮，雙擊
@@ -179,7 +187,7 @@ Windows 是新設備：第一次要在 Electron 完成設備建立／配對，�
 
 ### 如果要用公開 HTTPS
 
-若改用其他公開部署，將 `kioskUrl` 填為該站實際的 `https://你的網域/kiosk/`。遠端必須已正確發布相同版本的 Kiosk、API、WebSocket、資源路徑、cookie 與可信來源；不能只把 URL 改成另一個 IP，就當成後台也一起搬好了。非 loopback 的 HTTP 會被拒絕。自建測試網站使用前面的 TestSite，在每台 Windows 本機啟動；選用 SSH 模式才轉接 Ubuntu 的自建站。
+若改用其他公開部署，將 `kioskUrl` 填為該站實際的 `https://你的網域/kiosk/`。遠端必須已正確發布相同版本的 Kiosk、API、WebSocket、資源路徑、cookie 與可信來源；不能只把 URL 改成另一個 IP，就當成後台也一起搬好了。除了上述指定 LAN Kiosk 外，非 loopback 的 HTTP 會被拒絕。自建測試網站使用前面的 TestSite，在每台 Windows 本機啟動；選用 SSH 模式才轉接 Ubuntu 的自建站。
 
 ## 4. 測試與故障資料
 

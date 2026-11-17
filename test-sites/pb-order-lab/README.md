@@ -1,9 +1,11 @@
 # PB 非營業時間點餐測試站
 
 這是[指定周氏蝦捲內用頁](https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table)
-的本機模擬環境。使用原站公開菜單快照、原有 PB 執行器需要的 DOM 與唯讀 API 格式，
+的隔離模擬環境。使用原站公開菜單快照、原有 PB 執行器需要的 DOM 與唯讀 API 格式，
 供非營業時間繼續測試。2026-11-16 已依實站購物車編輯畫面對齊加量選項「水餃1顆」（每顆8元）；基本一份8顆，10顆是一份加量2顆。所有加入購物車、送單、付款與發票都是本機測試，不連回商家。
 
+
+頁面頂部常駐「自建測試環境｜非商家正式網站」橫幅，菜單、購物車與結帳捲動後仍可見；頁首與封面也明示測試站。只保留執行器需要的控制項結構與資料格式，不把測試頁當作商家正式頁面或實單證據。
 ## 啟動與使用
 
 從 checkout 根目錄執行：
@@ -12,9 +14,62 @@
 ./test-sites/pb-order-lab/start.sh
 ```
 
-開啟 <http://127.0.0.1:5188/>，保持程序執行。只監聽 loopback；停止時在執行終端按
-Ctrl+C。不安裝新套件，沿用此專案已安裝的 Order Menu Vite。不是靜態檔案伺服器：
-`vite.config.js` 裡的模擬 API middleware 必須一起啟動。
+開啟 <http://127.0.0.1:5188/>，保持程序執行。預設只監聽 loopback；停止時在執行終端按
+Ctrl+C。此站已納入 pnpm workspace，使用自己的 Vite／Vitest 與既有 uuid 套件。
+不是純靜態頁：`vite.config.js` 裡的模擬 API middleware 必須一起啟動。
+
+### 不同電腦／不同地點測試
+
+公開入口為 <https://webnavior.aikcitri.qzz.io/pb-test/>。2026-11-17 已確認網域路由生效，
+並從實際 HTTPS 入口完成選 A1 桌、加魚丸湯、模擬送單／付款與重載保留驗證；
+頁面內建 PB 執行器相容測試的九項讀取、搜尋、加減改餐與原購物車保留檢查亦通過。
+公開服務只供應建置檔，不公開 Vite 原始碼入口；Windows EXE 實機仍需另外驗收。
+
+Kiosk 的自建點餐網站應設定為
+`https://webnavior.aikcitri.qzz.io/order/store/1kgJeql/internal_use/menu/select-table`，
+不是 `/pb-test/`。共用測試場域發布版本 38 已包含此網址；EXE 關閉重開後核對所選網站，
+若仍顯示 `127.0.0.1:5188`，需檢查該設備的發布版本。可攜包不會啟動本機測試站；
+loopback 網址只有在該台 Windows 已啟動 TestSite 或 SSH 通道時才適用。
+
+建置與預覽：
+
+```bash
+PB_LAB_BASE=/pb-test/ PB_LAB_ORIGIN=https://webnavior.aikcitri.qzz.io pnpm -F @proj-airi/pb-order-lab build
+./test-sites/pb-order-lab/public.sh
+```
+
+`public.sh` 只監聽 `127.0.0.1:5198`，經既有 HTTPS 網域代理。
+`public.nginx.conf` 是同一 server block 的路由片段；只代理 `/pb-test/`、指定商家的
+模擬點餐／模擬付款與 `/test/orders`，不替換既有 `/kiosk/`、`/api/` 或管理後台。
+`PB_LAB_DIST` 可指定已凍結的建置目錄。正式啟用使用獨立 user service
+`webnavior-pb-public-site.service`；重新啟動它會清掉此公開模擬程序的記憶體資料。
+本機 5188 模擬程序與公開 5198 的 session 分開。
+
+每個瀏覽器各有測試 session，不能跨電腦接續同一筆購物車；同瀏覽器重載保留資料，
+同 profile 的分頁共用 session 並有版本衝突保護。重要結果請匯出 JSON。
+可測選桌、搜尋、加減改餐、發票、通知資料、模擬送單及模擬付款；不需安裝 Kiosk EXE。
+此入口提供 PB 網頁及執行器相容檢查，沒有另外內建 AI／語音 Kiosk。
+
+### 網頁版 Kiosk 備援
+
+公開測試站現在可嵌入同來源的 `https://webnavior.aikcitri.qzz.io/kiosk/`，
+由既有 Eventa 通訊呼叫相同 PB 執行器；請在 Kiosk 設備設定選自建站。
+橋接只接受核准 Kiosk 的 parent window 與 origin，並保留文件／operation journal 核對。
+單獨開測試站不啟動橋接，既有手動操作及頁內相容測試照常使用。
+
+這項備援不支援正式 PB 網站。普通瀏覽器請使用公開 HTTPS Kiosk；
+Tailscale HTTP 入口沒有 EXE 的安全來源特例，跨站 iframe 也不能沿用模擬站的
+Strict cookie。EXE 的 Tailscale 與公開入口都仍走 native View，不使用此網頁橋接。
+
+若只需區網手動測試，可明確指定來源及監聽介面：
+
+```bash
+PB_LAB_ORIGIN=http://192.168.8.52:5188 PB_LAB_HOST=0.0.0.0 ./test-sites/pb-order-lab/start.sh
+```
+
+其他電腦的手動頁面 ID 使用 uuid，不依賴 HTTP 下不可用的 `crypto.randomUUID()`。
+執行器相容檢查及 Kiosk 整合請使用 HTTPS 公開入口或原 loopback；不把任意區網 origin
+加入原生執行器允許清單。
 
 可手動測試選桌 → 開始點餐 → 搜尋／分類 → 商品／份數／加量／備註 → 購物車 →
 發票 → 送出測試訂單 → 模擬付款 → 完成頁／JSON 匯出。通知可填
@@ -44,6 +99,28 @@ Ctrl+C。不安裝新套件，沿用此專案已安裝的 Order Menu Vite。不�
 - `data-page` 的 Inertia 版本／component／props、Ziggy route declaration、
   `menu-categories`、`menu-category-items`、`getAttrByProduct/:id` 及 menu/cart
   partial GET 回應。這些只提供本機模擬讀取；商家寫入 API 回傳 405。
+
+`browser_state_get` regression coverage uses the production PB adapter in Chromium:
+all five invoice choices, manual invalid/valid entry, and contact readiness read
+back from actual DOM; pending/paid/cancelled order snapshots use fresh matched
+Inertia reads. Failed/uncertain payment attempts remain `unknown` when the PB-shaped
+record does not prove a final result. Result-page cart writes are rejected. The
+browser bridge test also manually submits a TEST order and reads payment state
+through the parent Kiosk client. These tests do not contact merchant/payment APIs.
+
+`nativeCheckout.test.js` also imports the production Kiosk dialogue/cart workflow
+in Chromium. It checks donation entry, invalid-code guidance, manual cart edits,
+contact continuation after **好了**, and renewal of a stale native confirmation
+without creating an order. Changed final fields require another summary. This
+is a deterministic Host/native regression, not a live Jev/Main or speech test.
+
+Result-page restart regressions call the production Host reset with native
+state-only descriptors. They check repeated unpaid refusals, manual payment or
+abandonment followed by entry reload and a new cart, preservation of the old
+order, and an unknown payment or persisted order barrier surviving reload.
+These verify Host decisions/native facts; the entry navigation is driven by the
+test, with visitor retirement/reload sequencing covered by Kiosk lifecycle units.
+The fixture's standalone order-history controls are separate from Host Restart.
 
 水餃基本每份 8 顆／64 元，可額外加 0–100 顆，每顆 8 元；份數與加顆分開計價。
 原站只有雞腿／排骨兩張商品照片，照片、封面與標誌都已複製到本機。
@@ -110,9 +187,11 @@ Host 已處理完實站載入競態。11/15已補核對一筆LINE Pay付款後�
 
 ## Kiosk 使用界線
 
-`readPbJourney` 已加入唯一明確的本機測試 origin：`http://127.0.0.1:5188`，限
-`1kgJeql/internal_use` 的 table/menu/cart 頁，不允許其他 port、商家、localhost
-別名，也不容許從正式站的既有 binding 跳到測試站。沒有放寬成任意 origin。
+`readPbJourney` 明確允許本機 `http://127.0.0.1:5188` 與公開
+`https://webnavior.aikcitri.qzz.io` 的 `1kgJeql/internal_use` table/menu/cart 頁。
+不允許其他 port、商家或 localhost 別名，也不容許從商家正式站既有 binding 跳到
+測試站。既有 EXE 內的原生執行器不會因網頁發布而更新允許清單；若要由 Kiosk
+操作此新公開站，仍須另行建置並換用包含此契約的原生包。
 
 若要讓現有 Electron Kiosk 使用它，需在**測試互動體驗**設定上述選桌 URL，並
 重新建置／載入含新版 shared journey 與 PB service 的測試版 Electron。此修改

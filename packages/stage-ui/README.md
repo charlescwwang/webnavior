@@ -2,13 +2,43 @@
 
 Shared core for stage
 
+The shared Kiosk device-settings editor exposes `mouthDetectionEnabled` in both
+local and management modes. This opt-in switch controls visual admission for
+ordinary ASR; proactive observation and background-speech policy remain separate,
+and Falcon still requires mouth images. It saves through the existing revisioned
+device-settings API rather than a browser-only preference.
+
 ## Native PB ordering
+
+`services/pbSimulatorBridge.ts` exposes the same bounded PB service to an owned
+simulator iframe under a reviewed Kiosk parent. It checks simulator and parent
+policy through `isPbSimulatorHost`, pins Eventa source/origin to that parent,
+and disposes the peer on pagehide. Standalone simulator pages and merchant PB
+do not install this bridge. Use it for public HTTPS browser Kiosk backup tests;
+real merchant automation remains in the desktop isolated-world adapter.
 
 `services/pbBrowserService.ts` uses the shared reviewed journey policy for the
 member pickup site and the current/RD guest/table sites. Guest reads require PB's actual
 cookie-buyer state; member reads still require login. Menu/cart controls derive
 their paths from that journey. `browser_return_menu` preserves the cart, clears the website search and waits
 for the complete current menu; it is distinct from setting a cart row's final serving count.
+
+`browser_state_get` is the Host-only automatic reader before Jev and every Main
+round. Editor pages reuse the existing cart/catalog and DOM invoice/contact
+verifiers. Reviewed same-store result pages expose only fresh, URL/order-bound
+Inertia order facts and verified payment-method labels; they never gain cart,
+reset, submission or payment controls. Missing evidence remains unknown. A
+submission retires editor descriptors and reconnects with only this reader;
+manual SPA submission is also recognized from fresh page facts. PB form validity
+reaches Jev without phone, carrier or donation-code values. Host reception
+ownership still gates order facts. This reader does not authorize payments.
+
+Result snapshots also carry a read-only reception `restart` decision. Only
+verified paid/cancelled states without pending document operations or persisted
+write markers allow the Host to retire the reception and reload its configured
+entry. Pending payment, unknown payment and unsettled operations remain distinct
+refusals. Reading this decision never clears markers, cancels an order or grants
+result-page editor controls.
 
 Menu pickup and cart snapshots use PB's existing versioned Inertia partial JSON
 responses, with no HTTP cache or merging from old DOM props. Required fields
@@ -29,6 +59,12 @@ Host-only recovery distinguishes `canRetry` from `canReset`. Explicit reset may 
 
 Host-only `browser_cart_get forAdmission=true` also reads a versioned cart on
 the table page for reception preparation. Ordinary table reads omit that cart.
+
+The shared Host client distinguishes these fixed PB cart/recovery reads from
+effectful operations when inspecting a lost transport receipt. A missing journal
+entry for a declared read can recover in the same document once no operations
+are pending; an unconfirmed cart write or submission cannot. Tool read-only
+hints alone do not grant this exception, and recovery never replays the call.
 A first-time PB guest may receive the exact missing-table Error/403 response
 until Start; only on the table page this returns `cartAdmission: after-table-entry`
 without a cart snapshot. It does not establish emptiness or ownership. The Host
@@ -64,16 +100,41 @@ evidence; pending and unknown keep it. Result pages expose no payment controls.
 The staged parser and RPC result do not yet provide an independent observer
 when full navigation destroys the old execute promise; that requires the
 host-owned pre-dispatch intent and durable evidence lifecycle.
+Argument/preparation failures that escape before any control effect return a
+`rejected` / `effect: none` receipt. Dispatched cart/order operations retain their
+coordinator receipts; missing or unknown outcomes never become safe-to-repeat
+rejections. The Host may renew a summary after a proven stale-token refusal, but
+must obtain new consent before a later submission.
+
 Native navigation calls `beginNavigation()` to revoke tools while retaining the
 entry acknowledgement's wait. "Entering" acknowledges the accepted click, not a
 loaded menu. Loading UI and fresh discovery continue until native readiness.
 `waitUntilReady(signal)` also waits across the gap between navigation and new
 transport discovery, with a 15-second bound and caller cancellation. It cannot
 reuse the retired document's resolved readiness promise.
-`pbInvoiceInput.ts` focuses only the selected native carrier/citizen field,
-validates scanner text and consumes Enter without submitting. Blur, navigation
-and reception reset revoke input ownership; typing elsewhere retains manual
-takeover protection. It adds no notification-phone or Email filling tool.
+`pbInvoiceInput.ts` focuses the selected native carrier/citizen field,
+validates scanner text and consumes Enter without submitting. It also places a
+floating numeric touch keypad for the merchant's labeled notification-phone field.
+Focusing the field or pressing its small keypad trigger opens a closable native
+popover on the opposite half of the viewport; it adds no keyboard-sized block
+to the merchant form. Clear/delete edit the draft only. Keys update that field
+through its native input/change events without submitting or changing email.
+Finishing the checkout draft or proceeding to native submission closes the panel
+without clearing values, so it cannot obscure the merchant's submit controls.
+The first touch and subsequent edits of invoice/contact fields retain the bound
+checkout question; scrolling cancels visual cues without changing cart version.
+Final submission still rechecks the exact invoice/contact values and cart.
+Blur, navigation and reception reset revoke scanner ownership; typing elsewhere
+retains manual takeover protection.
+
+PB draft pickup date/time may be explicitly null until checkout. Cart reads use
+fresh menu pickup defaults only for those null fields; persisted strings remain
+authoritative and malformed data still rejects. A failed post-dispatch readback
+retains an expected-result verifier for a single add/edit. Fresh recovery reads
+can clear that document's cart-write marker only when the whole expected cart,
+amount, pickup/table and manual-interaction generation match. Multi-step writes,
+foreign/retired-document markers, submission and reset uncertainty stay blocked;
+recovery never replays their actions.
 
 Checkout cart edits keep the current cart page; a quantity/removal operation
 must not detour through the menu and recreate invoice/contact fields. Passive
@@ -361,3 +422,34 @@ revision are rechecked between them. Submission is enabled for the authorized
 `app.esgpb.com` store `1kgJeql` internal-use journey and owned loopback fixture,
 as declared in the shared journey policy. Other deployments remain manual.
 The final-summary assent grants order creation only; payment is separate.
+The accepted final click has a 30-second result wait, distinct from ordinary
+five-second UI updates. It never repeats the click. A lost result still preserves
+the order barrier across reload; `browser_recovery_context.blockedBy` distinguishes
+submission, clear, cart and unsettled-operation barriers so Restart can explain
+why staff must verify merchant records. A timeout alone cannot authorize clearing.
+Host menu admission closes the exact native store-announcement control after
+table entry, without touching product or order-confirmation dialogs.
+
+## External microphone PCM
+
+`stores/ai/models/vad.useVAD` accepts `externalPCM: true` for a host-owned DSP
+source. It loads Silero without creating a microphone AudioContext or resampler;
+after `init()`, call `processAudio(detectionPcm, endTimeMs, recordingPcm?)` with
+source-clocked 16 kHz buffers. The optional recording branch must have exactly
+the same sample count and timestamps as the detection branch; segmentation uses detection
+probabilities while `speech-ready.buffer` contains recording PCM and padding.
+`speech-ready.preSpeechSamples` identifies real non-speech pre-roll separately.
+`dispose()` retires the processor and ignores late inference. Ordinary callers
+retain `start(MediaStream)` and browser capture. The audio device store exposes
+`inputConstraints` for a surface-owned explicit channel layout; clear it when
+the owner leaves, and do not silently substitute another physical device when
+that layout cannot be acquired.
+
+
+`useVAD` also accepts `canStartSpeech(endTimeMs?)`, evaluated before model
+inference on both browser AudioWorklet and external PCM paths. Returning false
+while idle retains bounded source PCM pre-roll without inference or speech events;
+it does not cut off an already admitted phrase. Direct `BaseVAD.processAudio`
+callers can supply the equivalent fourth `allowSpeechStart` argument. Audio blocks
+serialize admission, inference and segment transitions together; after skipped
+input, the next inference starts with fresh recurrent model state.

@@ -4,6 +4,39 @@ Windows-oriented Electron host for the existing `apps/stage-kiosk` web UI and
 its configured interactive website. This is a local pilot, not a signed Windows
 release. It does not include the pet desktop's windows, widgets or game engine.
 
+## Current LAN connection
+
+Portable version 0.2.0 asks for **Tailscale** or the **Webnavior public domain**
+before loading Kiosk on every launch. `kioskUrl` selects the initial highlighted
+choice; a custom configured deployment remains a third choice. Cancel exits
+without opening a customer page. Connections never switch automatically during
+an order. Origins retain separate device enrollments and Host storage; merchant
+partitions keep their existing service/origin ownership.
+
+Both EXE entries use the public HTTPS PB simulator configured in the Site
+release, rather than a Windows loopback test server. Browser backup uses the
+public HTTPS Kiosk and that owned simulator only. Merchant PB still requires
+the EXE's isolated native adapter; the ordinary browser cannot inherit its
+HTTP secure-context exception or inject the adapter into the merchant site.
+
+The selected service host is `http://100.92.1.80:5169/kiosk/`. Port 5169 serves
+Kiosk and proxies `/api/` to the private API on `127.0.0.1:5168`; clients must use
+5169. Built Kiosk pages use their entry origin for API calls and character assets.
+The default development launch, Ubuntu shared launcher, and newly packaged Windows
+settings use this LAN entry. Existing portable installations must replace their
+compiled host and set `kiosk.settings.json` to this URL.
+
+Only this exact HTTP origin and `/kiosk/` path are additionally allowed. Its host
+process marks that origin as secure for Chromium media/AudioWorklet APIs before
+startup, synchronously before reading portable settings. Asynchronous disk reads
+can finish after Electron is ready, when this Chromium switch is already too late.
+The existing host-only permission checks and OS consent still apply.
+Other remote origins continue to require HTTPS. This exception does not encrypt
+HTTP traffic. The API explicitly accepts this origin for PIN/POS operations and
+sets host-only HTTP device/admin cookies for it; public HTTPS retains Secure cookies.
+Changing origins creates a separate browser device enrollment;
+existing merchant login partitions are retained.
+
 ## What works
 
 - Loads the existing Kiosk URL with a narrow Eventa preload capability.
@@ -12,7 +45,9 @@ release. It does not include the pet desktop's windows, widgets or game engine.
   shared Kiosk client retains document, descriptor and lost-receipt checks.
 - Loads its bundled PB adapter only in an isolated world of the native page.
   Vendor main-world code receives no preload, raw IPC, Node or arbitrary evaluator.
-  Wrong service/document ownership and navigation outside the PB menu reject calls.
+  Wrong service/document ownership rejects calls. Menu/cart controls stay restricted
+  to editor pages; reviewed same-store order result pages allow discovery/inspection
+  and the Host-only `browser_state_get` reader, with no payment or editor writes.
   Resize/visibility updates do not renew a tool binding or replay an operation.
 - `ScenarioSurface` uses a native `WebContentsView` when that capability exists;
   ordinary browser Kiosk keeps its iframe path.
@@ -60,7 +95,7 @@ release. It does not include the pet desktop's windows, widgets or game engine.
   or shutdown closes the owned popup. Vendor popup policy remains unchanged.
 
 External pages have no preload, Node or raw IPC. HTTPS is required except for
-loopback development. Cross-origin main-frame navigation, vendor popups, downloads and
+loopback development and the selected LAN Kiosk entry. Cross-origin main-frame navigation, vendor popups, downloads and
 vendor camera/microphone permissions are not enabled as part of this pilot. Only
 the configured Kiosk main frame may request audio/video for existing speech and
 presence features; OS consent and device/profile capture controls still apply.
@@ -308,7 +343,7 @@ filesystem tests are not whole-system archival acceptance.
 The compiled main process bundles its JavaScript dependencies. The portable Windows x64
 ZIP places these outputs in the official pinned Electron runtime; no Node/pnpm setup is
 needed on the target. A packaged app reads `kiosk.settings.json` next to its executable
-and validates the HTTPS Kiosk URL, window mode and diagnostic port before opening a page.
+and validates the approved Kiosk URL, window mode and diagnostic port before opening a page.
 Windows retains `%LOCALAPPDATA%\Webnavior\Kiosk-Pilot` across app-folder updates.
 Development launches continue using the existing environment settings. See
 [scripts/windows/README.md](../../scripts/windows/README.md) and the plain-language

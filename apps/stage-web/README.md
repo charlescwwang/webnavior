@@ -8,14 +8,28 @@
 
 ## Kiosk device management
 
+On desktop-width admin pages, the left navigation stays in the viewport while
+the page content scrolls. Short windows allow the sidebar itself to scroll;
+narrow screens keep the horizontal navigation layout.
+
 `/admin/system/models` groups the existing ASR Provider and the
-**語音辨識模式與 Falcon 服務** connection draft editor inside **語音辨識**.
+**語音辨識模式與 Falcon 服務** settings inside **語音辨識**.
 Administrators can save the service origin, API path, engine,
-precision, timeout, reserved utterance limit and expected JSON text format.
+precision, timeout, utterance limit and expected JSON text format.
 API keys are stored encrypted on the Server; blank preserves the current key,
-and removal is explicit. Saving this draft leaves the existing ASR active.
-The new AV mode remains unavailable until capture and provider integration are
-verified. Reserved duration settings do not change the current VAD pipeline.
+and removal is explicit. Select legacy ASR or Falcon AV recognition explicitly;
+legacy remains the default. Saving applies this section immediately, with running
+updated kiosks polling within about ten seconds. It does not replace legacy ASR
+provider settings or require the separate provider-application action.
+
+Falcon sends a complete synchronized utterance through Webnavior to the configured
+Falcon+ASR service, then consumes final text. The deployed service uses
+`http://192.168.8.64:8766/api/falcon/extract` and `transcription-json` (`text`).
+OpenAI-compatible JSON/SSE response parsers are also available; SSE does not send
+partial transcripts to ordering. Duration limits include VAD padding. Missing
+mouth frames, excess duration or an occupied inference request fail the utterance
+without silently switching providers. Reopen an older kiosk once after updating
+its web assets; physical microphone/camera acceptance remains necessary.
 
 `/admin/kiosk/devices` provides Site filtering, sorting, permission-scoped batch
 actions with confirmation, and per-device settings dialogs. Settings share the
@@ -105,7 +119,16 @@ readiness. Only one Fast Path profile is active; adding SLM does not switch it
 on automatically or change Main's model. The concise default prompt affects
 post-admission demand interpretation; existing custom prompts remain saved.
 
-- **Kiosk 使用歷程** groups retained records into customer interactions,
+- Falcon timing rows distinguish the audio clip length, request duration,
+  provider-reported inference and ASR stages. Missing stages remain unavailable;
+  audio readiness/delivery is explicitly unmeasured while the service returns
+  text. These numeric details appear in administrator history, not customer UI.
+- **Kiosk 使用歷程** provides an authenticated **即時監看** switch to refresh the
+  device list and selected reception every three seconds without clearing the
+  current view or interrupting the Kiosk. Recognition receipt/duration events
+  and completed transcripts update separately from decision/tool execution.
+  Turning it off or leaving the page stops polling; failed refreshes retain
+  the previous records and show a retry status. It groups records into customer interactions,
   greeting-only observations, and empty records. Greeting-only evidence remains
   retained but is excluded by the default filter. An administrator can select
   reviewed interaction records and download LLM JSONL or an ASR ZIP containing

@@ -6,7 +6,7 @@
 ## 跨機器共用測試（日常使用）
 
 關閉舊的管理選單再重開，點 **開啟共用 Electron**。Ubuntu 與 Windows 都連到
-`https://webnavior.aikcitri.qzz.io/kiosk/`，模型、System One、角色、提示詞、餐點別名與
+`http://100.92.1.80:5169/kiosk/`，模型、System One、角色、提示詞、餐點別名與
 網站清單由同一個後台及資料庫提供；不用先點「啟動本機隔離系統」。
 **開啟共用後台** 會開啟該網域的模型設定。
 

@@ -24,6 +24,214 @@ pnpm --filter @proj-airi/stage-kiosk dev
 
 The layout follows the display orientation by default. Set `VITE_KIOSK_ORIENTATION=landscape` or `portrait` to lock a deployment to one orientation.
 
+## Visual admission before legacy customer VAD
+
+The shared device setting **Mouth-assisted voice detection**
+(`mouthDetectionEnabled`) is off by default and is editable in both management
+and the local Kiosk settings. When off, ordinary speech does not require a face,
+mouth movement or current visual presence at capture, ASR or decision admission;
+target changes cannot cancel its ASR. VAD segmentation, background-speech policy,
+reception resets and browser-operation guards remain active. Camera observation
+for greetings/reminders remains independently configurable. Saving a change
+restarts unsubmitted audio capture and discards through the next silence rather
+than interpreting a partial phrase. Falcon still requires its audiovisual input.
+
+When this setting is on, legacy ASR requires the configured camera target's mouth to move before a new VAD
+phrase can start. MediaPipe reuses the existing Face/Pose lane and reads normalized
+lip geometry only; no mouth images or second model are allocated. A held-open mouth
+or small landmark jitter does not open the gate. This is visual onset admission,
+not active-speaker identification; chewing, simultaneous speakers, camera angle
+and lighting still require on-device acceptance. Falcon retains its original VAD
+and post-capture mouth validation; this legacy onset gate does not apply to it.
+
+The initial policy requires a lip-gap/width change of at least 0.02 across fresh
+observations, with a current opening above 0.04. Closing the lips immediately blocks new
+phrases; closure itself never renews the 600 ms onset window. Evidence expires
+after 250 ms without a fresh valid target. An admitted phrase is permanently
+revoked after no meaningful open-lip movement for the greater of 1 second or the
+configured VAD silence duration plus 350 ms; reopening cannot revive that phrase. Large target position/scale
+changes, missing or ambiguous faces, frozen video, camera restart and reception
+reset invalidate pending legacy phrases. These thresholds require field tuning.
+
+While closed, legacy VAD performs no model inference and retains bounded PCM
+pre-roll, with a 400 ms minimum to preserve audio onset before visual confirmation.
+Once admitted, VAD keeps processing through brief closed lips and its configured
+silence boundary. Before legacy ASR, the same uninterrupted visual target must
+remain valid and show recent meaningful mouth movement; sustained visual
+inactivity, lost targets and truncated phrases are discarded with a retry
+message. Discarded tails only run VAD to find silence and never create another
+customer turn. The microphone and UMA-8 DSP stay running for pre-roll. Legacy
+customer voice with mouth assistance therefore requires camera availability. Text input and the local
+administrator's microphone test remain independent of this mouth admission.
+
+Legacy customer tracking selects from the existing bounded multi-face results
+before mouth admission; it does not let the single Pose result choose the speaker.
+Candidates must be inside the observation zone. The interaction ROI, position near
+its centre, frontal attention and apparent face scale determine preference. A
+clearly better challenger must persist for 400 ms before takeover. Frame array
+order is never an identity; ambiguous matches and evidence gaps over 250 ms revoke
+continuity. Target replacement cancels unsubmitted legacy capture/ASR without
+resetting the visitor or cart. This remains anonymous geometric tracking, not
+biometric or acoustic speaker verification. Falcon retains its existing target
+association.
+
+For legacy customer speech, the existing **background speech judgement** mode also
+controls TTS interruption. **off** and **observe** stop playback after 250 ms of
+consecutive VAD scores above the configured threshold while the same capture has
+valid visual admission when mouth assistance is enabled. With assistance off,
+the same continuous VAD rule does not require visual evidence. Inference gaps over 100 ms break that run; the configured
+VAD silence tail is not counted as speech. No ASR result or semantic model decision
+is required to stop playback in these modes. **enforce** keeps post-ASR semantic
+admission before interruption. Observe retains its non-blocking diagnostic role.
+Stopping playback does not cancel the active Agent or a dispatched browser tool;
+new ordering demands still use the normal utterance queue and operation guards.
+Cancelled playback does not automatically resume. Falcon and the administrator's
+microphone test keep their existing interruption paths.
+
+## Falcon audiovisual speech recognition
+
+Administrators select the mode in `/admin/system/models` → **語音辨識** →
+**語音辨識模式與 Falcon 服務**. Legacy microphone/ASR remains the default and
+retains its provider configuration. Updated enrolled kiosks poll the server-owned
+mode within about ten seconds. Provider URLs and keys remain on Webnavior Server.
+
+Falcon mode keeps the existing microphone processing, VAD, TTS interruption and
+proactive-greeting admission. After VAD finishes an utterance, Kiosk uploads one
+16 kHz mono Float32 clip and synchronized 96×96 grayscale mouth images to
+`POST /api/kiosk/audio/falcon-transcriptions`; Webnavior forwards the validated
+binary packet to the configured Falcon+ASR endpoint and receives final text.
+The packet contains a plain uint32 little-endian frame count, all audio, then all
+images: 640 samples and one image per 40 ms, at least 25 frames. No engine flags
+are embedded. JSON `text` is the deployed response; OpenAI JSON/SSE parsing is
+available, with only completed text entering the existing utterance queue/history.
+Recognition mode is recorded alongside the existing transcript metadata.
+When the transcription JSON includes nonnegative finite `inferenceMs` and
+`asrMs`, Webnavior preserves them as optional `timing` values. New device
+`voice_recognition_timing` events retain these as `falconTiming`, separately from
+request RTT and audio duration. Missing/invalid telemetry is unavailable, never
+zero or inferred from total latency. These provider-reported stages do not
+measure WAV readiness, encoding or file delivery; the current service returns
+text rather than an audio file.
+
+The current service origin is `http://192.168.8.64:8767`; update the Falcon
+connection independently of the legacy ASR and TTS providers. A successful health
+check does not prove which GPU execution provider the remote service uses.
+
+VAD reports the non-speech pre-roll sample count separately. If the camera first
+finds the mouth during that pre-roll, earlier non-speech frames use the first
+visible mouth image, as in the reference startup padding. Audio remains intact;
+missing images during actual speech and gaps over 75 ms still reject the clip.
+The same target crop carries its inner-lip gap divided by mouth width in video
+pixels. A complete speech interval whose gap never exceeds 2.5% is silently
+ignored before upload, acknowledgement or transcript admission. Pre-roll and
+synthetic tail frames cannot provide opening evidence for this decision. This is
+a conservative closed-mouth guard, not active-speaker verification: landmark
+jitter, distance, brief openings and simultaneous speakers still require physical
+acceptance. No remote Falcon model or response contract is changed. Ignored
+closed-mouth clips record only numeric `falcon_capture` evidence in the current
+visitor history; accepted-clip values require the existing voice diagnostics flag.
+Diagnostics distinguish mouth loss, clock gaps, duration and a busy previous
+request; timing/count summaries can enter existing diagnostic history without
+retaining audio or images.
+
+Mouth capture reuses the existing camera, MediaPipe models and observed target;
+it does not guarantee the physically frontmost person. Multiple ambiguous faces,
+missing synchronized frames, duration overflow or a busy inference request reject
+the utterance for retry. Camera-only Falcon capture does not enable greetings when
+proactive observation is disabled. Text mode and the administrator's legacy ASR
+diagnostic remain separate.
+
+Only small mouth images are buffered in memory, never full video or persisted
+customer images. Idle history covers the VAD pre-roll plus one second; active
+history is bounded by the configured 1–30 second limit. At the default 15 seconds,
+the image ring is at most about 3.5 MB; the packet and temporary conversion buffers
+add memory during upload. VAD padding counts toward the duration limit. The model
+runtime and camera have their own memory costs. Changing mode cancels old capture
+and releases its models; failure does not automatically replay speech through ASR.
+
+Deploy Server and web assets together. These changes do not change native EXE
+permissions or PB tooling, so an existing compatible Windows host can load the new
+web assets after reopening. Synthetic gateway, browser timing/crop and bounded
+buffer tests do not replace physical microphone/camera/TTS acceptance.
+
+## Live LLM replies
+
+General service answers explicitly admitted as read-only, with no pending
+question, menu lookup or operation handoff, run without tools and display actual
+SSE text deltas before completion, including on a PB browser page. Draft text
+never starts TTS or enters durable customer history. Ordering rounds still show
+live operation progress and present their verified final receipt; partial model
+arguments or unverified success claims are not customer-facing text.
+
+## UMA-8 microphone processing
+
+Open the Kiosk administrator panel (configured PIN `0000`) → **本機麥克風與喇叭**
+→ **UMA-8 收音處理**. Select the actual UMA-8 microphone. **自動辨識 UMA-8**
+uses its device label; choose **UMA-8 多聲道** if the driver uses another name.
+**一般麥克風（瀏覽器處理）** retains the original browser AEC/noise processing.
+This hardware choice is independent of the Server's legacy ASR/Falcon mode.
+
+UMA-8 requests eight raw channels with browser AEC/NS/AGC disabled. Its pipeline
+is **48 kHz multichannel → AEC3 → LCMV → 16 kHz gain/limiter → Silero VAD**.
+The customer and both suppression elevations default to **70°**, relative to
+the flat array plane (0° horizontal, 90° overhead; supported 0–85°). Defaults
+retain azimuths 0°/−90°/+90°, radius 44 mm, mapping `0,1,2,3,4,5,6`, loading
+0.03 and VAD gain 15 dB. Verify the physical mapping and array orientation on
+site before tuning. Changing a setting restarts capture and discards the active
+partial utterance; adjust while silent.
+
+Legacy ASR also offers **舊 ASR 陣列演算法 → Spatial Mask（11 月穩定版）**.
+Choose it in the same panel, set **啟用 AEC3 回音消除**, then press
+**套用演算法與 AEC3 設定**. LCMV remains the initial selection. Spatial Mask
+restores the numerical core from `f616ca4`: seven mapped microphones, built-in
+48→16 kHz FIR, front-versus-off-axis competition and smoothed spectral masking,
+without a hard Gate. With AEC3 enabled (default), seven-channel AEC runs before
+Mask; disabled capture owns no AEC instance or playback-reference subscription.
+Capture continues during TTS in either setting. Turning AEC3 off may admit the
+kiosk's own speech; on-site echo and interruption quality still require testing.
+
+Spatial Mask gain is independent: default **15 dB**, range **0–80 dB**. The
+historical 65 dB value is available for comparison, not an automatically calibrated
+level. Preferences use `kiosk/audio/legacy-array-algorithm` and
+`kiosk/audio/spatial-mask`; the existing hardware/LCMV JSON is unchanged.
+Applying algorithm/AEC/gain replaces capture and cancels incomplete speech and
+unsubmitted recognition. Already accepted ordering work is not replayed.
+Falcon always retains AEC3/LCMV and its separate recording gain; ordinary
+microphones retain browser processing. Current legacy mouth/presence rules
+remain in force, so this is not a full rollback to November's admission behavior.
+The diagnostic overlay shows the active algorithm/AEC state, processing lag,
+render-reference frames, input/output RMS in dBFS and limited-sample percentage.
+Reference activity confirms wiring, not successful acoustic echo cancellation.
+
+AEC3 receives the stereo playback reference for customer/admin TTS, receipt
+chimes and waiting music. The array and playback share a 48 kHz AudioContext.
+LCMV's 1024-sample latency is compensated before both branches are resampled.
+In Falcon mode VAD detects using gained LCMV. A separate 16 kHz gain/peak
+limiter processes the aligned AEC3 output at mapped channel 6 before it is
+recorded for Falcon. **Falcon 輸入增益** is adjustable from 0–30 dB in this
+administrator panel, independently of the VAD gain, and defaults to 0 dB.
+It is saved locally under `kiosk/audio/falcon-input-gain-db`; changing it restarts
+capture and discards the partial utterance, so one utterance uses one gain.
+Each branch owns its limiter history, and no samples or delay are added. The
+existing voice diagnostic runtime snapshot reports the configured Falcon gain
+when the UMA-8/Falcon branch is active. Ordinary microphones and administrator
+legacy-ASR diagnostics do not use this gain. Legacy ASR records gained LCMV.
+Microphone hardware choice remains independent of recognition mode and ordering authorization.
+
+When AEC3 is enabled, the Worker owns a fixed 16 MB AEC3 WASM heap plus DSP state. Transfer queues are
+bounded to approximately one second at each delivery boundary; a slow pipeline
+fails visibly instead of accumulating audio indefinitely. Existing VAD/mouth
+buffer and model memory costs still apply. A wrong channel count or DSP failure
+never silently selects another microphone or switches recognition modes.
+Scope disposal/device changes terminate the Worker and detach the playback bus.
+
+The reference implementation and upstream notices are preserved in `src/audio`
+and `/kiosk/audio/uma8-notices.txt`. `webrtcaec3.js@0.3.0` has a minimal pnpm patch
+for its undeclared embedded WASM variable under strict ESM. Browser tests run the
+real WASM and LCMV with synthetic eight-channel AudioNodes and verify cue/TTS
+reference routing; actual UMA-8 driver channels, echo suppression and barge-in
+still require Windows hardware acceptance. No native EXE change is involved.
+
 ## Development kiosk enrollment
 
 Before a Profile is available, the kiosk opens an enrollment screen. In a local
@@ -98,6 +306,14 @@ The host records `main_task_metrics` service events with orchestration duration,
 model rounds and tool count; these include context/tool waiting but exclude TTS.
 Server separately records provider round sizes/latency/usage. Neither metric
 stores the prompt or implies successful POS submission.
+Timing/runtime diagnostics use a separate ordered upload lane so public-network
+round trips cannot queue customer evidence behind diagnostic traffic. Main task
+and presentation metrics do not delay a completed reply. Customer input, action
+claims, tool receipts and pending questions retain their durable ordering;
+diagnostics never authorize browser writes. Diagnostic metadata includes
+`observedAt` because Server sequence reflects arrival order across the two lanes.
+Both lanes retain the captured visitor session when a reception ends; late
+acknowledgements cannot block or set the next reception's recording error.
 
 External PB does not expose the owned Menu's `kiosk_conversation_context`.
 The Server now selects one fixed workflow skill from the verified page and
@@ -332,7 +548,12 @@ detaches its append chain as well as model work, so late acknowledgements cannot
 block new records or set the new session's error state. No timestamp/order joins
 are used for audio; unlinked retained files remain available in Admin.
 
-The yellow voice panel reports microphone/VAD/ASR, blocking reasons and TTS overlap.
+The yellow voice panel reports microphone/VAD/ASR, blocking reasons and TTS overlap. Voice and presence diagnostic panels retain their existing
+switches and authorized operator visibility. Their headers now drag within their
+host region, with position reset and resizing bounds so Electron's native menu
+cannot cover them. They include the anonymous target revision/switch reason and
+the local interruption state/background mode; no new always-visible panel is
+created.
 Kiosk Admin has a separate microphone/TTS/interruption test switch, also usable in
 text mode. Its cancellable audio lifecycle never enqueues ordering work or adds
 customer dialogue. Closing Admin stops this test. Physical microphone/echo and
@@ -676,7 +897,7 @@ and approved URL after load. A five-second handshake admits tools; replacing
 the frame revokes old descriptors and pending calls. Discovery alone can retry.
 Tool execution has a sixty-second receipt deadline and never automatically retries
 an operation; a lost receipt revokes tools because the write may already exist.
-Disconnected speech does not repeatedly enter Main Agent. **恢復菜單連線**
+Disconnected speech does not repeatedly enter Main Agent. Automatic recovery
 rebinds the same document and inspects the original operation IDs without
 replaying them. Recovery waits until all accepted calls have settled, reads fresh
 Menu state and ends only a host-owned settled task. Pending/missing results,
@@ -1150,6 +1371,15 @@ existing Agent, including fresh catalog/cart reads, additions and paid options.
 It reads PB's declared route data without relying on main-world JavaScript globals.
 The owned Menu's Eventa protocol is not connected through the native View.
 
+Portable EXE 0.2.0 selects Tailscale or the public Webnavior origin before
+opening this UI; the built API URLs follow that chosen origin. Browser backup
+is limited to the owned PB simulator inside the public HTTPS Kiosk. Its
+`pbSimulatorBridge` binds the existing Eventa methods to the exact parent window
+and approved origin. Merchant PB has no browser bridge: `ScenarioSurface` shows
+an EXE requirement instead of attempting discovery. The Tailscale HTTP browser
+also directs this backup to public HTTPS, preserving secure media APIs and the
+simulator's same-site cookies. This does not grant arbitrary website automation.
+
 Admin's existing service URL and publication remain the source of configuration;
 reload an idle desktop after publication to fetch the assigned Profile. The
 pilot adds no hot publication polling. Desktop/device and vendor login stores are
@@ -1487,17 +1717,29 @@ not repeated. It never interrupts accepted Agent/order work. Unpromoted turns ar
 released when input processing ends. Tool progress then replaces the receipt;
 continuations preserve the latest tool status across SSE rounds.
 
-While deciding an idle input, the existing live TTS route prepares only the fixed,
-localized receipt text, never that input's transcript. Playback requires service
-admission and a current turn; receipt audio plays as soon as ready, without the
-ordinary waiting mode's one-second grace period. Each preparation belongs to one
-input, with no cross-customer audio cache. Inputs classified as background or
-unfinished discard unclaimed audio without playing it. This relies on Jev's
-classification, not an independent guarantee that all background speech is caught.
-Final results, cancellations, manual handover, new turns and scene disposal stop
-optional audio without cancelling an order. Failed/disabled TTS leaves text and
-execution intact. Receipt speech is progress, not a completed operation or a
-customer choice, and uses the site's existing TTS model, voice and locale.
+Receipt and waiting feedback use the original master audio assets in
+`public/audio/`: `kiosk_acknowledged_chime.wav` for each admitted capture, followed
+by looping `kiosk_hold_melodic_light_60s.wav`. `processing.json` enables feedback
+after the receipt WAV loads; unavailable waiting music does not silence receipts.
+A new capture interrupts waiting music for its receipt, while a capture during
+TTS defers its receipt until that speech ends. Legacy ASR remains silent during
+capture, transcription and pending service classification. Its first confirmed
+service admission (or accepted final decision) opens feedback once per utterance;
+empty ASR, background IGNORE, incomplete or unavailable decisions never open it.
+Repeated admission progress for the same legacy utterance does not replay its
+receipt. Falcon keeps its immediate pre-upload capture feedback; accepted
+non-empty simulated text also starts feedback. Permission/admission failures and
+incomplete AV captures do not.
+
+Once admitted, waiting music continues through remaining decision, tool execution
+and TTS preparation; Falcon also retains waiting music during transcription.
+Actual TTS playback stops it synchronously; an earlier reply ending does not
+discard a newer pending utterance. Internal work and proactive greetings alone
+never start a receipt. Reset, cancellation, admin/pause, service faults and scene
+disposal stop feedback without cancelling order work. Volume is 0.4 for the chime
+and 0.3 for music. No synthesized waiting phrases or fallback waiting TTS are
+requested. Missing/disabled assets leave waiting silent while normal replies and
+greetings retain TTS. Text progress remains visible independently of sound.
 
 `utterance_timing` distinguishes input receipt, service admission, first response
 DOM readiness and first audio playback. The first response remains the earliest
@@ -1525,6 +1767,30 @@ The invitation, approved interactive services, and their AIRI instructions are s
 
 ## Administrator mode
 
+During live operation, use the authenticated management website's **Kiosk 使用歷程**
+page on another computer, select the device and reception, and enable **即時監看**.
+It refreshes retained records every three seconds without sending kiosk commands.
+Recognition-start and recognition-duration events are separate from the existing
+decision/tool clock; duration includes the ASR HTTP request and is not a direct
+measurement of model compute alone. Completed transcripts are saved as soon as
+ASR returns, even while an earlier utterance is executing.
+
+Customers see only the audio-received indicator and recognized text. Voice,
+decision, idle and presence diagnostics and numeric execution times require the
+local authenticated administrator view. Opening that local view pauses reception;
+use the separate management website to observe a live customer unobtrusively.
+Falcon freezes each synchronized clip independently and uses the same bounded
+utterance queue as regular ASR. Multiple recognition requests may overlap;
+decisions and browser operations remain serialized in capture order.
+
+The device settings ordering-site selector identifies reviewed PB production,
+merchant test, and local simulator destinations from their URLs, alongside the
+configured title and origin. The selected URL and environment explanation remain
+visible beneath it; the published default also names its resolved destination.
+These labels do not change the saved site IDs or the next-reception apply barrier.
+Native select controls and their options use explicit light background and dark
+text so the dark local administrator panel does not hide unhovered choices.
+
 ### Welcome mode and prepared speech
 
 Choose **固定歡迎詞** or **VLM 情境生成** under **互動體驗 → 開場招呼 →
@@ -1532,6 +1798,9 @@ Choose **固定歡迎詞** or **VLM 情境生成** under **互動體驗 → 開�
 false selects fixed openings; true selects vision generation. Device overrides
 retain their existing precedence over the Site default. Reload the Kiosk to
 fetch the current effective setting immediately.
+With greetings enabled and local observation disabled, a listening kiosk welcomes
+once when the idle entry is verified ready. This does not enable camera observation
+and cannot bypass an unresolved previous cart, recovery block or administrator view.
 
 Proactive welcomes rotate through the published Profile's `greetingPhrases`
 (1–50 openings, up to 500 characters each). Configure them under **互動體驗 →
@@ -1539,6 +1808,10 @@ Proactive welcomes rotate through the published Profile's `greetingPhrases`
 openings. On the optional-phone screen, Kiosk appends the localized explanation
 that the customer may enter a phone number or skip directly to ordering. Do not
 include that explanation in each configured opening.
+PB table entry uses the configured opening without the optional-phone hint.
+Its table-picker heading and instruction remain fixed localized native copy in
+`packages/i18n/src/orderingMessages.ts`; there is no separate profile editor for
+that instruction. Publishing greeting phrases does not rename merchant tables.
 
 In fixed mode, registered kiosks with greetings enabled prepare these audio variants through
 the existing device-authenticated TTS route, sequentially, when the scene loads.
@@ -1576,11 +1849,20 @@ Dashboard writes retain account and Site role checks.
 
 Site defaults are overridden by saved device values. Both editors expose
 **純文字模式**: save to show the text composer and stop microphone capture on a
-voice-only Profile; turn it off to return to the Profile's voice mode. A Profile
-that already allows text keeps its text entry. Changing this setting does not
+device; turn it off to enable voice capture and allow configured proactive
+greetings. The saved device mode is authoritative; the Profile's older
+`voiceConversationOnly` display flag does not override it. Camera observation
+can remain enabled in text mode, but it does not start spoken greetings there.
+Changing this setting does not
 reset the PB document, its login, or its cart. Devices refresh effective policy
 every 10 seconds and on focus, retaining the last acknowledged snapshot offline.
 A successful local save takes effect immediately; stale responses cannot undo it.
+
+Proactive welcomes read the active service's own state: PB uses
+`browser_cart_get` on its table-selection or ready menu page; the owned Menu
+uses `kiosk_interaction_state`. PB cart/checkout pages, open product selectors,
+and pending Host questions suppress welcomes. Table selection uses the configured
+opening without the owned Menu's phone-entry hint; reminders wait for the menu.
 
 PB service-mode and background-speech policy controls remain hidden until the
 native PB/Jev implementation supports them. They do not select PB dine-in,
@@ -1618,11 +1900,18 @@ voice service. Presence only admits speech processing; Jev must still distinguis
 directed speech from a nearby person's conversation.
 
 For voice-only acceptance testing, an administrator can enable **語音診斷模式（測試用）**
-on an individual device. The Kiosk then shows its latest eight VAD segments as
+on an individual device. The authenticated local admin view shows its latest eight VAD segments as
 recognizing, unrecognized, recognized, failed, or decided, together with the
 Speech Guard label/score when available and the final turn-decision reason.
+The panel stays inside the upper host area so Electron's native menu cannot
+cover it. It shows microphone/VAD state even with zero captured segments, and
+surfaces startup/permission/connection errors. While this setting is enabled,
+existing visitor sessions also record `service_event` snapshots with source
+`audio_runtime`: capture mode, policy/model readiness, microphone track lifecycle,
+listening state and errors. Snapshots contain no audio, image, device name or
+continuous probability samples and occur only when lifecycle state changes.
 The Server returns these diagnostics only while that device setting is enabled;
-turn it off after testing because recognized visitor speech is visible on screen.
+turn it off after testing to stop collecting these extra lifecycle diagnostics.
 
 Deployment requires migrations `0032_kiosk_device_settings.sql` and
 `0033_kiosk_voice_vad_settings.sql` before using the
@@ -1630,6 +1919,28 @@ new Server routes. Include it in the Server schema package used by the normal
 startup migration process, then deploy the matching Dashboard and Kiosk assets.
 
 ### Voice activity detection
+
+The local Kiosk administrator panel includes **本機麥克風與喇叭**. Select an input
+microphone and output speaker there; preferences persist in that browser's
+profile, independently of Server model/provider configuration. **重新偵測並連接裝置**
+requests microphone permission again and reconnects a voice kiosk's input.
+Text mode does not start continuous microphone capture from this action.
+**播放喇叭測試音** uses the original receipt chime without requiring TTS.
+Adjust between customer conversations. Camera selection is unchanged.
+
+The selected output applies to reply/greeting TTS, the administrator's speech
+test, receipt chimes and waiting music. Both native media and Web Audio graph
+output are validated before saving. An unsupported or unavailable explicit
+speaker selection reports an error; the system-default option remains available.
+Restarted voice kiosks explicitly acquire their input stream after permission,
+even when a persisted enabled toggle was already true: the saved preference is
+not evidence that a microphone stream exists.
+
+For synthetic-device integration tests, run
+`VITEST_FAKE_MEDIA=1 pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts src/components/KioskMediaDeviceSettings.browser.test.ts`.
+This enables Chromium's synthetic devices and permission UI only for that test
+process. Native permission regression uses `PB_AUDIT_AUDIO_DEVICES_CHECK=1` with
+the existing isolated ordering runner, leaving merchant documents unprivileged.
 
 Kiosk voice input uses the Silero VAD model. System administrators can set the
 Site-wide threshold, minimum speech and silence durations, maximum utterance
@@ -1685,6 +1996,23 @@ allows it. For PB’s exact first-visit missing-table response, only table selec
 and Start remain available; no cart ownership is granted, and the menu must pass
 a fresh check before ordering. The host does not infer that the physical customer
 changed from page or speech changes.
+
+Covered admission reads the actual document with `includeCatalog: false` first.
+Only an observed approved table page receives the private `forAdmission` read
+needed to inspect an earlier cart. Menu admission never requests that flag:
+the native PB service also uses it to dismiss the store announcement, which
+requires the visible controls that preparation currently covers. The announcement
+remains available after admission and is dismissed by the next visible PB control
+operation or by the customer; preparation does not click behind its own cover.
+
+Preparation has its own cancellable read lifecycle. Navigation/reset retires a
+pending check immediately; its late result cannot hide or admit another page.
+A rejected read on an otherwise ready transport enters the same bounded
+automatic recovery as a disconnected transport. Recovery first checks the
+document's operation journal and live retry context, then retries preparation
+only. No add, edit, clear or submission is replayed. Preparation and restart
+failures retain their actual read error in `browser_cart_preparation` events;
+the customer screen does not replace that diagnostic with evidence of a write.
 
 Proactive recommendation invitations have their own structured question receipts.
 They survive idle within the same order, renew a per-decision answer ticket, and
@@ -1771,8 +2099,50 @@ release; restart the session to replace that document rather than unlocking on
 a timer. This control currently applies to Main Agent tasks; Fast Path retains
 its existing execution flow.
 
+PB notification-phone entry uses a closable floating numeric keypad in the native
+ordering page. It opens from phone focus or its keypad trigger and leaves the
+merchant form layout intact. Customers can type or tap digits when speech recognition fails;
+clear/delete edit only the phone draft. The guidance lists cart review, invoice,
+contact details and final submission in order. Scrolling and editing contact
+fields preserve the current checkout question; actual form changes still require
+fresh final-summary validation. A cart-review answer such as **這樣就好** advances
+to invoice selection and grants no submission consent.
+
+Customers are not asked to press a reconnect button. After a connection failure
+or unknown cart effect, the host waits for active work to settle, then makes a
+bounded series of automatic reconnect/readback checks. It never replays the
+failed customer request. Exact verified single-cart effects can resume ordering;
+unverifiable or multi-step effects retain the cart and ask staff for help. The
+manual recheck control is available only inside the administrator panel.
+Reception/document changes and component disposal invalidate late recovery
+results. Repeated speech while paused does not repeat generic fallback bubbles.
+
 Checkout invitation, cart review, invoice choice and final submission questions
 remain bound to reception, document, observed cart and expiry. Unrelated menu
 configuration updates do not invalidate these cart questions. Product/purchase
 questions still validate their original product evidence; final submission also
 rechecks the native form and one-use confirmation token.
+
+Invoice/contact entry progress is kept separately from expiring questions within
+one reception and PB document. A fresh read can rebuild an entry prompt after a
+cart revision or timeout; it never restores a phone buffer, old submission token
+or consent. Saying **好了** follows the actual unfinished field. Final consent
+also binds the observed invoice/contact form, so edits require a new summary.
+Jev receives only the bounded step and field readiness, without field values.
+
+Recovery distinguishes verified no-effect rejection, applied changes, partial
+changes and unknown effects. A native submission refusal proven to precede
+dispatch can rebuild the summary and request new consent; it never resubmits.
+Missing or uncertain write receipts retain verification barriers. Active checkout
+cannot use the ordinary service-answer path to claim an invoice was selected
+without a Host receipt.
+
+On a PB payment/result page, Restart first reads fresh order and reception state
+through `browser_state_get`. Verified paid or cancelled orders with no pending
+operation barrier retire the visitor and reload the configured table-entry URL;
+the old order is preserved and editor tools are never refreshed on its result
+page. Unpaid orders ask the customer to complete payment or explicitly abandon
+it on screen. Unknown payment or an unresolved journal marker retains the same
+reception. A failed state read cannot fall back to an unchecked reload. These
+specific lifecycle refusals are displayed to the customer; transport details
+remain behind the generic failure message.
