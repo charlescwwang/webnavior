@@ -2,6 +2,26 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createKioskUtteranceQueue } from './kioskUtteranceQueue'
 
+it('allows a server-bounded Falcon transcription to finish after the legacy deadline and submits its text once', async () => {
+  vi.useFakeTimers()
+  try {
+    const handled: string[] = []
+    const queue = createKioskUtteranceQueue({ process: async (utterance) => {
+      handled.push(utterance.text)
+    } })
+    const reservation = queue.reserve('asr', 60000)
+    if (reservation.kind !== 'ACCEPTED')
+      throw new Error('Expected capture to be reserved.')
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(reservation.signal.aborted).toBe(false)
+    reservation.complete({ text: '水餃一份', recognitionMode: 'falcon' })
+    reservation.complete({ text: '重複回應', recognitionMode: 'falcon' })
+    await queue.idle()
+    expect(handled).toEqual(['水餃一份'])
+  }
+  finally { vi.useRealTimers() }
+})
+
 describe('kiosk utterance queue', () => {
   it('processes later ASR results after an earlier handler rejects with an HTTP 500 error', async () => {
     const failure = new Error('HTTP 500')

@@ -8,7 +8,7 @@ import AiCapabilityCards from './AiCapabilityCards.vue'
 import FalconSettingsPanel from './FalconSettingsPanel.vue'
 
 const global = { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: {} })] }
-const snapshot = { settings: { ...defaultFalconSettings }, hasApiKey: false, ready: false as const, responseStatus: 'pending' as const }
+const snapshot = { settings: { ...defaultFalconSettings }, hasApiKey: false, ready: true, responseStatus: 'supported' as const }
 
 it('groups the Falcon editor inside speech recognition and retains legacy ASR configuration', async () => {
   const onConfigure = vi.fn()
@@ -32,9 +32,9 @@ it('shows the corrected port, preserves legacy mode and saves a connection draft
   const onSave = vi.fn()
   const screen = render(FalconSettingsPanel, { props: { busy: false, snapshot, onSave }, global })
   try {
-    await expect.element(screen.getByRole('textbox', { name: 'Falcon 服務網址' })).toHaveValue('http://192.168.8.64:8766')
+    await expect.element(screen.getByRole('textbox', { name: 'Falcon 服務網址' })).toHaveValue('http://192.168.8.64:8767')
     await expect.element(screen.getByRole('combobox', { name: '辨識模式' })).toHaveValue('legacy')
-    await expect.element(screen.getByRole('option', { name: '新模式：影音＋Falcon／ASR（尚未開放）' })).toBeDisabled()
+    await expect.element(screen.getByRole('option', { name: '新模式：影音＋Falcon／ASR' })).toBeEnabled()
     await screen.getByRole('spinbutton', { name: '請求逾時（秒）' }).fill('90')
     await screen.getByRole('button', { name: '儲存 Falcon 設定' }).click()
     expect(onSave).toHaveBeenCalledOnce()

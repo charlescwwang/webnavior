@@ -1,6 +1,7 @@
+import type { FalconTranscription } from '@proj-airi/stage-shared/falcon-audio'
 import type { InferOutput } from 'valibot'
 
-import { array, literal, maxLength, minLength, nullish, object, optional, parse, pipe, string, unknown } from 'valibot'
+import { array, finite, literal, maxLength, minLength, minValue, nullish, number, object, optional, parse, pipe, safeParse, string, unknown } from 'valibot'
 
 const textLimit = 32_768
 const bodyLimit = 1_048_576
@@ -8,6 +9,8 @@ const message = object({ content: optional(pipe(string(), maxLength(textLimit)),
 const choice = object({ index: optional(literal(0)), message, finish_reason: literal('stop') })
 const completion = object({ choices: pipe(array(choice), minLength(1), maxLength(1)) })
 const transcription = object({ text: pipe(string(), maxLength(textLimit)) })
+const duration = pipe(number(), finite(), minValue(0))
+const timingSchema = object({ inferenceMs: optional(duration), asrMs: optional(duration) })
 const chunk = object({ choices: pipe(array(object({ index: optional(literal(0)), delta: message, finish_reason: nullish(literal('stop')) })), maxLength(1)) })
 
 // Kept below the transport reader so JSON and SSE enforce the same single
@@ -19,11 +22,11 @@ function content(value: InferOutput<typeof message>) {
 }
 
 /**
- * Reads OpenAI Chat Completions text only. Deltas are display-only: the returned
- * string is available only after normal completion. Caller owns request/session
+ * Reads final transcript text and optional upstream numeric telemetry. Deltas
+ * are display-only; text is returned only after normal completion. Caller owns request/session
  * correlation and must supply its cancellation/timeout signal.
  */
-export async function readFalconTranscript(response: Response, options: { signal?: AbortSignal, onDelta?: (delta: string) => void, responseFormat?: 'transcription-json' | 'chat-completions' } = {}): Promise<string> {
+export async function readFalconTranscript(response: Response, options: { signal?: AbortSignal, onDelta?: (delta: string) => void, responseFormat?: 'transcription-json' | 'chat-completions' } = {}): Promise<FalconTranscription> {
   if (!response.ok || !response.body) {
     await response.body?.cancel()
     throw new Error('Falcon transcription request failed.')
@@ -106,14 +109,21 @@ export async function readFalconTranscript(response: Response, options: { signal
         throw new Error('Falcon SSE event exceeds the configured limit.')
     }
     if (mime === 'application/json') {
-      if (options.responseFormat === 'transcription-json')
-        return parse(transcription, JSON.parse(buffer)).text.trim()
+      if (options.responseFormat === 'transcription-json') {
+        const raw: unknown = JSON.parse(buffer)
+        const payload = parse(transcription, raw)
+        // Optional telemetry must not corrupt otherwise valid customer text.
+        // Missing/invalid stages are unknown, never zero or estimated from RTT.
+        const timing = safeParse(timingSchema, raw)
+        const reported = timing.success && (timing.output.inferenceMs !== undefined || timing.output.asrMs !== undefined)
+        return { text: payload.text.trim(), ...(reported ? { timing: timing.output } : {}) }
+      }
       const payload = parse(completion, JSON.parse(buffer))
-      return content(payload.choices[0]!.message).trim()
+      return { text: content(payload.choices[0]!.message).trim() }
     }
     if (!done || !stopped)
       throw new Error('Falcon stream was interrupted before normal completion.')
-    return text.trim()
+    return { text: text.trim() }
   }
   finally {
     options.signal?.removeEventListener('abort', abort)

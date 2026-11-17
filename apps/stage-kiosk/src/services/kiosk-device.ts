@@ -1,4 +1,6 @@
 import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
+import type { FalconTranscription } from '@proj-airi/stage-shared/falcon-audio'
+import type { SpeechRecognitionPolicy } from '@proj-airi/stage-shared/falcon-settings'
 import type { KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
 import type { ContextReply, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
@@ -339,6 +341,22 @@ export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal
   const body = createKioskTranscriptionBody(recording, chunk)
   const response = await requestAudio('/api/kiosk/audio/transcriptions', { body, method: 'POST', signal })
   return await response.json() as { text: string }
+}
+
+/** Reads capture policy without exposing the Falcon provider address or credential. */
+export async function fetchSpeechRecognitionPolicy(signal?: AbortSignal): Promise<SpeechRecognitionPolicy> {
+  return request('/api/kiosk/audio/recognition-policy', { cache: 'no-store', signal })
+}
+
+/** Sends one complete synchronized clip through Webnavior; the remote service owns ASR. */
+export async function transcribeFalconAudio(packet: ArrayBuffer, signal: AbortSignal) {
+  const response = await requestAudio('/api/kiosk/audio/falcon-transcriptions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: packet,
+    signal,
+  })
+  return await response.json() as FalconTranscription
 }
 
 /** Reads live activation without loading credentials, policy or the model. */

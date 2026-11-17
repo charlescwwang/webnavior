@@ -1,7 +1,10 @@
+import type { SpeechRecognitionPolicy } from '@proj-airi/stage-shared/falcon-settings'
+
 export interface KioskUtterance {
   capturedAt: number
   id: number
   recording?: Blob
+  recognitionMode?: SpeechRecognitionPolicy['mode']
   source: 'asr' | 'simulation'
   text: string
 }
@@ -18,7 +21,7 @@ export type KioskUtteranceReservation = {
   signal: AbortSignal
   /** Restarts the inactivity deadline only after another complete ASR chunk. */
   markTranscriptionProgress: () => void
-  complete: (input: Pick<KioskUtterance, 'text' | 'recording'>) => void
+  complete: (input: Pick<KioskUtterance, 'text' | 'recording' | 'recognitionMode'>) => void
   cancel: () => void
 } | { kind: 'OVERLOADED' }
 
@@ -121,7 +124,7 @@ export function createKioskUtteranceQueue(options: {
   }
 
   /** Claims ordering at speech-capture time, before asynchronous ASR completes. */
-  function reserve(source: KioskUtterance['source']): KioskUtteranceReservation {
+  function reserve(source: KioskUtterance['source'], transcriptionTimeoutMs = maxWaitMs): KioskUtteranceReservation {
     if (pending.length >= maxPending)
       return { kind: 'OVERLOADED' }
     const utterance: KioskUtterance = { capturedAt: now(), id: ++nextId, source, text: '' }
@@ -148,7 +151,7 @@ export function createKioskUtteranceQueue(options: {
       readinessTimeout = setTimeout(() => {
         settle()
         options.onDrop?.(utterance, 'expired')
-      }, maxWaitMs)
+      }, transcriptionTimeoutMs)
     }
     markTranscriptionProgress()
     pending.push({ ready, settle, utterance })

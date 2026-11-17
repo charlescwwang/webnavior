@@ -41,6 +41,7 @@ import { initLogger, LoggerFormat, LoggerLevel, setGlobalHookPostLog, useLogger 
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { httpInstrumentationMiddleware } from '@hono/otel'
+import { falconAudioLimits } from '@proj-airi/stage-shared/falcon-audio'
 import { kioskAudioLimits } from '@proj-airi/stage-shared/kiosk-audio'
 import { kioskCharacterPackageLimits } from '@proj-airi/stage-shared/kiosk-character-package'
 import { orderEvidenceMaxRequestBytes } from '@proj-airi/stage-shared/order-evidence'
@@ -312,6 +313,7 @@ export async function buildApp(deps: AppDeps) {
     maxSize: kioskAudioLimits.requestBytes,
     onError: c => c.json({ error: 'KIOSK_AUDIO_TOO_LARGE', message: '這段錄音超過上傳大小限制，請分次說明。' }, 413),
   })
+  const falconBodyLimit = bodyLimit({ maxSize: falconAudioLimits.maxClipBytes })
 
   const builtApp = app
     .use('*', sessionMiddleware(deps.auth, deps.env))
@@ -328,6 +330,8 @@ export async function buildApp(deps: AppDeps) {
         return orderEvidenceBodyLimit(c, next)
       if (c.req.path === '/api/kiosk/audio/transcriptions')
         return kioskAudioBodyLimit(c, next)
+      if (c.req.path === '/api/kiosk/audio/falcon-transcriptions')
+        return falconBodyLimit(c, next)
       return defaultBodyLimit(c, next)
     })
     .onError((err, c) => {

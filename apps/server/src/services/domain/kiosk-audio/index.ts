@@ -1,12 +1,17 @@
-import type { ConfigKVService } from '../../adapters/config-kv'
+import type { FalconTranscription } from '@proj-airi/stage-shared/falcon-audio'
+import type { SpeechRecognitionPolicy } from '@proj-airi/stage-shared/falcon-settings'
+
 import type { EnvelopeCrypto } from '../../../utils/envelope-crypto'
+import type { ConfigKVService } from '../../adapters/config-kv'
 
 import { Buffer as NodeBuffer } from 'node:buffer'
 
 import { useLogger } from '@guiiai/logg'
+import { validateFalconClip } from '@proj-airi/stage-shared/falcon-audio'
 
-import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../adapters/config-kv'
 import { createBadRequestError, createServiceUnavailableError } from '../../../utils/error'
+import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../adapters/config-kv'
+import { readFalconTranscript } from './falconResponse'
 
 type AudioCapability = 'asr' | 'tts'
 const UPSTREAM_BODY_SNIPPET_MAX = 256
@@ -25,6 +30,8 @@ interface KioskAudioGatewayOptions {
 export interface KioskAudioGateway {
   speak: (input: { locale: string, modelName: string, text: string }) => Promise<Response>
   transcribe: (input: { audio: File, modelName: string }) => Promise<string>
+  recognitionPolicy: () => Promise<SpeechRecognitionPolicy>
+  transcribeFalcon: (packet: ArrayBuffer, signal: AbortSignal) => Promise<FalconTranscription>
 }
 
 /**
@@ -37,6 +44,49 @@ export interface KioskAudioGateway {
 export function createKioskAudioGateway(options: KioskAudioGatewayOptions): KioskAudioGateway {
   const fetchImpl = options.fetchImpl ?? fetch
   const logger = options.logger ?? useLogger('kiosk-audio').useGlobalConfig()
+
+  async function recognitionPolicy(): Promise<SpeechRecognitionPolicy> {
+    const config = await options.configKV.get('FALCON_CONNECTION_CONFIG')
+    return { mode: config.mode, maxUtteranceSeconds: config.maxUtteranceSeconds, timeoutMs: config.timeoutMs }
+  }
+
+  async function transcribeFalcon(packet: ArrayBuffer, signal: AbortSignal) {
+    // Resolve again for every utterance: a late upload cannot opt itself back
+    // into Falcon after an administrator has switched the system to legacy.
+    const config = await options.configKV.get('FALCON_CONNECTION_CONFIG')
+    if (config.mode !== 'falcon')
+      throw createBadRequestError('Recognition mode changed. Reload the kiosk.', 'KIOSK_RECOGNITION_MODE_CHANGED')
+    try {
+      validateFalconClip(packet, config.maxUtteranceSeconds)
+    }
+    catch {
+      throw createBadRequestError('Invalid synchronized Falcon clip.', 'KIOSK_FALCON_INVALID_CLIP')
+    }
+    const key = config.keyCiphertext
+      ? options.envelopeCrypto.decryptKey(config.keyCiphertext, { modelName: 'webnavior-falcon', keyEntryId: 'default' })
+      : undefined
+    const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(config.timeoutMs)])
+    try {
+      const response = await fetchImpl(new URL(config.path, config.baseURL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream', 'X-Falcon-Precision': config.precision, ...(key ? { Authorization: `Bearer ${key.toString('utf8')}` } : {}) },
+        body: packet,
+        signal: requestSignal,
+        redirect: 'error',
+      })
+      // SSE is parsed here as a reserved upstream interface. Only completed
+      // text is returned to the device; previews never become customer input.
+      return await readFalconTranscript(response, { signal: requestSignal, responseFormat: config.responseFormat })
+    }
+    catch (error) {
+      if (signal.aborted)
+        throw error
+      throw createServiceUnavailableError('Falcon did not return a complete transcript.', 'KIOSK_FALCON_UPSTREAM_ERROR')
+    }
+    finally {
+      key?.fill(0)
+    }
+  }
 
   async function transcribe(input: { audio: File, modelName: string }) {
     const config = await resolveCapability('asr', input.modelName)
@@ -116,7 +166,7 @@ export function createKioskAudioGateway(options: KioskAudioGatewayOptions): Kios
     }
   }
 
-  return { speak, transcribe }
+  return { speak, transcribe, recognitionPolicy, transcribeFalcon }
 }
 
 function endpoint(baseURL: string, path: string) {

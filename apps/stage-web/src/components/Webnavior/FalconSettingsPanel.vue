@@ -51,7 +51,7 @@ function save() {
         {{ copy.mode }}
         <select v-model="form.mode" :disabled="props.busy" :class="['rounded-lg border bg-transparent p-2']">
           <option value="legacy">{{ copy.legacy }}</option>
-          <option value="falcon" disabled>{{ copy.falcon }}</option>
+          <option value="falcon">{{ copy.falcon }}</option>
         </select>
       </label>
       <div :class="['grid grid-cols-1 gap-4 md:grid-cols-2']">

@@ -17,14 +17,14 @@ function streamResponse(events: string) {
 }
 
 it('reads the deployed service transcription JSON only when explicitly configured', async () => {
-  expect(await readFalconTranscript(Response.json({ text: '我要水餃', model: 'kitchen-asr-v0.4', sampleRate: 16000 }), { responseFormat: 'transcription-json' })).toBe('我要水餃')
-  expect(await readFalconTranscript(Response.json({ text: '' }), { responseFormat: 'transcription-json' })).toBe('')
+  expect(await readFalconTranscript(Response.json({ text: '我要水餃', model: 'kitchen-asr-v0.4', sampleRate: 16000 }), { responseFormat: 'transcription-json' })).toEqual({ text: '我要水餃' })
+  expect(await readFalconTranscript(Response.json({ text: '' }), { responseFormat: 'transcription-json' })).toEqual({ text: '' })
   await expect(readFalconTranscript(Response.json({ model: 'missing-text' }), { responseFormat: 'transcription-json' })).rejects.toThrow()
   await expect(readFalconTranscript(Response.json({ text: 'wrong-format' }))).rejects.toThrow()
 })
 
 it('reads one completed JSON transcription without accepting tool calls', async () => {
-  expect(await readFalconTranscript(Response.json({ choices: [{ index: 0, message: { content: '我要水餃' }, finish_reason: 'stop' }] }))).toBe('我要水餃')
+  expect(await readFalconTranscript(Response.json({ choices: [{ index: 0, message: { content: '我要水餃' }, finish_reason: 'stop' }] }))).toEqual({ text: '我要水餃' })
   await expect(readFalconTranscript(Response.json({ choices: [{ message: { content: '半句' }, finish_reason: 'length' }] }))).rejects.toThrow()
   await expect(readFalconTranscript(Response.json({ choices: [{ message: { content: '文字', tool_calls: [{}] }, finish_reason: 'stop' }] }))).rejects.toThrow()
 })
@@ -32,7 +32,7 @@ it('reads one completed JSON transcription without accepting tool calls', async 
 it('decodes UTF-8 deltas across byte boundaries and requires stop plus DONE', async () => {
   const preview = vi.fn()
   const response = streamResponse(': keepalive\r\n\r\ndata: {"choices":[{"index":0,"delta":{"content":"我要"},"finish_reason":null}]}\r\n\r\ndata: {"choices":[{"index":0,"delta":{"content":"水餃"},"finish_reason":"stop"}]}\r\n\r\ndata: [DONE]\r\n\r\n')
-  expect(await readFalconTranscript(response, { onDelta: preview })).toBe('我要水餃')
+  expect(await readFalconTranscript(response, { onDelta: preview })).toEqual({ text: '我要水餃' })
   expect(preview.mock.calls).toEqual([['我要'], ['水餃']])
 })
 
@@ -59,4 +59,19 @@ it('cancels a waiting body on abort and never returns its partial text', async (
   controller.abort()
   await expect(pending).rejects.toThrow()
   expect(cancel).toHaveBeenCalledOnce()
+})
+
+// Report: this chat, 2026-11-17 — end-to-end ASR latency was mistaken for Falcon audio separation latency.
+it('preserves upstream inference and ASR milliseconds separately without claiming audio return timing', async () => {
+  const result = await readFalconTranscript(Response.json({ text: '我要水餃', inferenceMs: 493.9, asrMs: 300.2, samples: 48000, sampleRate: 16000 }), { responseFormat: 'transcription-json' })
+  expect(result).toEqual({ text: '我要水餃', timing: { inferenceMs: 493.9, asrMs: 300.2 } })
+  expect(result).not.toHaveProperty('audioReturnMs')
+})
+
+it('keeps missing or invalid upstream durations unavailable while preserving the transcript', async () => {
+  for (const timing of [{ inferenceMs: -1 }, { inferenceMs: 'fast' }, { asrMs: null }]) {
+    const result = await readFalconTranscript(Response.json({ text: '好', ...timing }), { responseFormat: 'transcription-json' })
+    expect(result).toEqual({ text: '好' })
+  }
+  expect(await readFalconTranscript(Response.json({ text: '好', inferenceMs: 0 }), { responseFormat: 'transcription-json' })).toEqual({ text: '好', timing: { inferenceMs: 0 } })
 })

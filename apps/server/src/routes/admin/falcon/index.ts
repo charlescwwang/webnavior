@@ -16,11 +16,11 @@ const inputSchema = object({
   clearApiKey: optional(boolean()),
 })
 
-/** Admin-only connection draft. Activation stays blocked until the AV pipeline is verified. */
+/** Admin-only recognition policy and encrypted upstream connection. */
 export function createAdminFalconRoutes(configKV: ConfigKVService, crypto: EnvelopeCrypto) {
   async function snapshot() {
     const { keyCiphertext, ...settings } = await configKV.get('FALCON_CONNECTION_CONFIG')
-    return { settings, hasApiKey: Boolean(keyCiphertext), ready: false as const, responseStatus: 'pending' as const }
+    return { settings, hasApiKey: Boolean(keyCiphertext), ready: true, responseStatus: 'supported' as const }
   }
   return new Hono<HonoEnv>()
     .use('*', authGuard)
@@ -34,8 +34,6 @@ export function createAdminFalconRoutes(configKV: ConfigKVService, crypto: Envel
       if (!result.success)
         throw createBadRequestError('Falcon 設定格式不正確，請檢查服務網址與欄位。', 'FALCON_SETTINGS_INVALID')
       const { plaintextKey, clearApiKey, ...settings } = result.output
-      if (settings.mode !== 'legacy')
-        throw createBadRequestError('Falcon 回傳格式與影音管線尚未驗證，目前請維持舊模式。', 'FALCON_NOT_READY')
       if (settings.engine === 'pytorch' && settings.precision !== 'fp32')
         throw createBadRequestError('PyTorch 模式僅支援 FP32。', 'FALCON_PRECISION_INVALID')
       if (clearApiKey && plaintextKey)
