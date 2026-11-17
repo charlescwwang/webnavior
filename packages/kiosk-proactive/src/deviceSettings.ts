@@ -33,6 +33,8 @@ export interface DeviceSettingsValues {
   /** Allows this device to use text input regardless of its shared voice-only Profile. */
   textOnlyMode: boolean
   observationEnabled: boolean
+  /** Opt-in visual admission for legacy ASR. Falcon still requires its audiovisual capture. @default false */
+  mouthDetectionEnabled: boolean
   greetingEnabled: boolean
   reminderEnabled: boolean
   triggerMode: 'attention' | 'presence' | 'mixed'
@@ -66,6 +68,7 @@ export const deviceSettingKeys = [
   'backgroundSpeechMode',
   'textOnlyMode',
   'observationEnabled',
+  'mouthDetectionEnabled',
   'greetingEnabled',
   'reminderEnabled',
   'triggerMode',
@@ -123,6 +126,7 @@ export const defaultDeviceSettingsValues: DeviceSettingsValues = {
   backgroundSpeechMode: 'off',
   textOnlyMode: false,
   observationEnabled: false,
+  mouthDetectionEnabled: false,
   greetingEnabled: false,
   reminderEnabled: false,
   triggerMode: 'attention',

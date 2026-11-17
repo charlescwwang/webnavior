@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { SpeechRecognitionPolicy } from '@proj-airi/stage-shared/falcon-settings'
+
 import type { KioskDevice } from '../services/kiosk-device'
 
 import { useBuildInfo } from '@proj-airi/stage-ui/composables/use-build-info'
@@ -6,6 +8,7 @@ import { Checkbox, FieldRange } from '@proj-airi/ui'
 import { useI18n } from 'vue-i18n'
 
 import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
+import KioskMediaDeviceSettings from './KioskMediaDeviceSettings.vue'
 import MenuSimulationPanel from './menuSimulationPanel.vue'
 
 import { useFeedbackInvitationEnabled } from '../composables/useFeedbackInvitationSettings'
@@ -15,6 +18,7 @@ const props = defineProps<{
   device?: KioskDevice
   sessionEnding: boolean
   textOnlyMode?: boolean
+  recognitionMode?: SpeechRecognitionPolicy['mode']
 }>()
 
 const emit = defineEmits<{
@@ -78,6 +82,7 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
       <slot name="device-settings" />
       <MenuSimulationPanel v-if="development" :bridge="interactiveServiceClient" />
       <KioskCameraPreviewSettings v-model="cameraPreviewEnabled" />
+      <KioskMediaDeviceSettings :text-only-mode="props.textOnlyMode" :recognition-mode="props.recognitionMode" />
 
       <section :class="['admin-section']">
         <h3>{{ t('deviceSettings.localDiagnostics.title') }}</h3>

@@ -5,6 +5,7 @@ import { render } from 'vitest-browser-vue'
 import { defineComponent, h, shallowRef } from 'vue'
 import { createI18n } from 'vue-i18n'
 
+import zhHant from '../../../../packages/i18n/src/locales/zh-Hant/stage.yaml'
 import KioskConversation from './KioskConversation.vue'
 import KioskDecisionInspector from './KioskDecisionInspector.vue'
 import KioskVoiceDiagnostics from './KioskVoiceDiagnostics.vue'
@@ -20,6 +21,49 @@ const props = {
   sending: false,
   voiceConversationOnly: false,
 }
+
+// Report: this chat Nov17 — received audio must be acknowledged before ASR or an earlier action finishes.
+it('shows a plain receipt while recognizing and the completed transcript while earlier work is pending', async () => {
+  const count = shallowRef(1)
+  const messages = shallowRef<ChatHistoryItem[]>([])
+  const screen = render(defineComponent({
+    setup: () => () => h(KioskConversation, { ...props, recognizingCount: count.value, messages: messages.value, sending: true, requestStatuses: { 2: 'queued' }, voiceConversationOnly: true }),
+  }), { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
+  await expect.element(screen.getByText('已收到語音，正在辨識…', { exact: true })).toBeVisible()
+  messages.value = [{ role: 'user', id: 'utterance:2:user', content: '再加一份水餃' }]
+  count.value = 0
+  await expect.element(screen.getByText('再加一份水餃', { exact: true })).toBeVisible()
+  expect(screen.getByText('已收到語音，正在辨識…', { exact: true }).query()).toBeNull()
+})
+
+// Report: this chat, Nov17 — an unverified cart readback was repeatedly shown as a disconnected menu.
+it('distinguishes a connected service with an unconfirmed cart effect from an actual disconnection', async () => {
+  const lifetime = new AbortController()
+  interactiveServiceClient.activateTransport('https://app.esgpb.com/order/store/1kgJeql/internal_use/menu', () => ({
+    signal: lifetime.signal,
+    discover: async request => ({ ...request, documentId: 'connected-document', toolsRevision: 1, tools: [{ name: 'browser_cart_get', description: '', inputSchema: { type: 'object' } }] }),
+    execute: async () => { throw new Error('No operation is expected') },
+    inspect: async () => { throw new Error('No inspection is expected') },
+    dispose: reason => lifetime.abort(reason),
+  }))
+  await interactiveServiceClient.waitUntilReady()
+  const screen = render(KioskConversation, {
+    props: { ...props, serviceRecoveryBlocked: true },
+    global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] },
+  })
+  try {
+    const status = screen.container.querySelector<HTMLElement>('.service-status')!
+    await expect.element(status).toHaveTextContent('先前餐點操作的結果尚未核對完成')
+    await expect.element(status).not.toHaveTextContent('菜單連線中斷')
+    expect(screen.getByRole('button', { name: '恢復菜單連線' }).query()).toBeNull()
+    interactiveServiceClient.activate()
+    await expect.element(status).toHaveTextContent('正在自動重新連線')
+  }
+  finally {
+    screen.unmount()
+    interactiveServiceClient.activate()
+  }
+})
 
 // Report: this chat, 2026-10-21 — Kiosk bypassed the shared chat OpenCC output hook.
 it('presents conversation text in Taiwan Traditional without rewriting source messages', async () => {
@@ -202,4 +246,19 @@ it('paints incremental replies in history and console, then replaces the draft o
   reply.append(1, '過期文字')
   await expect.poll(() => screen.container.textContent?.includes('過期文字')).toBe(false)
   screen.unmount()
+})
+
+// Report: this chat, Nov17 — voice mode opened the text console on startup.
+it('shows the text console only in text mode and removes it when returning to voice', async () => {
+  const voice = shallowRef(true)
+  const host = defineComponent({ setup: () => () => h(KioskConversation, { ...props, voiceConversationOnly: voice.value }) })
+  const view = render(host, { global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] } })
+  try {
+    expect(document.querySelector('.text-console')).toBeNull()
+    voice.value = false
+    await expect.poll(() => document.querySelector('.text-console')).not.toBeNull()
+    voice.value = true
+    await expect.poll(() => document.querySelector('.text-console')).toBeNull()
+  }
+  finally { view.unmount() }
 })

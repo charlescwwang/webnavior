@@ -1,5 +1,47 @@
+import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/services/interactiveServiceClient'
+
 import type { KioskConversationDecisionState } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { GreetingPhase } from '../../../server/src/services/domain/kiosk/interactionContracts'
+
+import { boolean, literal, looseObject, optional, picklist, safeParse } from 'valibot'
+
+import { conversationDecisionStateFrom } from './kiosk-fast-path'
+
+const browserWelcomeSchema = looseObject({
+  ok: literal(true),
+  source: literal('browser'),
+  page: picklist(['table', 'menu']),
+  code: optional(literal('table-selection-required')),
+  menuReady: optional(boolean()),
+  itemSelectionOpen: optional(boolean()),
+})
+
+/** Reads the current service without creating an ordering task or consuming a question. */
+export async function readGreetingPhase(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, hasPendingQuestion: () => boolean, kind: 'greeting' | 'reminder' = 'greeting'): Promise<GreetingPhase | undefined> {
+  if (hasPendingQuestion())
+    return undefined
+  // PB publishes browser_cart_get, while the owned Menu publishes its state
+  // tool. Select by capability; absence of the owned tool is not an idle PB.
+  const browserTool = client.tools.value.find(tool => tool.name === 'browser_cart_get')
+  if (browserTool) {
+    const observed = safeParse(browserWelcomeSchema, await client.execute(browserTool, { includeCatalog: false }))
+    if (hasPendingQuestion() || !observed.success)
+      return undefined
+    const page = observed.output
+    // PB's table entry is not the owned Menu's optional-phone entry. Use the
+    // configured opening without appending the owned phone instructions.
+    if (kind === 'greeting' && page.page === 'table' && page.code === 'table-selection-required')
+      return 'ordering'
+    if (page.page === 'menu' && page.menuReady === true && page.itemSelectionOpen === false)
+      return 'ordering'
+    return undefined
+  }
+  const stateTool = client.tools.value.find(tool => tool.name === 'kiosk_interaction_state')
+  if (!stateTool)
+    return undefined
+  const state = conversationDecisionStateFrom(await client.execute(stateTool, {}))
+  return hasPendingQuestion() ? undefined : greetingPhase(state)
+}
 
 /** Unresolved questions and transaction pages always take precedence over a welcome. */
 export function greetingPhase(state: Pick<KioskConversationDecisionState, 'phase' | 'waitingFor'> | undefined): GreetingPhase | undefined {

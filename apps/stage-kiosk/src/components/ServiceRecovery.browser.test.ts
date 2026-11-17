@@ -34,14 +34,17 @@ it('paints text progress and elapsed time before the delayed model finishes, the
   await screen.getByRole('textbox').fill('這個怎麼選')
   const submittedAt = performance.now()
   await screen.getByRole('button', { name: '模擬辨識並執行' }).click()
-  await expect.element(screen.getByText('正在確認您的意思…')).toBeVisible()
+  // The floating test console repeats status text. Assert the customer's
+  // conversation region so two valid status copies do not make this ambiguous.
+  const conversation = screen.getByRole('region', { name: '與虛擬服務員對話' })
+  await expect.element(conversation.getByText('正在確認您的意思…')).toBeVisible()
   expect(performance.now() - submittedAt).toBeLessThan(1000)
   expect(progress.state.value?.pending).toBe(true)
   // Hold the provider open while the actual browser paints and advances the clock.
   await expect.poll(() => progress.state.value?.elapsedMs).toBeGreaterThanOrEqual(250)
   await expect.element(screen.getByLabelText('本輪對話處理耗時')).toBeVisible()
   complete()
-  await expect.element(screen.getByText('剛才沒有理解清楚，請再說一次您的需求。')).toBeVisible()
+  await expect.element(conversation.getByText('剛才沒有理解清楚，請再說一次您的需求。')).toBeVisible()
   expect(progress.state.value?.pending).toBe(false)
-  await expect.element(screen.getByText('正在確認您的意思…')).not.toBeInTheDocument()
+  await expect.element(conversation.getByText('正在確認您的意思…')).not.toBeInTheDocument()
 })

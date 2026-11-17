@@ -23,23 +23,101 @@ chat:
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
 kiosk:
+  voice-received: 已收到語音，正在辨識…
+  monitor:
+    live: 即時監看（每 3 秒更新，不影響機台接待）
+    updated: '最後更新：{time}'
+    error: 連線暫時失敗，保留上次紀錄並自動重試。
+    recognizing: 已收音，正在等待語音辨識回覆
+    recognized: '語音辨識完成（{mode}）：{seconds} 秒'
+    not-admitted: '語音未送入判斷（{mode}）：{seconds} 秒'
+    stage-duration: '{seconds} 秒'
+    stage-unavailable: '未提供'
+    falcon-stages: |-
+      {summary}
+      音訊片段（含靜音補齊）：{audio}
+      Falcon 推論：{inference}
+      ASR：{asr}
+      音檔完成／回傳耗時：未量測
+  array-audio:
+    metrics: '延遲 {lag} ms · 播放參考 {reference} frames · RMS {input} → {output} dBFS · 限幅 {limited}%'
+    algorithm: '舊 ASR 陣列演算法'
+    lcmv: 'LCMV（現有方式）'
+    spatial-mask: 'Spatial Mask（11 月穩定版）'
+    aec3: '啟用 AEC3 回音消除'
+    aec3Description: '使用機台播放音訊消除自身回音。關閉可比較原始 Spatial Mask，仍可能收到 TTS；不會停止收音來避開回音。'
+    maskGainDb: 'Spatial Mask 輸入增益（dB，0–80）'
+    apply: '套用演算法與 AEC3 設定'
+    applyDescription: '套用會重新啟動收音並丟棄未完成的半句與辨識。請在未說話時調整；增益預設 15 dB，需現場校準。嘴部放行規則維持現行設定。'
+    maskInactive: 'Spatial Mask 設定僅適用舊 ASR 的 UMA-8 路徑；Falcon 維持 AEC3／LCMV，一般麥克風維持瀏覽器處理。'
+    title: 'UMA-8 收音處理'
+    mode: '麥克風處理方式'
+    auto: '自動辨識 UMA-8'
+    uma8: 'UMA-8 多聲道'
+    standard: '一般麥克風（瀏覽器處理）'
+    description: 'UMA-8 預設使用 AEC3 → LCMV → 增益 → VAD；舊 ASR 可另選 Spatial Mask 並設定 AEC3。仰角以陣列平面為 0°，正上方為 90°；可設定 0–85°。變更會重新啟動收音，請在未說話時調整。Falcon 使用 AEC3 後映射第 6 路，並套用獨立的 Falcon 輸入增益。'
+    frontElevationDeg: '顧客仰角（度）'
+    suppress1ElevationDeg: '左側抑制仰角（度）'
+    suppress2ElevationDeg: '右側抑制仰角（度）'
+    gainDb: 'VAD 輸入增益（dB，0–30）'
+    advanced: '進階陣列設定'
+    channelMap: '7 路實體聲道映射（0–7，不可重複）'
+    frontDeg: '顧客方位角（度）'
+    suppress1Deg: '左側抑制方位角（度）'
+    suppress2Deg: '右側抑制方位角（度）'
+    radiusMm: '陣列半徑（mm）'
+    loading: 'LCMV 穩定係數'
+    falconGainDb: 'Falcon 輸入增益（dB，0–30）'
+    falconGainDescription: '僅調整 UMA-8 送進 Falcon 前的音訊，與 VAD 增益分開；預設 0 dB。套用峰值限幅，並保留影音時間對齊。變更會重新啟動收音，請在未說話時調整。'
+    raw-unavailable: '尚未取得 UMA-8 的 8 路原始聲道。請確認選擇正確的 UMA-8 裝置，並按重新偵測與連接；本次未改用其他麥克風。'
+  media-devices:
+    title: '本機麥克風與喇叭'
+    description: '選擇只保存在這台機台，重新開啟後仍會沿用。更換裝置會重新連接；請在沒有顧客說話時調整。'
+    microphone: '收音麥克風'
+    output: '播放喇叭／音訊輸出'
+    test-output: '播放喇叭測試音'
+    unnamed-output: '音訊輸出 {number}'
+    system-default: '系統預設裝置'
+    unnamed-microphone: '麥克風 {number}'
+    connected: '已取得麥克風串流'
+    disconnected: '尚未取得麥克風串流'
+    refresh: '重新偵測並連接裝置'
+    refreshing: '正在偵測裝置…'
+    failed: '無法連接裝置，請確認權限與接線。'
   media-unlinked: '錄音尚未上傳或缺少可核實的對應關係，請查看下方原始錄音清單。'
   media-audio-list: '原始錄音清單（不依時間推定逐字稿）'
   media-play: '播放原始錄音'
   request-status:
-    queued: '等待處理'
+    queued: '已辨識，等待處理'
     processing: '處理中'
     review: '請看回覆繼續操作'
     completed: '已完成'
     cancelled: '已取消'
     failed: '未完成，請查看回覆'
   voice-debug:
+    title: '語音診斷模式'
+    label: '語音診斷'
+    target: '主要點餐者'
+    target-acquired: '已選取目標'
+    target-tracking: '追蹤同一目標'
+    target-challenger: '確認新目標中'
+    target-switched: '已切換目標'
+    target-missing: '區域內沒有目標'
+    target-ambiguous: '多人目標不明確'
+    interruption: 'TTS 打斷'
+    interruption-idle: '等待語音'
+    interruption-semantic-required: '等待背景音語意判斷'
+    interruption-visual-required: '嘴部或收音資格不足'
+    interruption-below-threshold: '語音機率不足'
+    interruption-collecting: '累積連續語音'
+    interruption-qualified: '前端已通過打斷條件'
+    local-interruption: '主要目標嘴部與連續 VAD 語音通過，前端停止播報'
     tts-overlap: 'TTS播放期間偵測到聲音，請核對是否回音或插話'
     speech-start: 'VAD偵測到說話'
     speech-end: 'VAD語音段結束'
     blocked: '本段未進入點餐'
     tts: '測試語音播放'
-    interrupted: '測試語音已被插話中斷'
+    interrupted: '語音播放已被插話中斷'
     mode-admin: '管理員音訊測試'
     mode-text: '文字模式'
     mode-customer: '顧客語音點餐'
@@ -93,6 +171,8 @@ kiosk:
     failed: 無法確認購物車，請稍後重新檢視。
     restart-failed: 目前尚未確認前一筆點餐操作，請稍候再按「重新開始／新訂單」。若持續無法使用，請洽工作人員。
   native-view-loading: 載入中…
+  browser-pb-backup: 網頁版備援僅支援自建 PB 測試站，請從公開 Kiosk 入口選擇自建站。PB 正式網站請使用 Kiosk EXE。
+  browser-pb-backup-link: 開啟公開 Kiosk 測試入口
   native-view-failed: 服務畫面暫時無法載入，請工作人員檢查連線後重新開啟。
   service-editor-description: 設定機台要顯示的網站，儲存後需發布。管理頁預覽不代表登入或助手操作已可用，請在機台驗證。
   restart-order: 重新開始／新訂單
@@ -361,11 +441,20 @@ kiosk-agent:
   retry-stale: 畫面或訂單已變更，請重新說明您目前的需求。
   retry-busy: 目前仍有語句正在處理，請稍後再試。
   context-unavailable: 菜單資料暫時無法取得，這句尚未完成，請確認連線後再說一次。
-  service-unavailable: 菜單連線中斷，暫停新的代操作；請恢復連線並確認既有訂單。
+  operation-unconfirmed: 先前餐點操作的結果尚未核對完成，正在自動核對購物車，請稍候；不會重複加餐。
+  service-recovery-failed: 暫時無法確認先前餐點操作的結果，已保留購物車並暫停代操作，請現場人員協助核對。
+  service-unavailable: 菜單連線暫時中斷，正在自動重新連線並核對購物車，請稍候。
   service-reconnect: 恢復菜單連線
-  service-recovered: 菜單連線已恢復，未重送先前操作；請確認訂單後再說一次。
+  service-recovered: 已核對購物車並恢復服務，未重送先前操作；您可以繼續點餐或結帳。
   audio-too-large: 這段錄音超過上傳限制，這句未執行，請分次說明。
   audio-failed: 這次語音未能完整辨識，尚未執行，請再說一次。
+  voice-capture-mouth: 說話期間未能持續確認同一個嘴部目標，這句尚未執行。請面向鏡頭，再說一次。
+  voice-capture-incomplete: 這句超過收音上限或收音不完整，尚未執行。請分次說明。
+  falcon-capture-duration: 這句超過收音上限或收音不完整，尚未執行。請稍後分次說明。
+  falcon-capture-mouth: 說話期間未能持續取得清楚的嘴部影像，這句尚未執行。請面向鏡頭，再說一次。
+  falcon-capture-timing: 嘴部影像與聲音的時間未對齊，這句尚未執行。請稍候再說一次。
+  falcon-capture-busy: 上一句仍在辨識，這句尚未執行。請等辨識完成再說。
+  falcon-capture-failed: 這句影音未完整對齊、超過收音上限，或上一句還在辨識。這句尚未執行，請面向鏡頭，稍候再分次說明。
   service-connecting: 正在連接助手操作功能，您也可直接操作服務畫面。
   service-manual: 助手目前無法代操作此服務，請直接操作服務畫面；結果以該畫面為準。
   service-browser-unsupported: 此瀏覽器不支援助手代操作，請直接操作服務畫面。

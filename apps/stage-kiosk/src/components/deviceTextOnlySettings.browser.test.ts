@@ -19,6 +19,26 @@ function snapshot(): DeviceSettingsSnapshot {
   return { deviceId: 'text-kiosk', defaults: { ...defaultDeviceSettingsValues }, effective: { ...defaultDeviceSettingsValues }, settings: { ...defaultDeviceSettings, overrides: { textOnlyMode: false } } }
 }
 
+// Report: this chat Nov17 — PB environments were ambiguous and white dropdowns hid text until hover.
+it('identifies production and fixture choices and keeps native options legible in the dark admin panel', async () => {
+  const state = snapshot()
+  state.orderingSites = [
+    { id: 'pb', title: 'PB', description: '', url: 'https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table' },
+    { id: 'pb-local-test', title: 'PB', description: '', url: 'http://127.0.0.1:5188/order/store/1kgJeql/internal_use/menu/select-table' },
+  ]
+  const view = render(DeviceSettingsEditor, { props: { snapshot: state, mode: 'local', saving: false, activeOrderingSiteId: 'pb' }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { deviceSettings: messages } } })] } })
+  const select = view.getByRole('combobox', { name: '店家／點餐網站', exact: true }).element() as HTMLSelectElement
+  select.parentElement!.style.color = 'white'
+  expect(select.options[1].textContent).toContain('PB 正式站')
+  expect(select.options[1].textContent).toContain('https://app.esgpb.com')
+  expect(select.options[2].textContent).toContain('自建測試站')
+  expect(select.options[2].textContent).toContain('http://127.0.0.1:5188')
+  expect(getComputedStyle(select).color).not.toBe(getComputedStyle(select.parentElement!).color)
+  expect(getComputedStyle(select.options[2]).color).toBe(getComputedStyle(select).color)
+  expect(getComputedStyle(select.options[2]).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+  expect(select.value).toBe('')
+})
+
 // Report: this chat Nov10 — switching versions must not erase stored local preferences.
 it('uses the server mode without deleting a pre-existing browser preference', async () => {
   const key = 'kiosk/conversation/text-only'
@@ -41,6 +61,23 @@ it('uses the server mode without deleting a pre-existing browser preference', as
     else
       localStorage.setItem(key, previous)
   }
+})
+
+// Report: this chat, 2026-11-18 — operators need a persistent mouth-assistance switch in both editors.
+it.each(['local', 'admin'] as const)('saves and restores the mouth-assistance switch in the %s editor', async (mode) => {
+  const onSave = vi.fn()
+  const state = snapshot()
+  const view = render(DeviceSettingsEditor, { props: { snapshot: state, mode, saving: false, onSave }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { deviceSettings: messages } } })] } })
+  const toggle = view.getByRole('switch', { name: '嘴型輔助語音偵測', exact: true })
+  await expect.element(toggle).not.toBeChecked()
+  await toggle.click()
+  await view.getByRole('button', { name: '儲存設定', exact: true }).click()
+  expect(onSave.mock.calls[0][0]).toMatchObject({ overrides: { mouthDetectionEnabled: true } })
+  await view.rerender({ snapshot: { ...state, settings: { version: 2, overrides: { mouthDetectionEnabled: true } }, effective: { ...state.effective, mouthDetectionEnabled: true } } })
+  await expect.element(toggle).toBeChecked()
+  await toggle.click()
+  await view.getByRole('button', { name: '儲存設定', exact: true }).click()
+  expect(onSave.mock.calls[1][0]).toMatchObject({ version: 2, overrides: { mouthDetectionEnabled: false } })
 })
 
 it('saves a text-only override through the existing single-device administrator editor', async () => {

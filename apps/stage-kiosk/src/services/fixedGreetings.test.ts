@@ -1,6 +1,45 @@
-import { describe, expect, it, vi } from 'vitest'
+import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
 
-import { createFixedGreetings, greetingPhase } from './fixedGreetings'
+import { describe, expect, it, vi } from 'vitest'
+import { readonly, shallowRef } from 'vue'
+
+import { createFixedGreetings, greetingPhase, readGreetingPhase } from './fixedGreetings'
+
+// Report: this chat, 2026-11-17 — Windows DEV-904267 detects visitors but never welcomes them.
+it('reads PB table and menu pages without requiring the owned-menu state tool', async () => {
+  const tool: ServiceTool = { name: 'browser_cart_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
+  const execute = vi.fn().mockResolvedValue({ ok: true, source: 'browser', page: 'table', code: 'table-selection-required' })
+  const client = { tools: readonly(shallowRef<readonly ServiceTool[]>([tool])), execute }
+  await expect(readGreetingPhase(client, () => false)).resolves.toBe('ordering')
+  await expect(readGreetingPhase(client, () => false, 'reminder')).resolves.toBeUndefined()
+  execute.mockResolvedValue({ ok: true, source: 'browser', page: 'menu', menuReady: true, itemSelectionOpen: false })
+  await expect(readGreetingPhase(client, () => false)).resolves.toBe('ordering')
+  expect(execute).toHaveBeenCalledWith(tool, { includeCatalog: false })
+  for (const facts of [
+    { ok: true, source: 'browser', page: 'cart' },
+    { ok: true, source: 'browser', page: 'menu', menuReady: true, itemSelectionOpen: true },
+    { ok: false, source: 'browser', page: 'menu', menuReady: true },
+  ]) {
+    execute.mockResolvedValue(facts)
+    await expect(readGreetingPhase(client, () => false)).resolves.toBeUndefined()
+  }
+  execute.mockClear()
+  await expect(readGreetingPhase(client, () => true)).resolves.toBeUndefined()
+  expect(execute).not.toHaveBeenCalled()
+})
+
+it('rechecks pending questions after a read and keeps owned-menu entry behavior', async () => {
+  const tool: ServiceTool = { name: 'kiosk_interaction_state', description: '', inputSchema: { type: 'object' }, origin: 'https://menu.test' }
+  let pending = false
+  const execute = vi.fn(async () => ({ phase: 'customer_entry' }))
+  const client = { tools: readonly(shallowRef<readonly ServiceTool[]>([tool])), execute }
+  await expect(readGreetingPhase(client, () => pending)).resolves.toBe('customer_entry')
+  execute.mockImplementationOnce(async () => {
+    pending = true
+    return { phase: 'ordering' }
+  })
+  await expect(readGreetingPhase(client, () => pending)).resolves.toBeUndefined()
+})
 
 describe('fixed welcome playback', () => {
   it('prepares speech once, rotates openings, and reuses audio across visitors', async () => {

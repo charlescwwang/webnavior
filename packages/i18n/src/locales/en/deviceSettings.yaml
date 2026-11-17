@@ -8,6 +8,14 @@ orderingSiteDescription: Description
 removeOrderingSite: Remove merchant option
 addOrderingSite: Add merchant / ordering website
 orderingSite: Merchant / ordering website
+environments:
+  production: PB production
+  fixture: Local simulator
+  merchantTest: PB merchant test
+environmentHints:
+  production: Connected to the live merchant system. Submitting creates a real order.
+  fixture: Local simulation only. No charge or order is sent to the merchant.
+  merchantTest: Connected to the merchant's test system, separate from the local simulator.
 defaultOrderingSite: Use the published default merchant
 orderingSiteHint: Applied at the next conversation or order; an active order stays on its current merchant.
 localAccess: Enter the local administrator PIN to save this device’s settings. No management account is required.
@@ -44,6 +52,7 @@ fields:
   zoneWidth: Detection area width (0–1)
   zoneHeight: Detection area height (0–1)
   mediaCaptureMode: Camera capture
+  mouthDetectionEnabled: Mouth-assisted voice detection
   faceDetectionConfidence: Face detection confidence (0.40–0.80)
   proactiveVlmEnabled: Send proactive frames to VLM
   performanceProfile: Device operating mode
@@ -56,6 +65,7 @@ fieldDescriptions:
   serviceMode: Applies to the next order round. Test tables are randomly assigned a01–a09.
   backgroundSpeechMode: Off by default. Observe records decisions; enforce may reject background speech. VAD and operation authorization remain independent.
   performanceProfile: Adjusts camera quality, people-detection speed, and recording limits for this device. Choose General for most devices, Resource-saving if it stutters, and High-spec only for powerful hardware.
+  mouthDetectionEnabled: Off by default. When enabled, ordinary ASR requires face and mouth-motion evidence, and losing the target may cancel speech. When disabled, visual evidence does not filter ordinary speech. Proactive observation and background-speech judgement remain separate. Falcon still requires mouth images.
   faceDetectionConfidence: 'Lower values detect smaller or more distant faces, but can create more false positives. Default: 0.60.'
   voiceDiagnosticsEnabled: Enable only while testing. The kiosk shows ASR, Speech Guard, and turn-decision results; ordinary visitors never see this information.
   conversationDiagnosticsEnabled: Enable only while testing. The conversation shows the time from sending a request to receiving final text and browser-tool results; it excludes ASR and speech playback.

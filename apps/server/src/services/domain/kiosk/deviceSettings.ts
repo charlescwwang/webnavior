@@ -18,6 +18,7 @@ const overrides = partial(strictObject({
   backgroundSpeechMode: picklist(['off', 'observe', 'enforce']),
   textOnlyMode: boolean(),
   observationEnabled: boolean(),
+  mouthDetectionEnabled: boolean(),
   greetingEnabled: boolean(),
   reminderEnabled: boolean(),
   triggerMode: picklist(['attention', 'presence', 'mixed']),

@@ -2,6 +2,7 @@
 import type { DeviceSettingKey, DeviceSettingsSnapshot, DeviceSettingsValues, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 
 import { deviceSettingKeys } from '@proj-airi/kiosk-proactive'
+import { readPbJourney } from '@proj-airi/stage-shared/pb-journey'
 import { Button, Checkbox, Input } from '@proj-airi/ui'
 import { computed, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -25,7 +26,22 @@ const options: Partial<Record<DeviceSettingKey, string[]>> = {
   presenceVisionMode: ['face_only', 'pose_only', 'pose_plus_conditional_face'],
 }
 const savedOrderingSiteId = computed(() => props.snapshot.effective.orderingServiceId || props.snapshot.orderingSites?.[0]?.id)
-const activeOrderingSiteTitle = computed(() => props.snapshot.orderingSites?.find(site => site.id === props.activeOrderingSiteId)?.title ?? props.activeOrderingSiteId)
+const orderingSiteOptions = computed(() => (props.snapshot.orderingSites ?? []).map((site) => {
+  // Names are editable. Identify the environment from the reviewed destination,
+  // so a test page called "PB" cannot be mistaken for the merchant's live site.
+  const journey = readPbJourney(site.url)
+  let environment: 'production' | 'fixture' | 'merchantTest' | undefined
+  if (journey?.origin === 'https://app.esgpb.com')
+    environment = 'production'
+  else if (journey?.origin === 'http://127.0.0.1:5188')
+    environment = 'fixture'
+  else if (journey)
+    environment = 'merchantTest'
+  const label = environment ? `【${t(`deviceSettings.environments.${environment}`)}】${site.title}` : site.title
+  return { ...site, label: `${label} — ${journey?.origin ?? site.url}`, environment }
+}))
+const selectedOrderingSite = computed(() => orderingSiteOptions.value.find(site => site.id === (values.value.orderingServiceId || orderingSiteOptions.value[0]?.id)))
+const activeOrderingSiteTitle = computed(() => orderingSiteOptions.value.find(site => site.id === props.activeOrderingSiteId)?.label ?? props.activeOrderingSiteId)
 // Service mode still belongs to the owned Menu. Background speech is a
 // Server-resolved decision policy and applies independently to the PB service.
 const genericSettingKeys = deviceSettingKeys.filter(key => !['voiceVadSettings', 'orderingServiceId', 'serviceMode'].includes(key))
@@ -59,17 +75,19 @@ function setVoiceVadSettings(settings: KioskVoiceVadSettings) {
     <p>{{ t('deviceSettings.description') }}</p>
     <label :class="['flex flex-col gap-2 rounded-lg border p-3']">
       {{ t('deviceSettings.orderingSite') }}
-      <select :aria-label="t('deviceSettings.orderingSite')" :value="values.orderingServiceId ?? ''" :disabled="saving" :class="['rounded border bg-transparent p-2']" @change="setValue('orderingServiceId', ($event.target as HTMLSelectElement).value)">
-        <option value="">{{ t('deviceSettings.defaultOrderingSite') }}</option>
-        <option v-for="site in snapshot.orderingSites ?? []" :key="site.id" :value="site.id">{{ site.title }}</option>
+      <select :aria-label="t('deviceSettings.orderingSite')" :value="values.orderingServiceId ?? ''" :disabled="saving" :class="['settings-select', 'rounded border p-2']" @change="setValue('orderingServiceId', ($event.target as HTMLSelectElement).value)">
+        <option value="">{{ t('deviceSettings.defaultOrderingSite') }}{{ orderingSiteOptions[0] ? ` — ${orderingSiteOptions[0].label}` : '' }}</option>
+        <option v-for="site in orderingSiteOptions" :key="site.id" :value="site.id">{{ site.label }}</option>
       </select>
+      <small v-if="selectedOrderingSite" :class="['break-all']">{{ selectedOrderingSite.url }}</small>
+      <small v-if="selectedOrderingSite?.environment">{{ t(`deviceSettings.environmentHints.${selectedOrderingSite.environment}`) }}</small>
       <small>{{ t('deviceSettings.orderingSiteHint') }}</small>
       <small v-if="activeOrderingSiteId">{{ t('deviceSettings.activeOrderingSite', { name: activeOrderingSiteTitle }) }}</small>
       <small v-if="activeOrderingSiteId && savedOrderingSiteId !== activeOrderingSiteId" role="status">{{ t('deviceSettings.pendingOrderingSite') }}</small>
     </label>
     <div v-for="key in genericSettingKeys" :key="key" :class="['flex flex-wrap items-center gap-3 rounded-lg border p-3']">
       <span :class="['min-w-48 font-medium']">{{ t(`deviceSettings.fields.${key}`) }}</span>
-      <p v-if="key === 'textOnlyMode' || key === 'performanceProfile' || key === 'faceDetectionConfidence' || key === 'voiceDiagnosticsEnabled' || key === 'conversationDiagnosticsEnabled'" :class="['m-0 basis-full text-xs text-slate-600 dark:text-slate-300']">
+      <p v-if="key === 'textOnlyMode' || key === 'mouthDetectionEnabled' || key === 'performanceProfile' || key === 'faceDetectionConfidence' || key === 'voiceDiagnosticsEnabled' || key === 'conversationDiagnosticsEnabled'" :class="['m-0 basis-full text-xs text-slate-600 dark:text-slate-300']">
         {{ t(`deviceSettings.fieldDescriptions.${key}`) }}
       </p>
       <select
@@ -77,7 +95,7 @@ function setVoiceVadSettings(settings: KioskVoiceVadSettings) {
         :aria-label="t(`deviceSettings.fields.${key}`)"
         :value="values[key]"
         :disabled="saving"
-        :class="['rounded border bg-transparent p-2']"
+        :class="['settings-select', 'rounded border p-2']"
         @change="setValue(key, ($event.target as HTMLSelectElement).value)"
       >
         <option v-for="option in options[key]" :key="option" :value="option">
@@ -121,3 +139,11 @@ function setVoiceVadSettings(settings: KioskVoiceVadSettings) {
     </div>
   </form>
 </template>
+
+<style scoped>
+/* Native option popups can use a light system background even inside the dark
+   kiosk panel. Set both colors on the control and its options before hover. */
+.settings-select,
+.settings-select option { color-scheme: light; color: #172033; background-color: #fff; }
+.settings-select { min-width: 0; max-width: 100%; }
+</style>

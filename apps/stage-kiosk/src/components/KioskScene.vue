@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import type { DeviceSettingsSnapshot, DeviceSettingsValues, KioskVoiceVadSettings, PresenceCandidate } from '@proj-airi/kiosk-proactive'
 import type { BrowserConversation } from '@proj-airi/stage-shared/browser-conversation'
+import type { FalconTiming } from '@proj-airi/stage-shared/falcon-audio'
 import type { InteractionLifecycleMessage } from '@proj-airi/stage-shared/interaction-lifecycle'
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
+import type { ArrayProcessing } from '../audio/captureProtocol'
 import type { KioskMotionName } from '../composables/useKioskCharacterMotion'
 import type { KioskInteractionTurn } from '../composables/useKioskInteractionTurn'
-import type { PreparedWaitSpeech } from '../composables/useKioskWaitSpeech'
 import type { CustomerRequestStatus } from '../services/conversationMessages'
+import type { CustomerTarget } from '../services/customerTarget'
 import type { KioskConversationDecisionState, KioskDevice, KioskMediaCaptureMode, KioskPerformanceProfile } from '../services/kiosk-device'
 import type { ConversationRetry } from '../services/kioskConversationRetry'
 import type { KioskUtterance, KioskUtteranceReservation, KioskUtteranceTicket } from '../services/kioskUtteranceQueue'
@@ -32,11 +34,12 @@ import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-sto
 import { useLlmToolsStore } from '@proj-airi/stage-ui/stores/llm-tools'
 import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
 import { useSettings, useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
-import { useMouse, useWindowSize } from '@vueuse/core'
+import { Button } from '@proj-airi/ui'
+import { useIntervalFn, useMouse, useWindowSize } from '@vueuse/core'
 import { executeTool } from '@xsai/shared-chat'
 import { storeToRefs } from 'pinia'
 import { parse, safeParse } from 'valibot'
-import { computed, nextTick, onMounted, onUnmounted, shallowReactive, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, onScopeDispose, onUnmounted, shallowReactive, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -55,8 +58,12 @@ import KioskVoiceDiagnostics from './KioskVoiceDiagnostics.vue'
 import OrderingPreparation from './orderingPreparation.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
+import { createArrayCapture } from '../audio/capture'
+import { InputGain } from '../audio/inputGain'
+import { connectPlaybackReference } from '../audio/playbackReference'
 import { useFeedbackInvitationSettings } from '../composables/useFeedbackInvitationSettings'
 import { useKioskCameraPreview } from '../composables/useKioskCameraPreview'
+import { useKioskCartPreparation } from '../composables/useKioskCartPreparation'
 import { useKioskCharacterMotion } from '../composables/useKioskCharacterMotion'
 import { useKioskConversationFontSize } from '../composables/useKioskConversationFontSize'
 import { useKioskConversationProgress } from '../composables/useKioskConversationProgress'
@@ -67,10 +74,13 @@ import { useKioskInteractionRecording } from '../composables/useKioskInteraction
 import { useKioskInteractionTurn } from '../composables/useKioskInteractionTurn'
 import { useKioskInteractiveServices } from '../composables/useKioskInteractiveServices'
 import { useKioskMediaCapture } from '../composables/useKioskMediaCapture'
+import { useKioskMicrophone } from '../composables/useKioskMicrophone'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
+import { useKioskProcessingCue } from '../composables/useKioskProcessingCue'
+import { useKioskServiceRecovery } from '../composables/useKioskServiceRecovery'
+import { useKioskSpeechRecognition } from '../composables/useKioskSpeechRecognition'
 import { useKioskStreamingReply } from '../composables/useKioskStreamingReply'
 import { useKioskVoiceTest } from '../composables/useKioskVoiceTest'
-import { useKioskWaitSpeech } from '../composables/useKioskWaitSpeech'
 import { setKioskLocale } from '../modules/i18n'
 import { endKioskAdminSession, isKioskAdminSessionActive } from '../services/admin-session'
 import { createBrowserCartSession } from '../services/browserCartSession'
@@ -81,19 +91,23 @@ import { createBrowserOrderingTools } from '../services/browserOrderingTools'
 import { createBrowserPresentation } from '../services/browserPresentation'
 import { offerCheckout } from '../services/checkoutInvitation'
 import { requestMessageId } from '../services/conversationMessages'
-import { createFixedGreetings, greetingPhase } from '../services/fixedGreetings'
+import { createFalconCapture, FalconCaptureError } from '../services/falconCapture'
+import { createFixedGreetings, readGreetingPhase } from '../services/fixedGreetings'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
-import { transcribeKioskUtterance } from '../services/kiosk-audio'
-import { admitBrowserPlan, decideBrowserAnswer, decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
+import { createKioskVadRecording, transcribeKioskUtterance } from '../services/kiosk-audio'
+import { admitBrowserPlan, decideBrowserAnswer, decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, synthesizeKioskSpeech, transcribeFalconAudio, transcribeKioskAudio } from '../services/kiosk-device'
 import { conversationDecisionStateFrom, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../services/kiosk-fast-path'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
-import { createRetryContext, isKioskConversationRetrySafeTool, readConversationRetryContext, recoverConversationService, resumeConversationRetry } from '../services/kioskConversationRetry'
+import { applyAudioOutput } from '../services/kioskAudioOutput'
+import { BrowserRestartBlocked, createRetryContext, isKioskConversationRetrySafeTool, readConversationRetryContext, recoverConversationService, resumeConversationRetry } from '../services/kioskConversationRetry'
 import { createSpeechPlayer } from '../services/kioskSpeech'
 import { createUtteranceTiming } from '../services/kioskTiming'
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
+import { createMouthActivityGate } from '../services/mouthActivity'
 import { browserRecoveryReply, createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromReceipt, replyWithQuestion } from '../services/questionPresentation'
 import { scenarioRegistry } from '../services/scenario-registry'
+import { createSpeechInterruption } from '../services/speechInterruption'
 import { createVoicePresenceGate } from '../services/voicePresence'
 import { describeWebnaviorKioskToolActivity, loadWebnaviorKioskActivityManifest } from '../services/webnaviorKioskActivity'
 
@@ -122,6 +136,7 @@ interface FastPathInput {
   deadlineAt?: number
   signal?: AbortSignal
   recording?: Blob
+  recognitionMode?: KioskUtterance['recognitionMode']
   source: 'asr' | 'simulation'
   text: string
 }
@@ -155,7 +170,65 @@ const paused = shallowRef(false)
 const settingsAudioDeviceStore = useSettingsAudioDevice()
 const { language } = storeToRefs(useSettings())
 const fixedGreetings = createFixedGreetings(synthesizeKioskSpeech)
-const { enabled, stream } = storeToRefs(settingsAudioDeviceStore)
+const { enabled, stream, selectedAudioInput, audioInputs } = storeToRefs(settingsAudioDeviceStore)
+const microphone = useKioskMicrophone()
+const arrayMicrophone = computed(() => microphone.isArray(audioInputs.value.find(device => device.deviceId === selectedAudioInput.value)?.label || stream.value?.getAudioTracks()[0]?.label || ''))
+watch(arrayMicrophone, (array) => {
+  settingsAudioDeviceStore.inputConstraints = array
+    ? { channelCount: { exact: 8 }, sampleRate: { ideal: 48000 }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    : undefined
+}, { immediate: true })
+onScopeDispose(() => settingsAudioDeviceStore.inputConstraints = undefined)
+let arrayCapture: Awaited<ReturnType<typeof createArrayCapture>> | undefined
+const activeArrayProcessing = shallowRef<ArrayProcessing>()
+const arrayDiagnostics = shallowRef<{ inputDb: number, outputDb: number, peak: number, limitedPercent: number, lagMs: number, referenceSignalFrames: number, inputFrames: number, outputFrames: number }>()
+let arrayLevels = { inputDb: -Infinity, outputDb: -Infinity, peak: 0, limited: 0, samples: 0 }
+const arrayProcessingLabel = computed(() => {
+  const processing = activeArrayProcessing.value
+  if (!processing)
+    return undefined
+  if (processing.algorithm === 'lcmv')
+    return 'LCMV · AEC3 ON'
+  return `Spatial Mask · AEC3 ${processing.aec3Enabled ? 'ON' : 'OFF'}`
+})
+let audioCaptureController: AbortController | undefined
+let audioCaptureAttempt = 0
+const recognition = useKioskSpeechRecognition(() => Boolean(props.device) && props.voiceConversationOnly)
+const falconMode = computed(() => recognition.policy.value?.mode === 'falcon')
+const mouthAssistanceEnabled = computed(() => !falconMode.value && (props.deviceSettings?.mouthDetectionEnabled ?? defaultDeviceSettingsValues.mouthDetectionEnabled))
+const visualSpeechRequired = computed(() => falconMode.value || mouthAssistanceEnabled.value)
+let falconCapture = createFalconCapture(15, 3000)
+let falconOverflow = false
+let discardSpeechUntilBoundary = false
+let captureRecognitionSignal: AbortSignal | undefined
+// Include the configured silence tail so a normal end-of-sentence closure is
+// valid, while sustained visual inactivity cannot authorize background speech.
+const mouthActivity = createMouthActivityGate({ enabled: () => mouthAssistanceEnabled.value, maxMotionGapMs: () => props.voiceVadSettings.minSilenceDurationMs + 350 })
+const mouthStartAllowed = shallowRef(false)
+let activeMouthLease: number | undefined
+const speechInterruption = createSpeechInterruption()
+const interruptionDiagnostic = shallowRef(speechInterruption.snapshot())
+const customerTarget = shallowRef<CustomerTarget>()
+const backgroundSpeechMode = computed(() => props.deviceSettings?.backgroundSpeechMode ?? defaultDeviceSettingsValues.backgroundSpeechMode)
+let targetCaptureController = new AbortController()
+
+function resetVisualSpeech() {
+  customerTarget.value = undefined
+  // Target changes retire only unsubmitted capture/ASR evidence, never accepted
+  // utterances, the visitor reception, the cart, or an in-flight merchant tool.
+  targetCaptureController.abort()
+  targetCaptureController = new AbortController()
+  mouthActivity.reset()
+  mouthStartAllowed.value = false
+  speechInterruption.reset()
+  interruptionDiagnostic.value = speechInterruption.snapshot()
+}
+watch([recognition.policy, () => props.voiceVadSettings.speechPadMs], () => {
+  falconCapture.reset()
+  falconOverflow = false
+  const maximum = recognition.policy.value?.maxUtteranceSeconds ?? 15
+  falconCapture = createFalconCapture(maximum, Math.min(maximum * 1000, props.voiceVadSettings.speechPadMs + 1000))
+})
 const { askPermission: requestMicrophonePermission } = settingsAudioDeviceStore
 const chatSessionStore = useChatSessionStore()
 const { audioContext } = useAudioContext()
@@ -200,10 +273,10 @@ const voiceDiagnosticByUtterance = new Map<number, number>()
 const toolActivityManifest = shallowRef<Awaited<ReturnType<typeof loadWebnaviorKioskActivityManifest>>>()
 let receptionGeneration = 0
 const interactionTurn = useKioskInteractionTurn()
-const waitSpeech = useKioskWaitSpeech({
-  synthesize: synthesizeKioskSpeech,
-  play: (audio, turn, signal) => speakAssistantReply('', turn, audio, signal, 'progress'),
-})
+const transcriptionCount = shallowRef(0)
+const speechPreparationCount = shallowRef(0)
+const processingSpeechActive = shallowRef(false)
+const audioStartupError = shallowRef<string>()
 // Decision progress is display-only, so an unverified utterance cannot own or
 // cancel an interaction turn. Agent progress takes precedence during handoff.
 const visibleProgress = computed(() => conversationProgress.value ?? (decisionStatus.value?.pending
@@ -256,10 +329,9 @@ const utteranceQueueState = shallowRef<{ active?: KioskUtterance, pending: reado
 // A turn points at the same clock across Jev, Main, native steps and speech.
 const utteranceTimings = new Map<number, ReturnType<typeof createUtteranceTiming>>()
 const turnTimings = new Map<number, ReturnType<typeof createUtteranceTiming>>()
-// A provisional service reply owns speech only. Promotion happens after the
+// A provisional service receipt owns progress only. Promotion happens after the
 // ordinary decision/operation gate; queue cleanup retires unpromoted turns.
 const firstResponseTurns = new Map<number, KioskInteractionTurn>()
-const receiptPreparations = new Map<number, PreparedWaitSpeech>()
 // Tag speech at receipt, before the FIFO can delay it past a touch answer.
 // A phrase received by an idle question must never become a later meal order.
 const idleUtterances = new Map<number, { deadline?: number, generation: number }>()
@@ -303,11 +375,8 @@ const utteranceQueue = createKioskUtteranceQueue({
         const route = decisionEntries.value.find(entry => entry.id === utterance.id)?.route
         setRequestStatus(utterance.id, route === 'ignored' ? 'cancelled' : ['unavailable', 'execution_failed', 'incomplete'].includes(route ?? '') ? 'failed' : 'completed')
       }
-      receiptPreparations.get(utterance.id)?.dispose()
-      receiptPreparations.delete(utterance.id)
       const receipt = firstResponseTurns.get(utterance.id)
       if (receipt) {
-        waitSpeech.finish(receipt.id)
         interactionTurn.complete(receipt)
         turnTimings.delete(receipt.id)
         firstResponseTurns.delete(utterance.id)
@@ -371,51 +440,6 @@ function updateVoiceDiagnostic(id: number, patch: Omit<Partial<KioskVoiceDiagnos
   voiceDiagnosticEntries.value = voiceDiagnosticEntries.value.map(entry => entry.id === id ? { ...entry, ...patch, events: patch.status && patch.status !== entry.status ? [...(entry.events ?? []), { status: patch.status, at: Date.now() }] : entry.events } : entry)
 }
 const browserCartSession = createBrowserCartSession(window.localStorage)
-const cartAdmissionPending = shallowRef(false)
-const cartAdmissionFailed = shallowRef(false)
-const cartAdmissionError = shallowRef<string>()
-const assistantPresence = computed<{ description: string, mode: KioskAssistantPresenceMode, title: string }>(() => {
-  if (cartAdmissionPending.value || cartAdmissionFailed.value || browserCartSession.blocked.value) {
-    return {
-      description: t('stage.kiosk.cart-handoff.preparation-guidance'),
-      mode: 'processing',
-      title: t(cartAdmissionPending.value ? 'stage.kiosk.cart-handoff.checking' : 'stage.kiosk.cart-handoff.preparation-title'),
-    }
-  }
-  if (interactionTurn.phase.value === 'hearing-speech') {
-    return {
-      description: '你說完後，我會接著協助你。',
-      mode: 'hearing-speech',
-      title: '我正在聽',
-    }
-  }
-  if (interactionTurn.phase.value === 'transcribing') {
-    return {
-      description: '正在整理你剛剛說的內容。',
-      mode: 'transcribing',
-      title: '讓我確認一下',
-    }
-  }
-  if (fastPathProgress.value || interactionTurn.phase.value === 'thinking' || interactionTurn.phase.value === 'using-tool') {
-    return {
-      description: fastPathProgress.value?.text ?? '我正在幫你確認菜單與點餐內容。',
-      mode: 'processing',
-      title: '正在幫你安排',
-    }
-  }
-  if (interactionTurn.phase.value === 'speaking') {
-    return {
-      description: '想換個選擇時，直接說出來就可以。',
-      mode: 'speaking',
-      title: '我正在說明',
-    }
-  }
-  return {
-    description: t('stage.kiosk.ordering-hint.description'),
-    mode: 'listening',
-    title: t('stage.kiosk.ordering-hint.title'),
-  }
-})
 const conversationActivityStatus = computed(() => {
   if (utteranceQueueState.value.pending.some(utterance => utterance.source === 'simulation'))
     return t('stage.kiosk.service-recovery.queued')
@@ -490,6 +514,7 @@ const stopToolDiagnostics = interactiveServiceClient.onExecution((event) => {
     durationMs: performance.now() - owner.started,
     toolName: event.tool.name,
     phase: event.phase,
+    ...(event.phase === 'failed' ? { error: event.error?.slice(0, 500) } : {}),
   }), { source: 'browser_tool_metrics', utteranceId: owner.utteranceId })
 })
 
@@ -539,6 +564,86 @@ const {
   startNewCustomerSession: resetForNewCustomer,
   state: customerSessionState,
 } = customerSession
+const cartPreparation = useKioskCartPreparation({
+  context: () => {
+    const state = customerSessionState.value
+    const documentId = interactiveServiceClient.getDocumentId()
+    const serviceUrl = scenarioRegistry.activeScenario.value?.serviceUrl
+    if (state === 'completing' || state === 'resetting' || interactiveServiceClient.availability.value !== 'ready' || !documentId || !serviceUrl)
+      return undefined
+    return { documentId, serviceUrl, receptionState: state }
+  },
+  prepare: async (context, isCurrent) => {
+    const read = interactiveServiceClient.tools.value.find(tool => tool.name === 'browser_cart_get')
+    if (!read)
+      return
+    const owner = await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
+    if (!isCurrent())
+      return
+    if (!owner)
+      throw new Error('點餐會話尚未建立，請確認連線後重新載入。')
+    await browserCartSession.prepare(owner, context.serviceUrl, input => interactiveServiceClient.execute(read, input), isCurrent)
+  },
+  onFailure: (cause, context) => {
+    console.warn('[stage-kiosk] cart preparation failed:', cause)
+    void interactionRecording.append('service_event', JSON.stringify({
+      kind: 'browser_cart_preparation_failed',
+      documentId: context.documentId,
+      error: errorMessageFrom(cause)?.slice(0, 500),
+    }), { source: 'browser_cart_preparation' })
+  },
+})
+const cartAdmissionPending = cartPreparation.pending
+const cartAdmissionFailed = cartPreparation.failed
+const cartAdmissionError = computed(() => {
+  if (cartAdmissionFailed.value)
+    return t('stage.kiosk.cart-handoff.failed')
+  if (browserCartSession.blocked.value)
+    return t('stage.kiosk.cart-handoff.required')
+  return undefined
+})
+const assistantPresence = computed<{ description: string, mode: KioskAssistantPresenceMode, title: string }>(() => {
+  if (cartAdmissionPending.value || cartAdmissionFailed.value || browserCartSession.blocked.value) {
+    return {
+      description: t('stage.kiosk.cart-handoff.preparation-guidance'),
+      mode: 'processing',
+      title: t(cartAdmissionPending.value ? 'stage.kiosk.cart-handoff.checking' : 'stage.kiosk.cart-handoff.preparation-title'),
+    }
+  }
+  if (interactionTurn.phase.value === 'hearing-speech') {
+    return {
+      description: '你說完後，我會接著協助你。',
+      mode: 'hearing-speech',
+      title: '我正在聽',
+    }
+  }
+  if (interactionTurn.phase.value === 'transcribing') {
+    return {
+      description: '正在整理你剛剛說的內容。',
+      mode: 'transcribing',
+      title: '讓我確認一下',
+    }
+  }
+  if (fastPathProgress.value || interactionTurn.phase.value === 'thinking' || interactionTurn.phase.value === 'using-tool') {
+    return {
+      description: fastPathProgress.value?.text ?? '我正在幫你確認菜單與點餐內容。',
+      mode: 'processing',
+      title: '正在幫你安排',
+    }
+  }
+  if (interactionTurn.phase.value === 'speaking') {
+    return {
+      description: '想換個選擇時，直接說出來就可以。',
+      mode: 'speaking',
+      title: '我正在說明',
+    }
+  }
+  return {
+    description: t('stage.kiosk.ordering-hint.description'),
+    mode: 'listening',
+    title: t('stage.kiosk.ordering-hint.title'),
+  }
+})
 function rememberIdleQuestion(utteranceId: number) {
   if (customerSessionState.value === 'awaiting-idle-confirmation')
     idleUtterances.set(utteranceId, { deadline: idleDeadlineAt.value, generation: receptionGeneration })
@@ -616,10 +721,23 @@ const presenceIdleProtection = computed(() => {
     return undefined
   return { reason: 'visual-engagement' as const, until }
 })
+// KioskScene wires admission; the camera owns observations, mouthActivity owns
+// visual continuity, and VAD owns bounded PCM and whole-phrase segmentation.
+const mouthTrackingRequired = computed(() => mouthAssistanceEnabled.value && props.voiceConversationOnly && enabled.value && !adminPanelOpen.value)
 const proactiveVision = useKioskProactiveVision({
   detectionConfidence: () => props.deviceSettings?.faceDetectionConfidence ?? defaultDeviceSettingsValues.faceDetectionConfidence,
-  detectionEnabled: () => localObservationRequired.value,
+  detectionEnabled: () => localObservationRequired.value || falconMode.value || mouthTrackingRequired.value,
+  mouthTrackingEnabled: () => mouthTrackingRequired.value,
+  mouthEnabled: () => falconMode.value && enabled.value && !adminVoiceTestActive.value,
+  onMouthObservation: (timeMs, mouth) => {
+    mouthActivity.observe(timeMs, mouth)
+    mouthStartAllowed.value = mouthActivity.allowsStart(timeMs)
+  },
+  onTargetChange: resetVisualSpeech,
+  onTarget: target => customerTarget.value = target,
+  onMouthFrame: (timeMs, image) => falconCapture.push(timeMs, image),
   detectionZone: () => proactiveSettings.value.observation.detectionZone,
+  interactionZone: () => presenceSettings.interactionRoi,
   performance: () => performanceSettings.value,
   visionMode: () => props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode,
   shouldRunFace: () => {
@@ -631,6 +749,8 @@ const proactiveVision = useKioskProactiveVision({
   },
   onCameraStream: (stream) => {
     voicePresence.reset()
+    mouthActivity.reset()
+    mouthStartAllowed.value = false
     cameraStream.value = stream
     mediaCapture.attachCameraStream(stream)
   },
@@ -638,25 +758,31 @@ const proactiveVision = useKioskProactiveVision({
   onPresenceCandidate: candidate => handlePresenceCandidate(candidate),
   onDiagnostics: diagnostics => presenceDiagnostics.value = diagnostics,
 })
-const cameraRequired = computed(() => localObservationRequired.value || effectiveMediaCaptureMode.value !== 'off')
+const cameraRequired = computed(() => falconMode.value || mouthTrackingRequired.value || localObservationRequired.value || effectiveMediaCaptureMode.value !== 'off')
 function voiceBlockReason(): string | undefined {
   if (adminPanelOpen.value)
     return adminVoiceTestActive.value ? undefined : 'admin-paused'
   if (!props.voiceConversationOnly)
     return 'text-mode'
+  if (props.device && !recognition.policy.value)
+    return 'preparing'
   if (customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
     return 'reception-reset'
   if (cartAdmissionPending.value || cartAdmissionFailed.value || browserCartSession.blocked.value)
     return 'preparing'
-  if (!allowsObservedVoice())
+  if (!allowsObservedVoice(visualSpeechRequired.value))
     return 'presence-required'
 }
-function allowsObservedVoice() {
+function allowsObservedVoice(requireVisualPresence = true) {
   if (adminPanelOpen.value || !props.voiceConversationOnly)
+    return false
+  if (props.device && !recognition.policy.value)
     return false
   if (cartAdmissionPending.value || cartAdmissionFailed.value || browserCartSession.blocked.value || customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
     return false
-  return voicePresence.allows({ enabled: localObservationRequired.value, observing: proactiveVision.status.value === 'observing', nowMs: performance.now() })
+  // Proactive greetings still require observation. Ordinary speech may opt out
+  // without disabling the independent camera/presence policy for greetings.
+  return voicePresence.allows({ enabled: requireVisualPresence && localObservationRequired.value, observing: proactiveVision.status.value === 'observing', nowMs: performance.now() })
 }
 const { x, y } = useMouse()
 const cursorPosition = computed(() => ({ x: x.value, y: y.value }))
@@ -684,30 +810,73 @@ const adminVoiceTest = useKioskVoiceTest({
     updateVoiceDiagnostic(id, result)
   },
 })
-const { dispose, inferenceError, init, loaded, start, isSpeech, isSpeechProb } = useVAD(workletUrl, {
+const processingCue = useKioskProcessingCue(
+  () => speechPreparationCount.value > 0 || transcriptionCount.value > 0 || Boolean(utteranceQueueState.value.active) || utteranceQueueState.value.pending.length > 0 || Boolean(currentAgentRequest()),
+  () => paused.value || adminPanelOpen.value || serviceRecoveryBlocked.value || cartAdmissionFailed.value || browserCartSession.blocked.value || customerSessionState.value === 'completing' || customerSessionState.value === 'resetting',
+  () => processingSpeechActive.value,
+  () => transcriptionCount.value > 0 || utteranceQueueState.value.pending.length > 0,
+)
+const { dispose, inferenceError, init, loaded, start, processAudio, isSpeech, isSpeechProb } = useVAD(workletUrl, {
+  externalPCM: arrayMicrophone,
+  // Only legacy customer ASR uses visual onset admission. Falcon and the
+  // administrator's microphone test keep their existing VAD paths. A discarded
+  // tail still runs VAD until silence, but can never create a customer candidate.
+  canStartSpeech: () => falconMode.value || adminVoiceTestActive.value || discardSpeechUntilBoundary || (!voiceBlockReason() && mouthActivity.allowsStart(performance.now())),
   threshold: computed(() => props.voiceVadSettings.threshold),
   minSpeechDurationMs: computed(() => props.voiceVadSettings.minSpeechDurationMs),
-  maxSpeechDurationS: computed(() => props.voiceVadSettings.maxSpeechDurationS),
+  maxSpeechDurationS: computed(() => falconMode.value ? recognition.policy.value!.maxUtteranceSeconds : props.voiceVadSettings.maxSpeechDurationS),
   minSilenceDurationMs: computed(() => props.voiceVadSettings.minSilenceDurationMs),
-  speechPadMs: computed(() => props.voiceVadSettings.speechPadMs),
+  // Two 10 fps visual observations can arrive after audio onset. Keep at least
+  // 400 ms of source PCM, while preserving a larger operator-configured pad.
+  speechPadMs: computed(() => falconMode.value || adminVoiceTestActive.value ? props.voiceVadSettings.speechPadMs : Math.max(400, props.voiceVadSettings.speechPadMs)),
   onSpeechStart: () => {
+    if (discardSpeechUntilBoundary)
+      return
     const blocked = adminVoiceTestActive.value ? undefined : voiceBlockReason()
     captureDiagnosticId = startVoiceDiagnostic(blocked ? 'blocked' : 'speech-start', blocked ?? ((adminVoiceTest.speaking.value || interactionTurn.phase.value === 'speaking') ? 'tts-overlap' : undefined))
     if (adminVoiceTestActive.value) {
       adminVoiceTest.interrupt()
       return
     }
-    if (!allowsObservedVoice())
+    if (!allowsObservedVoice(visualSpeechRequired.value))
       return
-    // Capture first; even audible output remains intact until Jev decides
-    // that the speech is addressed to this kiosk rather than background talk.
+    if (!falconMode.value) {
+      activeMouthLease = mouthActivity.begin(performance.now())
+      if (activeMouthLease === undefined)
+        return
+    }
+    // Retiring audio settings cancels unsubmitted ASR as well as its partial
+    // capture; already accepted queue entries keep their ordering ownership.
+    captureRecognitionSignal = AbortSignal.any([recognition.captureSignal.value, ...(mouthAssistanceEnabled.value ? [targetCaptureController.signal] : []), ...(audioCaptureController ? [audioCaptureController.signal] : [])])
+    if (falconMode.value)
+      falconCapture.begin()
+    // Enforce retains semantic admission. Off/observe may stop only playback
+    // through local VAD evidence, without cancelling this Agent/tool turn.
     activeVoiceCandidate = interactionTurn.beginCustomerVoiceCandidate()
+    if (!falconMode.value)
+      speechInterruption.begin(activeVoiceCandidate.id)
+  },
+  onSpeechProbability: (probability, timeMs) => {
+    if (falconMode.value || adminVoiceTestActive.value)
+      return
+    const interrupt = speechInterruption.observe(activeVoiceCandidate?.id, timeMs, probability, props.voiceVadSettings.threshold, !discardSpeechUntilBoundary && !voiceBlockReason() && mouthActivity.complete(activeMouthLease, timeMs), backgroundSpeechMode.value)
+    interruptionDiagnostic.value = speechInterruption.snapshot()
+    if (interrupt) {
+      interruptAssistantOutput()
+      updateVoiceDiagnostic(captureDiagnosticId ?? startVoiceDiagnostic(), { status: 'interrupted', reason: 'local-interruption' })
+    }
   },
   onSpeechEnd: () => {
     if (captureDiagnosticId !== undefined)
       updateVoiceDiagnostic(captureDiagnosticId, { status: 'speech-end' })
   },
-  onSpeechReady: ({ buffer }) => {
+  onSpeechReady: (event) => {
+    const { buffer } = event
+    falconCapture.end()
+    if (discardSpeechUntilBoundary) {
+      discardSpeechUntilBoundary = event.truncated === true
+      return
+    }
     if (adminVoiceTestActive.value) {
       void adminVoiceTest.transcribe(buffer)
       return
@@ -718,52 +887,189 @@ const { dispose, inferenceError, init, loaded, start, isSpeech, isSpeechProb } =
     activeVoiceCandidate = undefined
     if (!candidate)
       return
-    if (!allowsObservedVoice()) {
+    if (captureRecognitionSignal?.aborted) {
+      speechInterruption.release(candidate.id)
       interactionTurn.completeVoiceCandidate(candidate)
       return
     }
-    const reservation = utteranceQueue.reserve('asr')
+    if (!allowsObservedVoice(visualSpeechRequired.value)) {
+      speechInterruption.release(candidate.id)
+      interactionTurn.completeVoiceCandidate(candidate)
+      return
+    }
+    const mouthLease = activeMouthLease
+    activeMouthLease = undefined
+    if (!falconMode.value && (!mouthActivity.complete(mouthLease, performance.now()) || event.truncated)) {
+      // A lost/replaced target revokes the entire phrase, even if that target
+      // reappears before ASR. Truncated tails cannot become another order.
+      discardSpeechUntilBoundary = event.truncated === true
+      const message = t(event.truncated ? 'stage.kiosk-agent.voice-capture-incomplete' : 'stage.kiosk-agent.voice-capture-mouth')
+      pendingTranscript.value = message
+      updateVoiceDiagnostic(captureDiagnosticId ?? startVoiceDiagnostic(), { status: 'ignored', text: message })
+      interactionTurn.completeVoiceCandidate(candidate)
+      speechInterruption.release(candidate.id)
+      return
+    }
+    let falconPacket: ArrayBuffer | undefined
+    if (falconMode.value) {
+      const discard = falconOverflow || event.truncated
+      falconOverflow = event.truncated === true
+      try {
+        if (discard)
+          throw new FalconCaptureError('duration', { samples: buffer.length })
+        // Freeze this utterance's audio and mouth frames before another capture
+        // changes the ring. The bounded utterance FIFO owns admission/order;
+        // an earlier network request must not discard this independent clip.
+        const prepared = falconCapture.prepare(event)
+        falconPacket = prepared.packet
+        if (voiceDiagnosticsEnabled.value && interactionRecording.visitorSessionId.value)
+          void interactionRecording.append('service_event', JSON.stringify({ reason: 'admitted', ...prepared.diagnostics }), { source: 'falcon_capture' })
+      }
+      catch (cause) {
+        const reason = cause instanceof FalconCaptureError ? cause.reason : 'failed'
+        // Closed-mouth background captures are not customer turns. Keep the
+        // current reply/receipt intact and record only numeric admin evidence.
+        if (reason === 'inactive') {
+          updateVoiceDiagnostic(captureDiagnosticId ?? startVoiceDiagnostic(), { status: 'ignored' })
+        }
+        else {
+          const message = t(`stage.kiosk-agent.falcon-capture-${reason}`)
+          updateVoiceDiagnostic(captureDiagnosticId ?? startVoiceDiagnostic(), { status: 'failed', text: message })
+          pendingTranscript.value = message
+        }
+        if ((reason === 'inactive' || voiceDiagnosticsEnabled.value) && interactionRecording.visitorSessionId.value) {
+          void interactionRecording.append('service_event', JSON.stringify({ reason, ...(cause instanceof FalconCaptureError ? cause.diagnostics : {}) }), { source: 'falcon_capture' })
+        }
+        interactionTurn.completeVoiceCandidate(candidate)
+        return
+      }
+    }
+    const reservation = utteranceQueue.reserve('asr', falconMode.value ? recognition.policy.value!.timeoutMs + 1000 : undefined)
     if (reservation.kind === 'OVERLOADED') {
+      speechInterruption.release(candidate.id)
       interactionTurn.completeVoiceCandidate(candidate)
       pendingTranscript.value = '目前語句太多，請稍後再說一次。'
       return
     }
-    void processVoiceCandidate(buffer, candidate, reservation, captureDiagnosticId)
+    void processVoiceCandidate(buffer, candidate, reservation, captureDiagnosticId, falconPacket, captureRecognitionSignal)
   },
 })
 
+// Poll only while operator diagnostics are visible; samples themselves remain
+// owned by the capture/VAD path and are never retained for this snapshot.
+useIntervalFn(() => {
+  if (!adminPanelOpen.value || !arrayCapture)
+    return
+  const statistics = arrayCapture.statistics
+  arrayDiagnostics.value = {
+    inputDb: arrayLevels.inputDb,
+    outputDb: arrayLevels.outputDb,
+    peak: arrayLevels.peak,
+    limitedPercent: arrayLevels.samples ? arrayLevels.limited * 100 / arrayLevels.samples : 0,
+    lagMs: arrayCapture.lagMs,
+    referenceSignalFrames: statistics.referenceSignalFrames,
+    inputFrames: statistics.inputFrames,
+    outputFrames: statistics.outputFrames,
+  }
+}, 250)
 const audioInputStarted = shallowRef(false)
 const isAudioListening = computed(() => enabled.value && audioInputStarted.value && !inferenceError.value && customerSessionState.value !== 'completing' && customerSessionState.value !== 'resetting')
 
+// Diagnostic snapshots contain lifecycle state only, never audio, images or
+// device identifiers. An existing visitor session owns each persisted snapshot.
+watch([interactionRecording.visitorSessionId, () => JSON.stringify({
+  enabled: enabled.value,
+  mode: recognition.policy.value?.mode,
+  processing: arrayMicrophone.value ? activeArrayProcessing.value : 'browser-vad',
+  requestedLegacyAlgorithm: arrayMicrophone.value && !falconMode.value ? microphone.algorithm.value : undefined,
+  falconGainDb: arrayMicrophone.value && falconMode.value ? microphone.falconGainDb.value : undefined,
+  policyLoaded: Boolean(recognition.policy.value),
+  vadLoaded: loaded.value,
+  listening: isAudioListening.value,
+  microphoneTracks: stream.value?.getAudioTracks().map(track => ({ state: track.readyState, muted: track.muted })) ?? [],
+  error: (inferenceError.value || audioStartupError.value)?.slice(0, 300),
+})], ([sessionId, snapshot]) => {
+  if (sessionId && voiceDiagnosticsEnabled.value)
+    void interactionRecording.append('service_event', snapshot, { source: 'audio_runtime' })
+})
+
 async function startAudioInteraction() {
-  console.info('[KIOSK AUDIO] startAudioInteraction', {
-    enabled: enabled.value,
-    hasStream: !!stream.value,
-    loaded: loaded.value,
-    inferenceError: inferenceError.value,
-  })
-
-  audioInputStarted.value = false
-
-  await init()
-
-  console.info('[KIOSK AUDIO] after VAD init', {
-    hasStream: !!stream.value,
-    loaded: loaded.value,
-    inferenceError: inferenceError.value,
-  })
-
-  if (stream.value && enabled.value && (props.voiceConversationOnly || adminVoiceTestActive.value)) {
-    console.info('[KIOSK AUDIO] starting VAD with stream')
-
-    await start(stream.value)
-
-    audioInputStarted.value = true
-
-    console.info('[KIOSK AUDIO] VAD connected')
+  stopAudioInteraction()
+  const attempt = ++audioCaptureAttempt
+  const controller = new AbortController()
+  audioCaptureController = controller
+  const input = stream.value
+  audioStartupError.value = undefined
+  try {
+    await init()
+    if (controller.signal.aborted || attempt !== audioCaptureAttempt || !input || input !== stream.value || !enabled.value || (!props.voiceConversationOnly && !adminVoiceTestActive.value))
+      return
+    if (!loaded.value)
+      throw new Error(inferenceError.value || 'VAD initialization failed.')
+    if (arrayMicrophone.value) {
+      const track = input.getAudioTracks()[0]
+      const actual = track?.getSettings()
+      // Browser processing must not mix the physical array before custom AEC3.
+      // A pending VueUse reacquisition will trigger another startup for its stream.
+      if (!actual || actual.channelCount !== 8 || actual.echoCancellation !== false)
+        throw new Error(t('stage.kiosk.array-audio.raw-unavailable'))
+      const config = microphone.configuration(falconMode.value ? 'falcon' : 'legacy')
+      const gain = new InputGain()
+      const falconGain = new InputGain()
+      const capture = await createArrayCapture(audioContext, audioContext.createMediaStreamSource(input), {
+        ...config,
+        signal: controller.signal,
+        onPcm: async (packet, endTimeMs) => {
+          if (controller.signal.aborted || attempt !== audioCaptureAttempt)
+            return
+          const result = gain.process(packet.mask, config.gainDb)
+          const scaled = result.samples
+          let inputPower = 0
+          let outputPower = 0
+          let peak = 0
+          for (let index = 0; index < scaled.length; index++) {
+            inputPower += packet.mask[index]! ** 2
+            outputPower += scaled[index]! ** 2
+            peak = Math.max(peak, Math.abs(scaled[index]!))
+          }
+          // Digital full-scale RMS, not acoustic SPL; silence remains -Infinity.
+          arrayLevels.inputDb = 10 * Math.log10(inputPower / scaled.length)
+          arrayLevels.outputDb = 10 * Math.log10(outputPower / scaled.length)
+          arrayLevels.peak = peak
+          arrayLevels.limited += result.clippedSamples
+          arrayLevels.samples += scaled.length
+          // Separate limiter histories keep a loud VAD/LCMV block from
+          // attenuating Falcon's aligned AEC channel, or vice versa.
+          const recording = falconMode.value && !adminVoiceTestActive.value
+            ? falconGain.process(packet.raw, config.falconGainDb).samples
+            : scaled
+          await processAudio(scaled, endTimeMs, recording)
+        },
+        onError: (reason) => {
+          if (attempt === audioCaptureAttempt) {
+            audioInputStarted.value = false
+            audioStartupError.value = reason
+            controller.abort()
+            dispose()
+          }
+        },
+      })
+      if (controller.signal.aborted || attempt !== audioCaptureAttempt) {
+        capture.dispose()
+        return
+      }
+      arrayCapture = capture
+      activeArrayProcessing.value = config.processing
+    }
+    else {
+      await start(input)
+    }
+    if (!controller.signal.aborted && attempt === audioCaptureAttempt)
+      audioInputStarted.value = true
   }
-  else {
-    console.warn('[KIOSK AUDIO] no microphone stream after VAD init')
+  catch (error) {
+    if (!controller.signal.aborted && attempt === audioCaptureAttempt)
+      throw error
   }
 }
 
@@ -772,8 +1078,11 @@ async function processVoiceCandidate(
   candidate: NonNullable<ReturnType<typeof interactionTurn.beginCustomerVoiceCandidate>>,
   reservation: Extract<KioskUtteranceReservation, { kind: 'ACCEPTED' }>,
   captureId?: number,
+  falconPacket?: ArrayBuffer,
+  recognitionSignal?: AbortSignal,
 ) {
-  if (buffer.length === 0 || !allowsObservedVoice()) {
+  if (buffer.length === 0 || !allowsObservedVoice(visualSpeechRequired.value)) {
+    speechInterruption.release(candidate.id)
     reservation.cancel()
     interactionTurn.completeVoiceCandidate(candidate)
     return
@@ -782,13 +1091,38 @@ async function processVoiceCandidate(
   updateVoiceDiagnostic(diagnosticId, { status: 'recognizing' })
   voiceDiagnosticByUtterance.set(reservation.id, diagnosticId)
   let submitted = false
+  const startedAt = performance.now()
+  const sessionId = interactionRecording.visitorSessionId.value
+  let requestMs: number | undefined
+  let falconTiming: FalconTiming | undefined
+  // Legacy capture remains silent until semantic service admission: an empty
+  // ASR response or background IGNORE must never produce a receipt or music.
+  // Falcon retains its existing immediate capture acknowledgement.
+  transcriptionCount.value++
+  processingCue.acknowledge({ utteranceId: reservation.id, recognitionMode: falconPacket ? 'falcon' : 'legacy', stage: 'capture' })
+  if (sessionId)
+    void interactionRecording.append('service_event', 'voice_recognition_started', { utteranceId: reservation.id, source: falconPacket ? 'falcon' : 'legacy' })
   try {
-    const { recording, text } = await transcribeKioskUtterance(buffer, {
-      signal: AbortSignal.any([candidate.signal, reservation.signal]),
-      onChunkTranscribed: reservation.markTranscriptionProgress,
-      transcribe: transcribeKioskAudio,
-    })
-    if (!allowsObservedVoice()) {
+    const signal = AbortSignal.any([candidate.signal, reservation.signal, ...(recognitionSignal ? [recognitionSignal] : [])])
+    let result: { recording: Blob, text: string }
+    if (falconPacket) {
+      const { text, timing } = await transcribeFalconAudio(falconPacket, signal)
+      falconTiming = timing
+      requestMs = performance.now() - startedAt
+      signal.throwIfAborted()
+      result = { recording: createKioskVadRecording(buffer), text }
+    }
+    else {
+      result = await transcribeKioskUtterance(buffer, {
+        signal,
+        onChunkTranscribed: reservation.markTranscriptionProgress,
+        transcribe: transcribeKioskAudio,
+      })
+      requestMs = performance.now() - startedAt
+    }
+    const { recording, text } = result
+    signal.throwIfAborted()
+    if (!allowsObservedVoice(visualSpeechRequired.value)) {
       updateVoiceDiagnostic(diagnosticId, { status: 'ignored' })
       return
     }
@@ -799,18 +1133,29 @@ async function processVoiceCandidate(
     updateVoiceDiagnostic(diagnosticId, { status: 'recognized', text })
     if (!interactionTurn.isCurrentVoiceCandidate(candidate))
       return
-    reservation.complete({ recording, text })
+    if (sessionId && sessionId === interactionRecording.visitorSessionId.value)
+      void interactionRecording.recordTranscript({ id: reservation.id, text, source: 'asr', recognitionMode: falconPacket ? 'falcon' : 'legacy' })
+    reservation.complete({ recording, text, recognitionMode: falconPacket ? 'falcon' : 'legacy' })
     submitted = true
     pendingTranscript.value = undefined
   }
   catch (error) {
-    updateVoiceDiagnostic(diagnosticId, { status: 'failed' })
-    if (!candidate.signal.aborted && !reservation.signal.aborted) {
+    const cancelled = candidate.signal.aborted || reservation.signal.aborted || recognitionSignal?.aborted
+    updateVoiceDiagnostic(diagnosticId, { status: cancelled ? 'ignored' : 'failed' })
+    if (!cancelled) {
       pendingTranscript.value = t(error instanceof KioskDeviceRequestError && error.status === 413 ? 'stage.kiosk-agent.audio-too-large' : 'stage.kiosk-agent.audio-failed')
       console.error('Failed to process kiosk voice candidate:', error)
     }
   }
   finally {
+    speechInterruption.release(candidate.id)
+    interruptionDiagnostic.value = speechInterruption.snapshot()
+    transcriptionCount.value--
+    if (sessionId && sessionId === interactionRecording.visitorSessionId.value) {
+      // This clock covers the ASR request, separately from the existing
+      // decision/tool clock. No customer audio or text is added to this event.
+      void interactionRecording.append('service_event', JSON.stringify({ kind: 'voice_recognition_timing', mode: falconPacket ? 'falcon' : 'legacy', elapsedMs: performance.now() - startedAt, requestMs, audioMs: buffer.length / 16, packetBytes: falconPacket?.byteLength, falconTiming, submitted }), { source: 'voice_recognition_timing', utteranceId: reservation.id })
+    }
     reservation.cancel()
     if (!submitted)
       voiceDiagnosticByUtterance.delete(reservation.id)
@@ -836,7 +1181,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
   // browser work supersedes passive cues through the document's FIFO executor.
   // A captured utterance may have waited behind a tool round. Recheck before
   // Jev/Main, without cancelling already-issued commerce work or touch input.
-  if (utterance.source === 'asr' && !allowsObservedVoice()) {
+  if (utterance.source === 'asr' && !allowsObservedVoice(visualSpeechRequired.value)) {
     finishVoiceDiagnostic(utterance.id, 'ignored')
     return
   }
@@ -879,17 +1224,6 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     return
   }
   const input: FastPathInput = { ...utterance, deadlineAt: Date.now() + serviceRecoveryLimits.turnMs, signal: AbortSignal.any([ticket.signal, AbortSignal.timeout(serviceRecoveryLimits.turnMs)]) }
-  // Only the fixed neutral phrase enters TTS here, never the unadmitted ASR
-  // text. Playback still requires service admission; queue cleanup discards it.
-  const preparedReceipt = currentAgentRequest() || agentOrderOwner.value || pendingAgentOrderOwner.value
-    ? undefined
-    : waitSpeech.prepare(t('stage.kiosk.wait.receipt'), language.value)
-  if (preparedReceipt) {
-    receiptPreparations.set(utterance.id, preparedReceipt)
-    timing.mark('receipt-synthesis-start')
-    void preparedReceipt.ready.then(ready => timing.mark(ready ? 'receipt-synthesis-ready' : 'receipt-synthesis-discarded'))
-  }
-
   const entry: KioskDecisionEntry = {
     id: utterance.id,
     route: 'deciding',
@@ -933,8 +1267,10 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     let selectedTurn: ReturnType<typeof interactionTurn.begin> | undefined
     const acknowledgeService = () => {
       timing.markFirst('service-admitted')
-      if (!ticket.isCurrent() || input.signal?.aborted || (utterance.source === 'asr' && !allowsObservedVoice()))
+      if (!ticket.isCurrent() || input.signal?.aborted || (utterance.source === 'asr' && !allowsObservedVoice(visualSpeechRequired.value)))
         return
+      if (utterance.source === 'asr' && utterance.recognitionMode === 'legacy')
+        processingCue.acknowledge({ utteranceId: utterance.id, recognitionMode: 'legacy', stage: 'service' })
       // Retain service speech once admitted; unrelated background captures do
       // not start new visitor recordings merely because ASR finished.
       void recordUtteranceEvidence(input).catch(error => console.error('Failed to record admitted speech:', error))
@@ -958,18 +1294,25 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
         if (ticket.isCurrent() && interactionTurn.isCurrent(turn))
           timing.markFirst('first-response-dom-ready', undefined, 'progress')
       })
-      waitSpeech.start(turn, t('stage.kiosk.wait.receipt'), language.value, 'receipt', preparedReceipt)
     }
     // Keep the owner when a failed/native navigation clears discovered tools.
-    const browserOrdering = interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get')
+    const browserOrdering = interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get' || tool.name === 'browser_state_get')
     const result = await runFastPath({
       isEnabled: isKioskFastPathEnabled,
       source: browserOrdering
         ? createBrowserFastPathSource({
             tools: interactiveServiceClient.tools.value,
             read: async (tool, args) => {
-              await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
-              return interactiveServiceClient.execute(tool, args)
+              const owner = await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
+              const serviceUrl = scenarioRegistry.activeScenario.value?.serviceUrl
+              // Result-only documents still belong to the visitor admitted to
+              // this cart. A new reception cannot inherit the previous order.
+              const raw = await interactiveServiceClient.execute(tool, args)
+              if (raw && typeof raw === 'object' && 'order' in raw
+                && (!owner || !serviceUrl || !browserCartSession.owns(owner, serviceUrl))) {
+                return { customerBoundary: 'review-required' }
+              }
+              return raw
             },
             hasPendingQuestion: browserDialogue.hasPending,
             canAnswerLocally: (raw, transcript) => browserDialogue.canAnswerLocally(raw, transcript),
@@ -977,6 +1320,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
             shownRecommendations: () => productPresentation.shownRecommendations(),
             recommendationPool: products => browserDialogue.recommendations.filter(labelCatalog(products, activeCatalogLabels.value)).map(product => product.ref),
             pendingQuestion: raw => browserDialogue.conversation(raw).waitingFor,
+            checkoutStep: raw => browserDialogue.checkoutStep(raw),
             releaseService: (raw, questionId) => browserDialogue.releaseService(raw, questionId),
             catalogLabels: () => activeCatalogLabels.value,
             execute: async (tool, args) => {
@@ -1156,11 +1500,11 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
           await interactionRecording.append('tool_result', JSON.stringify(payload), { decisionRoute: 'fast_path', name: trace.operationPlan.toolName })
         }
       },
-      isCurrent: () => ticket.isCurrent() && (utterance.source !== 'asr' || allowsObservedVoice()),
+      isCurrent: () => ticket.isCurrent() && (utterance.source !== 'asr' || allowsObservedVoice(visualSpeechRequired.value)),
       onActionSelected: async () => {
         fastPathProgress.value = { utteranceId: utterance.id, text: t('stage.kiosk.wait.operating') }
         timing.mark('feedback-visible')
-        if (utterance.source === 'asr' && !allowsObservedVoice())
+        if (utterance.source === 'asr' && !allowsObservedVoice(visualSpeechRequired.value))
           return 'DEFER'
         const request = currentAgentRequest()
         if (request) {
@@ -1173,7 +1517,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
           interactionTurn.cancelActiveTurn()
           await request.done
         }
-        if (!ticket.isCurrent() || (utterance.source === 'asr' && !allowsObservedVoice()))
+        if (!ticket.isCurrent() || (utterance.source === 'asr' && !allowsObservedVoice(visualSpeechRequired.value)))
           return 'DEFER'
         const receipt = firstResponseTurns.get(utterance.id)
         if (!receipt || !interactionTurn.isCurrent(receipt))
@@ -1185,7 +1529,6 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
           if (ticket.isCurrent() && selectedTurn && interactionTurn.isCurrent(selectedTurn))
             timing.markFirst('first-response-dom-ready', undefined, 'progress')
         })
-        waitSpeech.start(selectedTurn, t('stage.kiosk.wait.receipt'), language.value, 'receipt', preparedReceipt)
       },
       onTrace: (trace) => {
         if (!ticket.isCurrent())
@@ -1235,7 +1578,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     }
     // Do not escalate a late decision after the visitor has left. Accepted or
     // uncertain execution receipts still settle normally, without retrying.
-    if (utterance.source === 'asr' && !allowsObservedVoice() && result.kind !== 'FAST_ACTION' && result.kind !== 'EXECUTION_FAILED') {
+    if (utterance.source === 'asr' && !allowsObservedVoice(visualSpeechRequired.value) && result.kind !== 'FAST_ACTION' && result.kind !== 'EXECUTION_FAILED') {
       if (selectedTurn && interactionTurn.isCurrent(selectedTurn))
         interactionTurn.complete(selectedTurn)
       finishVoiceDiagnostic(utterance.id, 'ignored')
@@ -1253,8 +1596,10 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     if (result.kind === 'EXECUTION_FAILED') {
       const receipt = result.result && typeof result.result === 'object' ? result.result as Record<string, unknown> : undefined
       const partialMessage = receipt?.effect === 'partial' ? operationReplyFrom(receipt) : undefined
-      const knownRejection = !result.uncertain && receipt?.rejection === 'item-selection' && typeof receipt.customerMessage === 'string'
-      const recovery = browserOrdering ? browserRecoveryReply({ operationAttempted: result.uncertain, verifiedMessage: partialMessage ?? (knownRejection ? String(receipt.customerMessage).slice(0, 2_000) : undefined) }) : undefined
+      const knownRejection = !result.uncertain && typeof receipt?.customerMessage === 'string'
+      const execution = safeParse(serviceOperationSchema, receipt?.execution)
+      const orderUnconfirmed = execution.success && execution.output.steps.some(step => step.effect === 'order' && step.state === 'unknown')
+      const recovery = browserOrdering ? browserRecoveryReply({ operationAttempted: result.uncertain, orderUnconfirmed, verifiedMessage: partialMessage ?? (knownRejection ? String(receipt.customerMessage).slice(0, 2_000) : undefined) }) : undefined
       const message = recovery?.content ?? (partialMessage
         ? `${partialMessage} 請先核對購物車，避免重複加入。`
         : knownRejection
@@ -1286,7 +1631,9 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       return
     }
     if (result.kind === 'SERVICE_UNAVAILABLE') {
-      if (browserOrdering) {
+      // Keep the existing recovery status visible. Repeated speech while paused
+      // must not add the same generic fallback to every customer turn.
+      if (browserOrdering && !serviceRecoveryBlocked.value) {
         const recovery = browserRecoveryReply({ operationAttempted: false })
         conversationMessages.value = [...conversationMessages.value, ...(!shownInput ? [{ role: 'user' as const, content: utterance.text }] : []), { role: 'assistant', id: requestMessageId(utterance.id, 'reply'), content: recovery.content, slices: [], tool_results: [] }]
         await recordUtteranceEvidence(utterance)
@@ -1350,12 +1697,14 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
         return
       interruptAssistantOutput()
       const turn = interactionTurn.begin('conversation', 'thinking')
+      if (utterance.source === 'asr' && utterance.recognitionMode === 'legacy')
+        processingCue.acknowledge({ utteranceId: utterance.id, recognitionMode: 'legacy', stage: 'service' })
       turnTimings.set(turn.id, timing)
       updateDecisionEntry(utterance.id, { route: 'main_agent' })
       if (utterance.source === 'simulation')
         asrSimulationStatus.value = 'System One：相關補充已中斷尚未操作工具的 AI 回合，正在重新處理。'
       void persistAssistantEscalation(input)
-      void sendConversationMessage(utterance.text, turn, { waitSpeech: true, appendUserMessage: !shownInput, deadlineAt: input.deadlineAt, decisionEntryId: utterance.id, utteranceId: utterance.id, decisionState: conversationDecisionStateFrom(result.decisionState) })
+      void sendConversationMessage(utterance.text, turn, { appendUserMessage: !shownInput, deadlineAt: input.deadlineAt, decisionEntryId: utterance.id, utteranceId: utterance.id, decisionState: conversationDecisionStateFrom(result.decisionState) })
         .catch(error => console.error('Failed to restart Main Agent with kiosk follow-up:', error))
       finishVoiceDiagnostic(utterance.id, 'decided')
       return
@@ -1373,6 +1722,8 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     if (!selectedTurn)
       interruptAssistantOutput()
     const turn = selectedTurn ?? interactionTurn.begin('voice', 'thinking')
+    if (utterance.source === 'asr' && utterance.recognitionMode === 'legacy')
+      processingCue.acknowledge({ utteranceId: utterance.id, recognitionMode: 'legacy', stage: 'service' })
     // The real decision path adopts the same turn so Main cannot repeat the
     // receipt or cut off its in-flight audio. Failed/silent paths remain unclaimed.
     firstResponseTurns.delete(utterance.id)
@@ -1408,16 +1759,16 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
         interactionTurn.complete(turn)
       throw error
     }
-    if (result.kind !== 'NEEDS_ASSISTANT')
-      waitSpeech.finish(turn.id)
-    if (spokenReply && interactionTurn.advance(turn, 'speaking')) {
-      void speakAssistantReply(spokenReply, turn).finally(() => {
-        if (interactionTurn.isCurrent(turn))
-          interactionTurn.complete(turn)
-      })
-    }
-    else if (result.kind !== 'NEEDS_ASSISTANT' && interactionTurn.isCurrent(turn)) {
-      interactionTurn.complete(turn)
+    if (result.kind !== 'NEEDS_ASSISTANT') {
+      if (spokenReply && interactionTurn.advance(turn, 'speaking')) {
+        void speakAssistantReply(spokenReply, turn).finally(() => {
+          if (interactionTurn.isCurrent(turn))
+            interactionTurn.complete(turn)
+        })
+      }
+      else if (interactionTurn.isCurrent(turn)) {
+        interactionTurn.complete(turn)
+      }
     }
     finishVoiceDiagnostic(utterance.id, 'decided')
     return
@@ -1436,7 +1787,7 @@ async function recordUtteranceEvidence(input: FastPathInput) {
   await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
   if (generation !== receptionGeneration || input.signal?.aborted)
     return
-  const saved = await interactionRecording.recordTranscript({ id: input.id, text: input.text, source: input.source })
+  const saved = await interactionRecording.recordTranscript({ id: input.id, text: input.text, source: input.source, recognitionMode: input.recognitionMode })
   if (saved && input.recording && generation === receptionGeneration && !savedUtteranceAudio.has(input.id)) {
     savedUtteranceAudio.add(input.id)
     mediaCapture.saveAudio(input.recording, saved.entry.id, saved.visitorSessionId)
@@ -1501,7 +1852,7 @@ async function presentFastPathResult(
       playTransientMotion('greeting')
     // PB gestures already follow the correlated service receipt. Owned Menu
     // keeps its existing fast-action acknowledgement path.
-    else if (!interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get'))
+    else if (!interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get' || tool.name === 'browser_state_get'))
       playTransientMotion('acknowledge')
     return answer
   }
@@ -1551,7 +1902,7 @@ async function presentFastPathResult(
     // A semantic handoff, disabled Fast Path or provider fault starts the same
     // guarded Agent flow. A fallback is not proof of intent or tool authority.
     void persistAssistantEscalation(input)
-    void sendConversationMessage(input.text, turn, { waitSpeech: result.reason !== 'PROVIDER_FAILURE' && result.reason !== 'SYSTEM_ONE_DISABLED', appendUserMessage: !shownInput, decisionEntryId: input.id, utteranceId: input.id, deadlineAt: input.deadlineAt, decisionState, clarifyOrder: result.reason === 'UNCERTAIN_OPERATION' })
+    void sendConversationMessage(input.text, turn, { appendUserMessage: !shownInput, decisionEntryId: input.id, utteranceId: input.id, deadlineAt: input.deadlineAt, decisionState, clarifyOrder: result.reason === 'UNCERTAIN_OPERATION' })
       .catch(error => console.error('Failed to forward kiosk request to Main Agent:', error))
   }
 
@@ -1639,6 +1990,14 @@ function interruptAssistantOutput() {
 }
 
 function cancelReceptionWork() {
+  proactiveVision.resetTarget()
+  mouthActivity.reset()
+  mouthStartAllowed.value = false
+  activeMouthLease = undefined
+  processingCue.reset()
+  discardSpeechUntilBoundary = false
+  falconCapture.reset()
+  falconOverflow = false
   // Completion/reset closes all customer work immediately, before merchant
   // cleanup awaits. ASR/Jev/Main/TTS callbacks retain their old turn/ticket.
   receptionGeneration++
@@ -1650,9 +2009,6 @@ function cancelReceptionWork() {
   incompleteAsrSession.discard()
   interactionTurn.cancel()
   interruptAssistantOutput()
-  for (const prepared of receiptPreparations.values())
-    prepared.dispose()
-  receiptPreparations.clear()
   void productPresentation.cancel()
 }
 
@@ -1660,41 +2016,6 @@ watch(customerSessionState, (state) => {
   if (state === 'completing' || state === 'resetting')
     cancelReceptionWork()
 }, { flush: 'sync' })
-
-// The first cart check runs before the browser controls are exposed, including
-// a native Start click that loads a new document without an Agent tool call.
-watch([interactiveServiceClient.availability, () => interactiveServiceClient.getDocumentId(), () => scenarioRegistry.activeScenario.value?.serviceUrl, customerSessionState], async ([availability, documentId, serviceUrl, state], _previous, onCleanup) => {
-  let current = true
-  onCleanup(() => current = false)
-  const read = interactiveServiceClient.tools.value.find(tool => tool.name === 'browser_cart_get')
-  if (state === 'completing' || state === 'resetting' || availability !== 'ready' || !documentId || !serviceUrl || !read)
-    return
-  const isCurrent = () => current && interactiveServiceClient.getDocumentId() === documentId
-  cartAdmissionPending.value = true
-  cartAdmissionFailed.value = false
-  cartAdmissionError.value = undefined
-  try {
-    const owner = await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
-    if (!isCurrent())
-      return
-    if (!owner)
-      throw new Error('點餐會話尚未建立，請確認連線後重新載入。')
-    const prepared = await browserCartSession.prepare(owner, serviceUrl, () => interactiveServiceClient.execute(read, { includeCatalog: false, forAdmission: true }), isCurrent)
-    if (isCurrent() && prepared === 'blocked')
-      cartAdmissionError.value = t('stage.kiosk.cart-handoff.required')
-  }
-  catch (error) {
-    if (isCurrent()) {
-      cartAdmissionFailed.value = true
-      cartAdmissionError.value = t('stage.kiosk.cart-handoff.failed')
-      console.warn('[stage-kiosk] cart preparation failed:', error)
-    }
-  }
-  finally {
-    if (isCurrent())
-      cartAdmissionPending.value = false
-  }
-}, { flush: 'sync', immediate: true })
 
 function clearConversationPresentation() {
   cancelReceptionWork()
@@ -1726,6 +2047,7 @@ const speechPlayer = createSpeechPlayer({
   onSynthesis: index => activeSpeechTiming?.clock.mark('tts-request', index + 1, activeSpeechTiming.channel),
   onReady: () => activeSpeechTiming?.clock.mark('tts-ready', undefined, activeSpeechTiming.channel),
   onPlaying: (text, first) => {
+    processingSpeechActive.value = true
     if (props.voiceConversationOnly)
       void productPresentation.speak(text)
     if (first && activeSpeechTiming) {
@@ -1734,13 +2056,17 @@ const speechPlayer = createSpeechPlayer({
       void interactionRecording.append('service_event', JSON.stringify(activeSpeechTiming.clock.snapshot('speech', 'running')), { source: 'utterance_timing', utteranceId: activeSpeechTiming.clock.utteranceId })
     }
   },
-  onSource: (player) => {
+  onStopped: () => processingSpeechActive.value = false,
+  onSource: async (player) => {
     if (!player || !audioContext)
       return
+    await applyAudioOutput(audioContext)
     const source = audioContext.createMediaElementSource(player)
     assistantAudioNode.value = source
     source.connect(audioContext.destination)
+    const disconnectReference = connectPlaybackReference(source)
     return () => {
+      disconnectReference()
       if (assistantAudioNode.value === source)
         assistantAudioNode.value = undefined
       source.disconnect()
@@ -1749,6 +2075,8 @@ const speechPlayer = createSpeechPlayer({
 })
 
 async function speakAssistantReply(text: string, turn: ReturnType<typeof interactionTurn.begin>, preparedAudio?: Blob, signal = turn.signal, channel: 'progress' | 'reply' = 'reply') {
+  if (!falconMode.value && backgroundSpeechMode.value !== 'enforce' && speechInterruption.blocksPlayback())
+    return
   if (customerSessionState.value === 'completing' || customerSessionState.value === 'resetting' || signal.aborted || !interactionTurn.isCurrent(turn) || (turn.kind === 'proactive' && !allowsObservedVoice()))
     return
   interruptAssistantOutput()
@@ -1760,6 +2088,7 @@ async function speakAssistantReply(text: string, turn: ReturnType<typeof interac
   activeSpeechTiming = owner
   timing?.mark('tts-start', undefined, channel)
   let outcome: 'completed' | 'cancelled' | 'failed' = 'failed'
+  speechPreparationCount.value++
   try {
     outcome = await speechPlayer.play({ text, locale: language.value, signal, preparedAudio })
   }
@@ -1769,6 +2098,7 @@ async function speakAssistantReply(text: string, turn: ReturnType<typeof interac
     outcome = signal.aborted ? 'cancelled' : 'failed'
   }
   finally {
+    speechPreparationCount.value--
     timing?.mark('speech-finished', signal.aborted ? 'cancelled' : outcome, channel)
     if (timing && sessionId === interactionRecording.visitorSessionId.value)
       void interactionRecording.append('service_event', JSON.stringify(timing.snapshot('speech', signal.aborted ? 'cancelled' : outcome)), { source: 'utterance_timing', utteranceId: timing.utteranceId })
@@ -1783,15 +2113,48 @@ async function speakAssistantReply(text: string, turn: ReturnType<typeof interac
 }
 
 function stopAudioInteraction() {
+  resetVisualSpeech()
+  mouthActivity.reset()
+  mouthStartAllowed.value = false
+  activeMouthLease = undefined
+  if (activeVoiceCandidate)
+    interactionTurn.completeVoiceCandidate(activeVoiceCandidate)
+  activeVoiceCandidate = undefined
+  audioCaptureAttempt++
+  audioCaptureController?.abort()
+  audioCaptureController = undefined
+  arrayCapture?.dispose()
+  arrayCapture = undefined
+  activeArrayProcessing.value = undefined
+  arrayDiagnostics.value = undefined
+  arrayLevels = { inputDb: -Infinity, outputDb: -Infinity, peak: 0, limited: 0, samples: 0 }
+  falconCapture.reset()
   dispose()
   audioInputStarted.value = false
 }
 
-watch([enabled, () => props.voiceConversationOnly, adminVoiceTestActive], async ([isEnabled, voiceConversationOnly, testing]) => {
-  if (isEnabled && (voiceConversationOnly || testing))
-    await startAudioInteraction().catch(error => console.error('Failed to start kiosk audio interaction:', error))
-  else
+// A changed mode starts a fresh bounded VAD processor. If a person is already
+// speaking, discard through the next silence rather than ordering from a tail.
+watch([recognition.policy, mouthAssistanceEnabled], ([next, assisted], [previous, previouslyAssisted]) => {
+  if (!previous || (next?.mode === previous.mode && next?.maxUtteranceSeconds === previous.maxUtteranceSeconds && assisted === previouslyAssisted))
+    return
+  discardSpeechUntilBoundary = props.voiceConversationOnly && isSpeech.value
+  if (activeVoiceCandidate)
+    interactionTurn.completeVoiceCandidate(activeVoiceCandidate)
+  activeVoiceCandidate = undefined
+  stopAudioInteraction()
+}, { flush: 'sync' })
+
+watch([enabled, () => props.voiceConversationOnly, adminVoiceTestActive, () => recognition.policy.value ? `${recognition.policy.value.mode}:${recognition.policy.value.maxUtteranceSeconds}` : undefined, stream, () => JSON.stringify(microphone.settings.value), arrayMicrophone, () => arrayMicrophone.value && !falconMode.value ? JSON.stringify([microphone.algorithm.value, microphone.spatialMask.value]) : undefined, () => arrayMicrophone.value && falconMode.value ? microphone.falconGainDb.value : undefined, mouthAssistanceEnabled], async ([isEnabled, voiceConversationOnly, testing, policy]) => {
+  if (isEnabled && ((voiceConversationOnly && (!props.device || policy)) || testing)) {
+    await startAudioInteraction().catch((error) => {
+      audioStartupError.value = errorMessageFrom(error) ?? 'Microphone startup failed.'
+      console.error('Failed to start kiosk audio interaction:', error)
+    })
+  }
+  else {
     stopAudioInteraction()
+  }
 }, { immediate: true })
 
 // Voice-only mode is the explicit microphone consent mode. It asks before
@@ -1799,6 +2162,8 @@ watch([enabled, () => props.voiceConversationOnly, adminVoiceTestActive], async 
 let microphonePreparation = 0
 async function prepareMicrophone() {
   const attempt = ++microphonePreparation
+  if (props.device && props.voiceConversationOnly && !adminVoiceTestActive.value && !recognition.policy.value)
+    return
   if (!props.voiceConversationOnly && !adminVoiceTestActive.value) {
     // A profile can change from voice-only to text mode while this browser
     // retains its previous local preference. Keep that stale preference from
@@ -1809,9 +2174,14 @@ async function prepareMicrophone() {
   }
 
   try {
+    audioStartupError.value = undefined
     await prepareKioskMicrophonePermission({
       audioInputEnabled: enabled.value,
       requestPermission: requestMicrophonePermission,
+      startAudioInput: async () => {
+        if (attempt === microphonePreparation && (props.voiceConversationOnly || adminVoiceTestActive.value) && !stream.value)
+          await settingsAudioDeviceStore.startStream()
+      },
       setAudioInputEnabled: (nextEnabled) => {
         if (attempt === microphonePreparation && (props.voiceConversationOnly || adminVoiceTestActive.value))
           enabled.value = nextEnabled
@@ -1821,6 +2191,7 @@ async function prepareMicrophone() {
   }
   catch (error) {
     enabled.value = false
+    audioStartupError.value = errorMessageFrom(error) ?? 'Microphone permission was not granted.'
     console.error('Kiosk microphone permission was not granted:', error)
   }
   finally {
@@ -1830,7 +2201,13 @@ async function prepareMicrophone() {
   }
 }
 
-watch([() => props.voiceConversationOnly, adminVoiceTestActive], () => void prepareMicrophone(), { immediate: true })
+watch([() => props.voiceConversationOnly, adminVoiceTestActive, recognition.policy], () => void prepareMicrophone(), { immediate: true })
+watch(recognition.error, (failed) => {
+  if (failed && !recognition.policy.value) {
+    initialMicrophonePermission.settle()
+    pendingTranscript.value = t('stage.kiosk-agent.audio-failed')
+  }
+})
 
 watch(language, locale => setKioskLocale(locale), { immediate: true })
 
@@ -1840,6 +2217,7 @@ watch([stream, loaded], async ([audioStream, vadLoaded]) => {
       .then(() => audioInputStarted.value = true)
       .catch((error) => {
         audioInputStarted.value = false
+        audioStartupError.value = errorMessageFrom(error) ?? 'Microphone connection failed.'
         console.error('Failed to connect kiosk VAD to audio input:', error)
       })
   }
@@ -1868,7 +2246,7 @@ async function syncProactiveVision() {
     await proactiveVision.start(proactiveCamera.value)
 }
 
-watch([cameraRequired, localObservationRequired, () => props.deviceSettings], () => {
+watch([cameraRequired, localObservationRequired, mouthTrackingRequired, falconMode, () => props.deviceSettings], () => {
   // Stop in-flight camera work before applying a remote policy, including a
   // recording downgrade while observation itself remains enabled.
   interactionTurn.cancelProactive()
@@ -1957,6 +2335,10 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
 }
 
 function handlePresenceCandidate(candidate: Omit<PresenceCandidate, 'greetingRoiHit' | 'interactionRoiHit'> | undefined) {
+  // Falcon may borrow the camera while proactive observation is disabled.
+  // Its face processing must not silently re-enable greetings or idle policy.
+  if (!localObservationRequired.value)
+    return
   voicePresence.observe(performance.now(), candidate, proactiveSettings.value.observation.detectionZone)
   if (!allowsObservedVoice())
     interactionTurn.cancelProactive()
@@ -2016,17 +2398,13 @@ async function startProactiveGreeting(onStarted?: () => void) {
   if (!allowsObservedVoice() || customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value)
     return
 
-  const stateTool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_interaction_state')
   // Discovery/loading failures must leave the visitor unclaimed so a later
   // presence frame can try again once the service can report its actual phase.
-  const stateResult = stateTool
-    ? await interactiveServiceClient.execute(stateTool, {}).catch((error) => {
-        console.warn('[stage-kiosk] skipped welcome because service state is unavailable:', error)
-        return undefined
-      })
-    : undefined
-  const state = conversationDecisionStateFrom(stateResult)
-  if (!allowsObservedVoice() || !greetingPhase(state) || customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value || currentAgentRequest())
+  const phase = await readGreetingPhase(interactiveServiceClient, browserDialogue.hasPending).catch((error) => {
+    console.warn('[stage-kiosk] skipped welcome because service state is unavailable:', error)
+    return undefined
+  })
+  if (!allowsObservedVoice() || !phase || customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value || currentAgentRequest())
     return
 
   const frame = props.proactiveVlmEnabled ? captureProactiveCameraFrame(proactiveCamera.value) : undefined
@@ -2076,6 +2454,17 @@ async function startProactiveGreeting(onStarted?: () => void) {
   }
 }
 
+// Without observation there is no presence edge to trigger an enabled welcome.
+// Welcome once when an idle entry is admitted; never borrow Falcon's camera to
+// silently re-enable observation or welcome over an unresolved previous cart.
+let entryWelcomeRunning = false
+watch([isAudioListening, localObservationRequired, () => props.deviceSettings?.greetingEnabled, interactiveServiceClient.availability, cartAdmissionPending, cartAdmissionFailed, browserCartSession.blocked, serviceRecoveryBlocked, customerSessionState, adminPanelOpen], () => {
+  if (entryWelcomeRunning || !isAudioListening.value || localObservationRequired.value || !props.deviceSettings?.greetingEnabled || interactiveServiceClient.availability.value !== 'ready' || cartAdmissionPending.value || cartAdmissionFailed.value || browserCartSession.blocked.value || serviceRecoveryBlocked.value || customerSessionState.value !== 'standby' || adminPanelOpen.value)
+    return
+  entryWelcomeRunning = true
+  void startProactiveGreeting().finally(() => entryWelcomeRunning = false)
+}, { immediate: true })
+
 async function recordCustomerActivity(source: 'asr_simulation' | 'manual' | 'scenario' | 'voice_input' | 'voice_transcript' | 'completed' = 'scenario') {
   if (customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
     return
@@ -2121,6 +2510,8 @@ async function simulateAsrTranscript(text: string) {
     serviceClarificationWindow.reset()
   }
   const submission = utteranceQueue.submit({ source: 'simulation', text: transcript })
+  if (submission.kind === 'ACCEPTED')
+    processingCue.acknowledge()
   asrSimulationStatus.value = submission.kind === 'ACCEPTED'
     ? `已收到模擬語句；目前排隊 ${utteranceQueueState.value.pending.length} 句。`
     : submission.kind === 'OVERLOADED'
@@ -2149,9 +2540,7 @@ async function sendAssistantAction(
   conversationWorkStatus.value = kind === 'greeting' ? t('stage.kiosk.welcome.preparing') : '正在觀察現場…'
   let delivered = false
   try {
-    const stateTool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_interaction_state')
-    const state = stateTool ? conversationDecisionStateFrom(await interactiveServiceClient.execute(stateTool, {})) : undefined
-    const phase = greetingPhase(state)
+    const phase = await readGreetingPhase(interactiveServiceClient, browserDialogue.hasPending, kind)
     if (!interactionTurn.isCurrent(turn) || !phase || currentAgentRequest())
       return false
     if (kind === 'greeting' && !props.proactiveVlmEnabled) {
@@ -2160,8 +2549,8 @@ async function sendAssistantAction(
         return false
       // TTS may still be cold. Re-read browser state so late audio cannot
       // welcome over a new checkout page or an unresolved customer question.
-      const latest = stateTool ? conversationDecisionStateFrom(await interactiveServiceClient.execute(stateTool, {})) : undefined
-      if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn) || greetingPhase(latest) !== phase || currentAgentRequest())
+      const latest = await readGreetingPhase(interactiveServiceClient, browserDialogue.hasPending, kind)
+      if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn) || latest !== phase || currentAgentRequest())
         return false
       await interactionRecording.append('assistant_text', welcome.text, { source: 'fixed_greeting' })
       if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn))
@@ -2181,8 +2570,8 @@ async function sendAssistantAction(
     if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn))
       return
     if (kind === 'greeting') {
-      const latest = stateTool ? conversationDecisionStateFrom(await interactiveServiceClient.execute(stateTool, {})) : undefined
-      if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn) || greetingPhase(latest) !== phase || currentAgentRequest())
+      const latest = await readGreetingPhase(interactiveServiceClient, browserDialogue.hasPending, kind)
+      if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn) || latest !== phase || currentAgentRequest())
         return false
     }
     if (answer) {
@@ -2230,7 +2619,7 @@ function captureProactiveCameraFrame(video: HTMLVideoElement | null) {
 async function sendConversationMessage(
   text: string,
   existingTurn?: ReturnType<typeof interactionTurn.begin>,
-  options: { deadlineAt?: number, appendUserMessage?: boolean, decisionEntryId?: number, decisionState?: KioskConversationDecisionState, utteranceId?: number, waitSpeech?: boolean, clarifyOrder?: boolean } = {},
+  options: { deadlineAt?: number, appendUserMessage?: boolean, decisionEntryId?: number, decisionState?: KioskConversationDecisionState, utteranceId?: number, clarifyOrder?: boolean } = {},
 ) {
   if (customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
     return
@@ -2272,8 +2661,6 @@ async function sendConversationMessage(
     if (interactionTurn.isCurrent(turn))
       timing?.markFirst('first-response-dom-ready', undefined, 'progress')
   })
-  if (options.waitSpeech ?? !existingTurn)
-    waitSpeech.start(turn, t('stage.kiosk.wait.spoken'), language.value)
   const updateAgentStep = (step: string) => {
     if (options.decisionEntryId !== undefined)
       updateDecisionEntry(options.decisionEntryId, { agentStep: step })
@@ -2292,7 +2679,7 @@ async function sendConversationMessage(
   let browserEffectAttempted = false
   let browserRequestComplete = false
   // Capture the protocol owner before navigation can replace its tool list.
-  const browserOrdering = interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get')
+  const browserOrdering = interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get' || tool.name === 'browser_state_get')
   const serviceReply = options.decisionState?.serviceReply === true || /^(?:你好|您好|嗨|哈囉|哈啰|hello|hi)[！!。.?？\s]*$/i.test(text)
   let browserPage: BrowserConversation['page']
   let customerRecoveryPresented = false
@@ -2384,7 +2771,7 @@ async function sendConversationMessage(
       if (!interactionTurn.isCurrent(turn))
         return
     }
-    if (interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get')) {
+    if (interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get' || tool.name === 'browser_state_get')) {
       releaseBrowserCartTask = beginBrowserCartTask(text, {
         utteranceId: options.utteranceId,
         informationUnavailable: () => t('stage.kiosk.information-unavailable'),
@@ -2504,6 +2891,8 @@ async function sendConversationMessage(
             return
           interactionTurn.advance(turn, 'using-tool')
           if (state === 'executing' && !isKioskConversationRetrySafeTool(toolName)) {
+            if (browserOrdering)
+              menuReply.beginOperation(toolName, { maySubmit: browserDialogue.hasSubmissionQuestion() })
             browserEffectAttempted = true
             retryContext.invalidate()
             retryContextKey = undefined
@@ -2536,8 +2925,6 @@ async function sendConversationMessage(
         onAssistantDelta: (text) => {
           if (!interactionTurn.isCurrent(turn) || questionReceipt || operationReply)
             return
-          if (browserOrdering || decisionState?.context || decisionState?.requireMenuRead || !serviceReply)
-            return
           updateAgentStep('Main Agent 回覆中')
           // Server emits text only for rounds that need no operation/receipt
           // validation. Keep progress and defer history/TTS until completion.
@@ -2547,7 +2934,6 @@ async function sendConversationMessage(
       },
     )
     finishExecutionDuration()
-    waitSpeech.finish(turn.id)
     // Release after the tool loop settles, before question presentation or TTS.
     await releaseOrderControl()
     if (!interactionTurn.isCurrent(turn))
@@ -2607,7 +2993,7 @@ async function sendConversationMessage(
     const replyKind = presented.clarification ? 'clarification' : reply.reply?.kind
     if (!interactionTurn.isCurrent(turn))
       return
-    await interactionRecording.append('service_event', JSON.stringify({ kind: 'main_presentation_metrics', taskId, status: presented.role === 'assistant' ? 'presented' : 'rejected', ...(replyKind ? { replyKind } : {}), ...(presented.clarification ? { recovery: 'presentation-clarification' } : {}), ...(presented.recovery ? { recovery: browserEffectAttempted ? 'review-cart' : 'manual-ordering' } : {}), ...(presented.role === 'error' || presented.recovery ? { reason: reply.reason ?? 'unverified-reply' } : {}) }), { source: 'main_presentation_metrics' })
+    void interactionRecording.append('service_event', JSON.stringify({ kind: 'main_presentation_metrics', taskId, status: presented.role === 'assistant' ? 'presented' : 'rejected', ...(replyKind ? { replyKind } : {}), ...(presented.clarification ? { recovery: 'presentation-clarification' } : {}), ...(presented.recovery ? { recovery: menuReply.orderUnconfirmed() ? 'verify-order' : menuReply.effectState() ?? (browserEffectAttempted ? 'unknown' : 'read-failed') } : {}), ...(presented.role === 'error' || presented.recovery ? { reason: reply.reason ?? 'unverified-reply' } : {}) }), { source: 'main_presentation_metrics' })
     if (!interactionTurn.isCurrent(turn))
       return
     finishConversationProgress(turn.id)
@@ -2645,7 +3031,7 @@ async function sendConversationMessage(
   catch (error) {
     if (interactionTurn.isCurrent(turn)) {
       if (browserOrdering) {
-        const recovery = browserRecoveryReply({ operationAttempted: browserEffectAttempted, page: browserPage, verifiedMessage: operationReply ?? menuReply.browserOutcome() })
+        const recovery = browserRecoveryReply({ operationAttempted: browserEffectAttempted, effect: menuReply.effectState(), orderUnconfirmed: menuReply.orderUnconfirmed(), page: browserPage, verifiedMessage: operationReply ?? menuReply.browserOutcome() })
         customerRecoveryPresented = true
         conversationMessages.value = [...conversationMessages.value, { role: 'assistant', id: requestMessageId(options.utteranceId, 'reply'), content: recovery.content, slices: [], tool_results: [] }]
         // Recording can be the failed boundary. Do not let a second recorder
@@ -2686,7 +3072,6 @@ async function sendConversationMessage(
     if (activeAgentRequest === request)
       activeAgentRequest = undefined
     finishExecutionDuration()
-    waitSpeech.finish(turn.id)
     clearLongWait()
     finishConversationProgress(turn.id)
     streamingReply.clear(turn.id)
@@ -2734,13 +3119,25 @@ async function retryConversationMessage() {
   }
 }
 
-async function recoverOrderingService() {
+const serviceRecoveryContext = computed(() => JSON.stringify([interactionRecording.visitorSessionId.value, scenarioRegistry.activeScenarioId.value, scenarioRegistry.iframeRevision.value, scenarioRegistry.activeScenario.value?.serviceUrl]))
+
+async function recoverOrderingService(isCurrent: () => boolean = () => true) {
   if (serviceRecovering.value || currentAgentRequest())
     return
+  const context = serviceRecoveryContext.value
+  const current = () => isCurrent() && context === serviceRecoveryContext.value
   serviceRecovering.value = true
   serviceRecoveryBlocked.value = true
   try {
     await recoverConversationService(interactiveServiceClient, [agentOrderOwner.value, pendingAgentOrderOwner.value])
+    if (!current())
+      return
+    // A rejected cart read leaves transport ready, so reconnect alone cannot
+    // rerun admission. Only retry that read after recovery proved no pending effect.
+    if (cartAdmissionFailed.value && !await cartPreparation.retry())
+      throw new Error('購物車準備仍未完成，保留目前接待並等待再次核對。')
+    if (!current())
+      return
     agentOrderOwner.value = undefined
     pendingAgentOrderOwner.value = undefined
     manualControlPending.value = false
@@ -2750,11 +3147,20 @@ async function recoverOrderingService() {
     conversationWorkStatus.value = undefined
   }
   catch (error) {
-    conversationWorkStatus.value = t('stage.kiosk-agent.service-unavailable')
+    if (!current())
+      return
+    conversationWorkStatus.value = t(interactiveServiceClient.availability.value === 'ready' ? 'stage.kiosk-agent.operation-unconfirmed' : 'stage.kiosk-agent.service-unavailable')
     console.warn('[stage-kiosk] ordering recovery remains paused:', error)
   }
   finally { serviceRecovering.value = false }
 }
+
+const automaticServiceRecovery = useKioskServiceRecovery({
+  blocked: () => serviceRecoveryBlocked.value || cartAdmissionFailed.value || interactiveServiceClient.availability.value === 'unavailable',
+  busy: () => conversationSending.value || serviceRecovering.value || cartAdmissionPending.value || activeServiceOperations.size > 0,
+  context: () => serviceRecoveryContext.value,
+  recover: recoverOrderingService,
+})
 
 function describeToolActivity(toolName: string, state: 'executing' | 'done' | 'error' | 'selected') {
   if (toolName === 'browser_question_answer')
@@ -2791,7 +3197,7 @@ async function startNewCustomerSession() {
     await resetForNewCustomer()
   }
   catch (error) {
-    customerResetError.value = t('stage.kiosk.cart-handoff.restart-failed')
+    customerResetError.value = error instanceof BrowserRestartBlocked ? error.message : t('stage.kiosk.cart-handoff.restart-failed')
     console.error('[stage-kiosk] failed to start the next customer session:', error)
   }
 }
@@ -2816,8 +3222,9 @@ async function restartCustomerSession() {
     // may see its error. A late reset failure cannot mark a new one failed.
     if (customer !== customerSession.customer.value?.sessionId)
       return
-    customerResetError.value = t('stage.kiosk.cart-handoff.restart-failed')
+    customerResetError.value = error instanceof BrowserRestartBlocked ? error.message : t('stage.kiosk.cart-handoff.restart-failed')
     console.error('[stage-kiosk] failed to restart the customer session:', error)
+    void interactionRecording.append('service_event', JSON.stringify({ kind: 'browser_customer_restart_failed', error: errorMessageFrom(error)?.slice(0, 500) }), { source: 'browser_cart_preparation' })
   }
 }
 
@@ -2831,7 +3238,7 @@ async function startOrRestartCustomerSession() {
 
 async function recordBrowserCartResume() {
   customerResetError.value = undefined
-  cartAdmissionFailed.value = false
+  cartPreparation.resetFailure()
   browserDialogue.reset()
   retryableConversationRequest.value = undefined
   await interactionRecording.append('service_event', 'browser_cart_reviewed', { source: 'staff' })
@@ -2886,6 +3293,7 @@ onUnmounted(() => {
         v-model:paused="paused"
         :device="props.device"
         :text-only-mode="!props.voiceConversationOnly"
+        :recognition-mode="recognition.policy.value?.mode"
         :session-ending="customerSessionState === 'resetting'"
         @test-speech="adminVoiceTest.play()"
         @close="closeAdminPanel"
@@ -2893,6 +3301,12 @@ onUnmounted(() => {
         @reload="reloadKiosk"
       >
         <template #device-settings>
+          <Button
+            v-if="serviceRecoveryBlocked || interactiveServiceClient.availability.value === 'unavailable'"
+            :disabled="serviceRecovering || conversationSending"
+            :label="t('stage.kiosk-agent.service-reconnect')"
+            @click="recoverOrderingService()"
+          />
           <BrowserCartHandoff
             v-if="scenarioRegistry.activeScenario.value && interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get')"
             :bridge="interactiveServiceClient"
@@ -2934,12 +3348,13 @@ onUnmounted(() => {
       </section>
       <KioskAssistantThoughtBubble :progress="visibleProgress" />
       <KioskConversation
-        :service-recovery-blocked="serviceRecoveryBlocked"
+        :service-recovery-blocked="serviceRecoveryBlocked || interactiveServiceClient.availability.value === 'unavailable'"
         :service-recovering="serviceRecovering"
+        :service-recovery-exhausted="automaticServiceRecovery.exhausted.value"
         class="conversation-region"
         :activity-status="conversationActivityStatus"
         :activity-steps="conversationActivitySteps"
-        :execution-duration-ms="decisionStatus?.elapsedMs ?? (conversationDiagnosticsEnabled ? conversationExecutionDurationMs : undefined)"
+        :execution-duration-ms="adminPanelOpen && isKioskAdminSessionActive ? decisionStatus?.elapsedMs ?? (conversationDiagnosticsEnabled ? conversationExecutionDurationMs : undefined) : undefined"
         :fast-path-simulation-status="asrSimulationStatus"
         :fast-path-simulation-trace="asrSimulationTrace"
         :fast-path-simulation-timing="asrSimulationTiming"
@@ -2948,15 +3363,34 @@ onUnmounted(() => {
         :request-statuses="requestStatuses"
         :streaming-assistant-message="streamingAssistantMessage"
         :pending-transcript="pendingTranscript"
+        :recognizing-count="transcriptionCount"
         :retry-available="!serviceRecoveryBlocked && interactiveServiceClient.availability.value === 'ready' && (Boolean(retryableConversationRequest) || decisionStatus?.retryable === true)"
         :sending="conversationSending"
         :font-size="conversationFontSize"
         :voice-conversation-only="props.voiceConversationOnly"
         :text-console-target="desktopHost && !props.voiceConversationOnly ? '#kiosk-text-console-dock' : undefined"
         @retry-message="retryConversationMessage"
-        @recover-service="recoverOrderingService"
         @simulate-asr="simulateAsrTranscript"
         @text-console-floating="textConsoleFloating = $event"
+      />
+      <KioskVoiceDiagnostics
+        v-if="adminPanelOpen && isKioskAdminSessionActive && voiceDiagnosticsEnabled"
+        :entries="voiceDiagnosticEntries"
+        :mode="adminVoiceTestActive ? 'admin' : props.voiceConversationOnly ? 'customer' : 'text'"
+        :microphone="enabled && audioInputStarted && !!stream"
+        :capturing="isSpeech"
+        :probability="isSpeechProb"
+        :processing="arrayProcessingLabel"
+        :lag-ms="arrayDiagnostics?.lagMs"
+        :reference-frames="arrayDiagnostics?.referenceSignalFrames"
+        :input-db="arrayDiagnostics?.inputDb"
+        :output-db="arrayDiagnostics?.outputDb"
+        :limited-percent="arrayDiagnostics?.limitedPercent"
+        :blocked-reason="voiceBlockReason()"
+        :error="inferenceError || audioStartupError"
+        :target="customerTarget"
+        :interruption="interruptionDiagnostic"
+        :background-speech-mode="backgroundSpeechMode"
       />
     </section>
 
@@ -2979,30 +3413,22 @@ onUnmounted(() => {
     />
 
     <KioskIdleDiagnostics
-      v-if="idleDiagnosticsEnabled"
+      v-if="adminPanelOpen && isKioskAdminSessionActive && idleDiagnosticsEnabled"
       :idle-deadline-at="idleDeadlineAt"
       :pending-work="hasPendingWork"
       :presence-idle-protection="presenceIdleProtection"
       :state="customerSessionState"
     />
     <KioskPresenceDiagnostics
-      v-if="presenceDiagnosticsEnabled && presenceDecision"
+      v-if="adminPanelOpen && isKioskAdminSessionActive && presenceDiagnosticsEnabled && presenceDecision"
       :decision="presenceDecision"
       :diagnostics="presenceDiagnostics"
       :vision-mode="props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode"
+      :target="customerTarget"
     />
-    <KioskVoiceDiagnostics
-      v-if="voiceDiagnosticsEnabled"
-      :entries="voiceDiagnosticEntries"
-      :mode="adminVoiceTestActive ? 'admin' : props.voiceConversationOnly ? 'customer' : 'text'"
-      :microphone="enabled && audioInputStarted && !!stream"
-      :capturing="isSpeech"
-      :probability="isSpeechProb"
-      :blocked-reason="voiceBlockReason()"
-      :error="inferenceError"
-    />
+
     <KioskDecisionInspector
-      v-if="decisionDiagnosticsEnabled"
+      v-if="adminPanelOpen && isKioskAdminSessionActive && decisionDiagnosticsEnabled"
       :entries="decisionEntries"
       :pending-count="utteranceQueueState.pending.length"
     />

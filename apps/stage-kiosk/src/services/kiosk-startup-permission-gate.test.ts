@@ -37,6 +37,7 @@ describe('prepareKioskMicrophonePermission', () => {
       requestPermission,
       setAudioInputEnabled,
       voiceConversationOnly: false,
+      startAudioInput: vi.fn(async () => undefined),
     })
 
     expect(requestPermission).not.toHaveBeenCalled()
@@ -52,6 +53,7 @@ describe('prepareKioskMicrophonePermission', () => {
       requestPermission,
       setAudioInputEnabled,
       voiceConversationOnly: true,
+      startAudioInput: vi.fn(async () => undefined),
     })
 
     expect(requestPermission).toHaveBeenCalledOnce()
@@ -61,15 +63,18 @@ describe('prepareKioskMicrophonePermission', () => {
   it('re-checks browser consent even when the enabled toggle was persisted', async () => {
     const requestPermission = vi.fn(async () => undefined)
     const setAudioInputEnabled = vi.fn()
+    const startAudioInput = vi.fn(async () => undefined)
 
     await prepareKioskMicrophonePermission({
       audioInputEnabled: true,
       requestPermission,
       setAudioInputEnabled,
       voiceConversationOnly: true,
+      startAudioInput,
     })
 
     expect(requestPermission).toHaveBeenCalledOnce()
     expect(setAudioInputEnabled).not.toHaveBeenCalled()
+    expect(startAudioInput).toHaveBeenCalledOnce()
   })
 })

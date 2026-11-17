@@ -23,23 +23,101 @@ chat:
     step-complete: Service step completed
     failed: This service step could not be completed right now
 kiosk:
+  voice-received: Audio received. Recognizing…
+  monitor:
+    live: Live monitor (refreshes every 3 seconds without interrupting the kiosk)
+    updated: 'Last refreshed: {time}'
+    error: Connection failed. Keeping the previous view and retrying automatically.
+    recognizing: Audio received. Waiting for speech recognition.
+    recognized: 'Speech recognized ({mode}): {seconds} seconds'
+    not-admitted: 'Speech not admitted for processing ({mode}): {seconds} seconds'
+    stage-duration: '{seconds} seconds'
+    stage-unavailable: 'Not provided'
+    falcon-stages: |-
+      {summary}
+      Audio clip (including silence padding): {audio}
+      Falcon inference: {inference}
+      ASR: {asr}
+      Audio ready/delivery duration: Not measured
+  array-audio:
+    metrics: 'Lag {lag} ms · Render {reference} frames · RMS {input} → {output} dBFS · Limited {limited}%'
+    algorithm: 'Legacy ASR array algorithm'
+    lcmv: 'LCMV (existing)'
+    spatial-mask: 'Spatial Mask (November baseline)'
+    aec3: 'Enable AEC3 echo cancellation'
+    aec3Description: 'Uses kiosk playback to cancel its own echo. Disable to compare original Spatial Mask; TTS may be captured. Capture continues during playback.'
+    maskGainDb: 'Spatial Mask input gain (dB, 0–80)'
+    apply: 'Apply algorithm and AEC3 settings'
+    applyDescription: 'Applying restarts capture and discards partial speech and pending recognition. Adjust while silent. Gain defaults to 15 dB and needs on-site calibration. Current mouth admission rules still apply.'
+    maskInactive: 'Spatial Mask applies only to legacy ASR with UMA-8. Falcon retains AEC3/LCMV; ordinary microphones retain browser processing.'
+    title: 'UMA-8 microphone processing'
+    mode: 'Microphone processing'
+    auto: 'Detect UMA-8 automatically'
+    uma8: 'UMA-8 multichannel'
+    standard: 'Standard microphone (browser processing)'
+    description: 'UMA-8 defaults to AEC3 → LCMV → gain → VAD; legacy ASR can also select Spatial Mask with optional AEC3. Elevation is measured from the array plane (0°), with 90° overhead; valid range 0–85°. Changes restart capture; adjust while silent. Falcon uses mapped channel 6 after AEC3 with its own Falcon input gain.'
+    frontElevationDeg: 'Customer elevation (degrees)'
+    suppress1ElevationDeg: 'Left suppression elevation (degrees)'
+    suppress2ElevationDeg: 'Right suppression elevation (degrees)'
+    gainDb: 'VAD gain (dB, 0–30)'
+    advanced: 'Advanced array settings'
+    channelMap: '7 physical microphone channels (0–7, distinct)'
+    frontDeg: 'Customer azimuth (degrees)'
+    suppress1Deg: 'Left suppression azimuth (degrees)'
+    suppress2Deg: 'Right suppression azimuth (degrees)'
+    radiusMm: 'Array radius (mm)'
+    loading: 'LCMV diagonal loading'
+    falconGainDb: 'Falcon input gain (dB, 0–30)'
+    falconGainDescription: 'Adjusts UMA-8 audio before Falcon independently of VAD gain; defaults to 0 dB. Peak limiting preserves sample timing. Changes restart capture; adjust while silent.'
+    raw-unavailable: 'Eight raw UMA-8 channels are not available yet. Select the UMA-8 device and reconnect. Capture has not switched to another microphone.'
+  media-devices:
+    title: 'Local microphone and speakers'
+    description: 'Selections are saved on this kiosk and restored after restart. Changing devices reconnects capture; adjust between customer conversations.'
+    microphone: 'Microphone input'
+    output: 'Speakers / audio output'
+    test-output: 'Play speaker test sound'
+    unnamed-output: 'Audio output {number}'
+    system-default: 'System default device'
+    unnamed-microphone: 'Microphone {number}'
+    connected: 'Microphone stream connected'
+    disconnected: 'No microphone stream'
+    refresh: 'Detect and reconnect devices'
+    refreshing: 'Detecting devices…'
+    failed: 'Cannot connect the device. Check permissions and cables.'
   media-unlinked: 'Audio has not arrived or has no verified transcript link. See the original recordings below.'
   media-audio-list: 'Original recordings (timestamps do not establish transcript links)'
   media-play: 'Play original recording'
   request-status:
-    queued: 'Waiting'
+    queued: 'Recognized, waiting to process'
     processing: 'Processing'
     review: 'See reply to continue'
     completed: 'Completed'
     cancelled: 'Cancelled'
     failed: 'Incomplete; see reply'
   voice-debug:
+    title: 'Voice diagnostics'
+    label: 'Voice diagnostics'
+    target: 'Ordering customer'
+    target-acquired: 'Target acquired'
+    target-tracking: 'Tracking target'
+    target-challenger: 'Checking new target'
+    target-switched: 'Target switched'
+    target-missing: 'No target in zone'
+    target-ambiguous: 'Ambiguous targets'
+    interruption: 'TTS interruption'
+    interruption-idle: 'Waiting for speech'
+    interruption-semantic-required: 'Waiting for background speech admission'
+    interruption-visual-required: 'Visual or microphone admission missing'
+    interruption-below-threshold: 'Speech probability below threshold'
+    interruption-collecting: 'Collecting sustained speech'
+    interruption-qualified: 'Local interruption qualified'
+    local-interruption: 'Target mouth and sustained VAD qualified; playback stopped locally'
     tts-overlap: 'Sound detected during TTS; check for echo or interruption'
     speech-start: 'VAD speech started'
     speech-end: 'VAD speech ended'
     blocked: 'Not admitted to ordering'
     tts: 'Test speech playback'
-    interrupted: 'Test speech interrupted'
+    interrupted: 'Speech playback interrupted'
     mode-admin: 'Operator audio test'
     mode-text: 'Text mode'
     mode-customer: 'Customer voice ordering'
@@ -89,6 +167,8 @@ kiosk:
     failed: Cannot verify the cart. Review it again later.
     restart-failed: The previous ordering action is still being checked. Try Restart / New order again shortly. Ask staff for help if it remains unavailable.
   native-view-loading: Loading…
+  browser-pb-backup: Browser backup supports only the owned PB simulator. Open the public Kiosk and select the simulator. Use Kiosk EXE for the merchant PB website.
+  browser-pb-backup-link: Open public Kiosk test entry
   native-view-failed: The service screen could not load. Ask staff to check the connection and reopen it.
   service-editor-description: Choose the website shown on the kiosk, then publish the saved experience. An admin preview does not verify login or assistant controls; check those on the device.
   restart-order: Restart / New order
@@ -357,11 +437,20 @@ kiosk-agent:
   retry-stale: The screen or order has changed. Please tell me what you need now.
   retry-busy: Another request is still being processed. Please try again shortly.
   context-unavailable: Menu information is unavailable. This request is unfinished; check the connection and say it again.
-  service-unavailable: The menu connection was lost. New operations are paused; reconnect and check your existing order.
+  operation-unconfirmed: The previous cart operation is being verified automatically. Please wait; no items will be added again.
+  service-recovery-failed: The previous cart operation could not be verified. The cart is retained and assistance is paused. Please ask a staff member to check it.
+  service-unavailable: The menu connection was interrupted. Reconnecting and checking the cart automatically; please wait.
   service-reconnect: Reconnect menu
-  service-recovered: The menu connection is restored. Earlier operations were not replayed; check your order before speaking again.
+  service-recovered: The cart has been checked and service restored without replaying the previous operation. You can continue ordering or check out.
   audio-too-large: This recording exceeds the upload limit. No request was executed; please speak in shorter turns.
   audio-failed: Your speech could not be fully transcribed. No request was executed; please say it again.
+  voice-capture-mouth: The same mouth target could not be tracked throughout this phrase. No action was taken. Face the camera and try again.
+  voice-capture-incomplete: This phrase exceeded the capture limit or was incomplete. No action was taken. Please try shorter phrases.
+  falcon-capture-duration: This utterance exceeded the capture limit or was incomplete. No action was taken. Please try shorter sentences.
+  falcon-capture-mouth: A clear mouth image was unavailable during speech. No action was taken. Please face the camera and try again.
+  falcon-capture-timing: Mouth images and audio were out of sync. No action was taken. Please try again shortly.
+  falcon-capture-busy: The previous utterance is still being recognized. No action was taken. Please wait and try again.
+  falcon-capture-failed: The complete audio and mouth video could not be aligned, the duration limit was exceeded, or the previous utterance is still processing. No request was executed. Face the camera and try a shorter turn after a moment.
   service-connecting: Connecting assistant controls. You can also use the service screen directly.
   service-manual: Assistant controls are unavailable for this service. Please use the service screen directly and check the result there.
   service-browser-unsupported: This browser does not support assistant controls. Please use the service screen directly.

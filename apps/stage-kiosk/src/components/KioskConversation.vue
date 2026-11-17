@@ -34,8 +34,10 @@ const props = defineProps<{
   messages: readonly ChatHistoryItem[]
   requestStatuses?: Readonly<Record<number, CustomerRequestStatus>>
   pendingTranscript?: string
+  recognizingCount?: number
   retryAvailable?: boolean
   sending: boolean
+  serviceRecoveryExhausted?: boolean
   serviceRecoveryBlocked?: boolean
   serviceRecovering?: boolean
   streamingAssistantMessage?: ChatHistoryItem
@@ -45,7 +47,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   retryMessage: []
-  recoverService: []
   simulateAsr: [transcript: string]
   textConsoleFloating: [floating: boolean]
 }>()
@@ -97,8 +98,13 @@ function requestStatus(message: ChatHistoryItem) {
 // Tool discovery describes assistant control, not whether the embedded menu
 // loaded successfully. Keep the service usable while that capability is absent.
 const serviceStatus = computed(() => {
-  if (props.serviceRecoveryBlocked)
-    return t('stage.kiosk-agent.service-unavailable')
+  if (props.serviceRecoveryBlocked) {
+    if (props.serviceRecoveryExhausted)
+      return t('stage.kiosk-agent.service-recovery-failed')
+    return t(interactiveServiceClient.availability.value === 'ready'
+      ? 'stage.kiosk-agent.operation-unconfirmed'
+      : 'stage.kiosk-agent.service-unavailable')
+  }
   if (interactiveServiceClient.editorRetired.value)
     return undefined
   if (!scenarioRegistry.activeScenario.value || interactiveServiceClient.availability.value === 'ready')
@@ -166,7 +172,11 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
       </ChatHistory>
     </div>
 
-    <div v-if="props.pendingTranscript || props.activityStatus || props.activitySteps?.length || props.executionDurationMs !== undefined || props.retryAvailable" class="conversation-progress">
+    <div v-if="props.recognizingCount || props.pendingTranscript || props.activityStatus || props.activitySteps?.length || props.executionDurationMs !== undefined || props.retryAvailable" class="conversation-progress">
+      <div v-if="props.recognizingCount" class="pending-transcript" role="status" aria-live="polite">
+        <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
+        <span>{{ t('stage.kiosk.voice-received') }}</span>
+      </div>
       <div v-if="props.pendingTranscript" class="pending-transcript" role="status" aria-live="polite">
         <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
         <span>{{ toOrderingTraditionalChinese(props.pendingTranscript) }}</span>
@@ -209,14 +219,6 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     />
     <p v-if="serviceStatus" class="service-status" role="status">
       {{ toOrderingTraditionalChinese(serviceStatus) }}
-      <button
-        v-if="props.serviceRecoveryBlocked || interactiveServiceClient.availability.value === 'unavailable'"
-        type="button"
-        :disabled="props.sending || props.serviceRecovering"
-        @click="emit('recoverService')"
-      >
-        {{ t('stage.kiosk-agent.service-reconnect') }}
-      </button>
     </p>
   </section>
 </template>

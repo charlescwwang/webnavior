@@ -32,8 +32,9 @@ const isDraftPreview = computed(() => route.query.preview === 'webnavior')
 const kioskCharacterAsset = useKioskCharacterAsset()
 const profileReady = shallowRef(false)
 const profileSyncError = shallowRef<string>()
-const textOnlyMode = useKioskTextOnlyMode(() => Boolean(deviceSettings.value?.effective.textOnlyMode)
-  || !profile.value?.snapshot.voiceConversationOnly)
+// The saved device mode owns capture and console visibility. A published
+// profile's older display flag must not turn text mode back on after a save.
+const textOnlyMode = useKioskTextOnlyMode(() => deviceSettings.value?.effective.textOnlyMode ?? false)
 const voiceConversationOnly = computed(() => !textOnlyMode.value)
 function kioskAssetUrl(asset: { id: string, sha256: string }) {
   const baseUrl = (import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').replace(/\/$/, '')

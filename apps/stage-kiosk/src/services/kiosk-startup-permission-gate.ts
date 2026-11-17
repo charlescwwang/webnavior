@@ -31,6 +31,7 @@ export function createKioskStartupPermissionGate() {
 export async function prepareKioskMicrophonePermission(input: {
   audioInputEnabled: boolean
   requestPermission: () => Promise<void>
+  startAudioInput: () => Promise<unknown>
   setAudioInputEnabled: (enabled: boolean) => void
   voiceConversationOnly: boolean
 }) {
@@ -45,4 +46,9 @@ export async function prepareKioskMicrophonePermission(input: {
   // including when its local preference was reset between kiosk sessions.
   if (!input.audioInputEnabled)
     input.setAudioInputEnabled(true)
+
+  // A persisted true toggle does not trigger its watcher again after restart.
+  // Permission probes release their temporary stream; start the owned input
+  // explicitly even when the operator's enabled preference was already true.
+  await input.startAudioInput()
 }
