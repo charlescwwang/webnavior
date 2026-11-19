@@ -31,11 +31,15 @@ it('binds copying customization to the observed source and preserves unspecified
   expect(resolvePlan(entries, { ...plan, effect: { ...plan.effect, serving: { ...plan.effect.serving!, options: [] } } })).toBeUndefined()
 })
 
-it('admits a complete finite dumpling request but rejects a changed extra quantity', () => {
-  const transcript = '周氏水餃(最低8顆)十顆兩份'
+it.each([
+  { words: '十顆兩份', quantity: 2, extra: 2 },
+  { words: '十顆', quantity: 1, extra: 2 },
+  { words: '十二顆', quantity: 1, extra: 4 },
+])('admits a complete finite dumpling request but rejects changed extras: $words', ({ words, quantity, extra }) => {
   const name = '周氏水餃(最低8顆)'
+  const transcript = `${name}${words}`
   const entries = [entry('user', 'user_text', transcript, { utteranceId: 19 }), entry('finite', 'service_event', '', { browserAuthority: { source: 'system-one', actionId: 'intent:add-item', transcript, utteranceId: 19 } })]
-  const plan = parse(browserPlanSchema, { source: 'system-one', toolName: 'browser_cart_add', arguments: JSON.stringify({ ...args, selection: { version: 'cfg', variantRef: '', choices: [{ ref: 'dumpling', quantity: 2 }] } }), effect: { ...effect, transcript, serving: { productName: name, variantName: '', options: [{ name: '水餃1顆', quantity: 2 }] }, deltas: [{ name, kind: 'product', mode: 'increase', quantity: 2 }, { name: '水餃1顆', kind: 'option', mode: 'increase', quantity: 4 }] } })
+  const plan = parse(browserPlanSchema, { source: 'system-one', toolName: 'browser_cart_add', arguments: JSON.stringify({ ...args, quantity, selection: { version: 'cfg', variantRef: '', choices: [{ ref: 'dumpling', quantity: extra }] } }), effect: { ...effect, transcript, serving: { productName: name, variantName: '', options: [{ name: '水餃1顆', quantity: extra }] }, deltas: [{ name, kind: 'product', mode: 'increase', quantity }, { name: '水餃1顆', kind: 'option', mode: 'increase', quantity: extra * quantity }] } })
   expect(resolvePlan(entries, plan)).toMatchObject({ provider: 'system-one' })
   expect(resolvePlan(entries, { ...plan, effect: { ...plan.effect, serving: { ...plan.effect.serving!, options: [{ name: '水餃1顆', quantity: 3 }] } } })).toBeUndefined()
 })

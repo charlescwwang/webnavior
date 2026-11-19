@@ -12,6 +12,22 @@ const configuration: ProductConfiguration = { version: 'today-80', variantRef: '
 const question = { questionId: 'pb-question', purpose: 'browser-order-slot', question: '請問要幾份？', expiresAt: Date.now() + 120000, choices: [{ id: 'cancel', description: '取消尚未加入的餐點。' }] }
 const product = { ref: 'p-daily-7', name: '當日新菜', price: 80, kind: 'product', priceType: 1, configurations: [configuration] }
 
+// Report: this chat, Nov19 — Jev must offer confirmation rather than silently selecting A3-1 for A31.
+it('offers only the confirmation action for a unique compressed table candidate', async () => {
+  const execute = vi.fn(async () => ({}))
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, page: 'table', tableChoices: ['A3-1 桌', 'A3-2 桌'], selectedTable: 'A3-2 桌' }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  expect(await source.context({ transcript: '我要A31' })).toMatchObject({ candidates: [{ id: 'table:confirm', description: expect.stringContaining('確認') }] })
+  expect(execute).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov19 — the compiler captured A3 from A3-1 and offered
+// the parent table instead of the current website's split-table name.
+it('offers the full split table code rather than its parent for Jev selection', async () => {
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, page: 'table', tableChoices: ['A3 桌', 'A3-1 桌', 'A3-2 桌'], selectedTable: 'A3 桌' }), execute: vi.fn(), hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const context = await source.context({ transcript: '我要A3-1桌' })
+  expect(context).toMatchObject({ candidates: [{ id: 'table-1', description: '選擇A3-1 桌，留在選桌頁，尚未開始點餐' }] })
+})
+
 // Report: this chat, Nov15: asking serving contents while checkout was offered repeated checkout.
 it('lets a new informational request leave a service question without accepting or declining checkout', async () => {
   const waiting = { ...question, purpose: 'browser-service-question', question: '要結帳嗎？', choices: [{ id: 'yes', description: '打開購物車核對' }, { id: 'no', description: '繼續點餐' }] }
@@ -73,14 +89,18 @@ it('defends an exact target against an intentionally invalid category alias', as
   expect(context).toMatchObject({ productResolution: { status: 'exact', count: 1 }, candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:select-item', description: expect.stringContaining('A套餐') })]) })
 })
 
-it('offers Jev a complete dumpling purchase with pieces separate from servings', async () => {
+it.each([
+  { words: '十顆兩份', quantity: 2, pieces: 10 },
+  { words: '十顆', quantity: 1, pieces: 10 },
+  { words: '十二顆', quantity: 1, pieces: 12 },
+])('offers Jev a complete dumpling purchase with pieces separate from servings: $words', async ({ words, quantity, pieces }) => {
   const dumplings = { ...product, name: '周氏水餃(最低8顆)', price: 64, configurations: [{ ...configuration, unitPrice: 64, groups: [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', maximum: 100, unitPrice: 8 }] }] }] }
   const execute = vi.fn(async () => ({ status: 'verified' }))
   const source = createBrowserFastPathSource({ tools, read: async () => ({ cart: { version: 'cart', lines: [] }, products: [dumplings] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const decide = vi.fn(async () => ({ kind: 'FAST_ACTION' as const, actionId: 'intent:add-item', confidence: 0.95 }))
-  const result = await runFastPath({ isEnabled: async () => true, source, decide, transcript: '周氏水餃(最低8顆)十顆兩份', webMcp: { tools, execute } })
+  const result = await runFastPath({ isEnabled: async () => true, source, decide, transcript: `周氏水餃(最低8顆)${words}`, webMcp: { tools, execute } })
   expect(result.kind).toBe('FAST_ACTION')
-  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_add' }), expect.objectContaining({ quantity: 2, unitPrice: 80, selection: { version: configuration.version, variantRef: '', choices: [{ ref: 'dumpling', quantity: 2 }] } }))
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_add' }), expect.objectContaining({ quantity, unitPrice: pieces * 8, selection: { version: configuration.version, variantRef: '', choices: [{ ref: 'dumpling', quantity: pieces - 8 }] } }))
 })
 
 // Report: this chat, Nov12; after rejecting A4, Jev ignored the correction

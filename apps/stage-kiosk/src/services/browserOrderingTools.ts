@@ -11,6 +11,7 @@ import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
 import { rawTool } from '@xsai/tool'
 import { array, integer, looseObject, maxLength, maxValue, minLength, minValue, number, optional, parse, picklist, pipe, safeParse, strictObject, string } from 'valibot'
 
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { cartLineLabelSchema } from '../../../server/src/services/domain/browser-ordering/contracts'
 import { askBrowserCustomerQuestion, browserRecommendationCriteria, cancelBrowserItemSelection, executeBrowserCartTool, executeBrowserCheckout, executeBrowserConfirmedAddition, executeBrowserQuantityQuestion, executeBrowserReply, filterBrowserRecommendations, readBrowserOrderingFacts } from './browserCartTask'
 import { orderFactsSchema } from './browserOrderDrafts'
@@ -124,7 +125,12 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         const { tableName } = name === 'select_table'
           ? parse(strictObject({ tableName: text }), input)
           : parse(strictObject({ tableName: optional(text) }), input)
-        const entry = parse(looseObject({ tableChoices: array(string()), selectedTable: optional(string()) }), await readBrowserOrderingFacts(client))
+        const raw = await readBrowserOrderingFacts(client)
+        // Host has only offered a possible table. Preserve that question even
+        // when Main repeats the compressed ASR code as its proposed tableName.
+        if (raw && typeof raw === 'object' && 'pendingCustomerChoice' in raw && raw.pendingCustomerChoice)
+          return raw
+        const entry = parse(looseObject({ tableChoices: array(string()), selectedTable: optional(string()) }), raw)
         const selected = resolveTableName(tableName ?? entry.selectedTable ?? '', entry.tableChoices)
         if (!selected)
           return clientError('請問您要選哪一桌？')
@@ -294,8 +300,18 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         return await askBrowserCustomerQuestion(client, question)
       }
       if (name === 'reply_to_customer') {
-        const { replyType } = parse(strictObject({ replyType: customerReplySchema }), input)
-        return executeBrowserReply(client, replyType)
+        const requested = safeParse(strictObject({ replyType: customerReplySchema }), input)
+        // This rejection precedes every website read or write. The existing
+        // bounded proposal repair can correct the call without replaying an effect.
+        if (!requested.success) {
+          return {
+            ...clientError(orderingMessages['zh-Hant'].replyInputRejected),
+            code: 'INVALID_TOOL_ARGUMENTS',
+            dataOnly: true,
+            explanation: 'reply_to_customer 只接受 replyType；請使用工具結構列出的值，不要加入 parameters 包裝。依照使用者原句修正這次提案。尚未讀取或操作網站。',
+          }
+        }
+        return executeBrowserReply(client, requested.output.replyType)
       }
       const unhandled: never = name
       throw new Error(`尚未提供此操作：${unhandled}`)

@@ -3,7 +3,7 @@ import type { InferOutput } from 'valibot'
 import type { AdditionProposal, OrderSlot, QuestionSnapshot } from './browserQuestionWindow'
 
 import { explicitServingQuantities, normalizeSlotNumbers } from '@proj-airi/stage-shared/ordering-slots'
-import { pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
+import { parsePbDumplingServings, pbDumplingExtraName, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { productConfigurationSchema } from '@proj-airi/stage-shared/product-configuration'
 import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
 import { array, integer, looseObject, maxLength, maxValue, minLength, minValue, nullable, number, optional, parse, pipe, strictObject, string } from 'valibot'
@@ -52,11 +52,21 @@ export function createBrowserOrderDrafts() {
         if (line.note && !source.includes(line.note))
           throw new Error('備註必須來自顧客原句。')
         const quantities = explicitServingQuantities(line.evidence, { productName: product.name })
-        // Model extraction cannot supply a default. A prior bound quantity answer
-        // is the only source with precedence over literal evidence in this call.
-        const quantity = provided?.productRef === product.ref && provided.quantity !== undefined && proposal.lines.filter(candidate => candidate.productRef === product.ref).length === 1
-          ? provided.quantity
-          : line.quantity !== null && quantities.includes(line.quantity) ? line.quantity : null
+        const label = [product.name, pbProductName(product.name), ...(product.aliases ?? [])].find(label => line.evidence.includes(label)) ?? ''
+        const dumplings = parsePbDumplingServings(line.evidence, product.name, label)
+        let quantity: number | null = null
+        if (dumplings) {
+          // This product's explicit total-piece convention is one serving when
+          // no serving count is spoken; other products never inherit that rule.
+          quantity = dumplings.quantity
+        }
+        else if (provided?.productRef === product.ref && provided.quantity !== undefined && proposal.lines.filter(candidate => candidate.productRef === product.ref).length === 1) {
+          // A current, bound quantity answer supplements the original request.
+          quantity = provided.quantity
+        }
+        else if (line.quantity !== null && quantities.includes(line.quantity)) {
+          quantity = line.quantity
+        }
         const known = configuration.groups.flatMap(group => group.choices)
         if (new Set(line.choices.map(choice => choice.ref)).size !== line.choices.length || line.choices.some(choice => !known.some(option => option.ref === choice.ref)) || line.askGroups.some(ref => !configuration.groups.some(group => group.ref === ref)))
           throw new Error('選項必須使用目前商品的真實群組與選項參照。')
@@ -70,18 +80,33 @@ export function createBrowserOrderDrafts() {
         const optionEvidence = normalizeSlotNumbers(includesMealName ? optionSource.replace(product.name, '') : optionSource)
         const optionCounts = [...optionEvidence.matchAll(/(\d+)\s*[顆個杯碗]/g)].map(match => Number(match[1]))
         const unansweredGroups = new Set(line.askGroups)
-        const choices = line.choices.flatMap((choice) => {
-          const option = known.find(option => option.ref === choice.ref)!
-          if (choice.quantity !== null && choice.quantity > option.maximum)
-            throw new Error(`「${option.name}」數量超過上限。`)
-          const group = configuration.groups.find(group => group.choices.some(candidate => candidate.ref === choice.ref))!
-          if (!optionEvidence.includes(normalizeSlotNumbers(option.name))) {
-            unansweredGroups.add(group.ref)
-            return [] // A model-picked choice without customer evidence remains a group question.
-          }
-          const explicitSingle = group.maximum === 1
-          return [{ ...choice, quantity: choice.quantity !== null && (optionCounts.includes(choice.quantity) || explicitSingle) ? choice.quantity : null }]
-        })
+        let choices: Draft['choices']
+        if (dumplings) {
+          const extras = known.filter(option => option.name === pbDumplingExtraName)
+          if (extras.length !== 1 || dumplings.extra > extras[0].maximum)
+            throw new Error('網站水餃加量選項或上限已變更，請先確認。')
+          const extra = extras[0]
+          if (line.choices.some(choice => choice.ref !== extra.ref || (choice.quantity !== null && choice.quantity !== dumplings.extra)))
+            throw new Error('每份水餃顆數與指定加量不一致，請重新確認。')
+          // Total pieces already include the base eight; the merchant option
+          // stores only per-serving extras, never total pieces or multiplied servings.
+          choices = dumplings.extra ? [{ ref: extra.ref, quantity: dumplings.extra }] : []
+          unansweredGroups.delete(configuration.groups.find(group => group.choices.some(option => option.ref === extra.ref))!.ref)
+        }
+        else {
+          choices = line.choices.flatMap((choice) => {
+            const option = known.find(option => option.ref === choice.ref)!
+            if (choice.quantity !== null && choice.quantity > option.maximum)
+              throw new Error(`「${option.name}」數量超過上限。`)
+            const group = configuration.groups.find(group => group.choices.some(candidate => candidate.ref === choice.ref))!
+            if (!optionEvidence.includes(normalizeSlotNumbers(option.name))) {
+              unansweredGroups.add(group.ref)
+              return [] // A model-picked choice without customer evidence remains a group question.
+            }
+            const explicitSingle = group.maximum === 1
+            return [{ ...choice, quantity: choice.quantity !== null && (optionCounts.includes(choice.quantity) || explicitSingle) ? choice.quantity : null }]
+          })
+        }
         // Choosing an option resolves its group even when its count is pending.
         // A model may mention both; do not ask the same group again afterward.
         const askGroups = [...unansweredGroups].filter(ref => !configuration.groups.find(group => group.ref === ref)!.choices.some(option => choices.some(choice => choice.ref === option.ref)))

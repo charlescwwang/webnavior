@@ -52,7 +52,7 @@ const cartTargetParameter: OrderingParameter = {
 const mealParameters: Record<string, OrderingParameter> = {
   name: { type: 'string', minLength: 1, maxLength: 200 },
   variant: { type: 'string', minLength: 1, maxLength: 200 },
-  piecesPerServing: { type: 'integer', minimum: 8, maximum: 108, description: '僅周氏水餃：每份總顆數，基本8顆，程式換算加量。例如10顆填10；使用此欄位時不要另外填水餃加量options。購買份數由所用工具的份數欄位指定。不填即基本8顆，沿用原餐時則保留原顆數。' },
+  piecesPerServing: { type: 'integer', minimum: 8, maximum: 108, description: '僅周氏水餃：每份總顆數，基本8顆，程式換算加量。已確定要點周氏水餃時，10顆是quantity=1、此欄填10；10顆2份是quantity=2、此欄填10；不同顆數分開items，正常是基本8顆；使用此欄位時不要另外填水餃加量options。購買份數由所用工具的份數欄位指定。不填即基本8顆，沿用原餐時則保留原顆數。' },
   options: { type: 'array', items: { type: 'object', properties: { group: { type: 'string', minLength: 1, maxLength: 200 }, name: { type: 'string', minLength: 1, maxLength: 200 }, quantity: { type: 'integer', minimum: 0, maximum: 100, description: '每份此選項的最後數量，不乘份數；0取消此選項。' } }, required: ['group', 'name', 'quantity'], additionalProperties: false }, maxItems: 100, description: '網站實際選項；沿用配置時只列要改的選項，其餘保留。' },
   note: { type: 'string', maxLength: 200, description: '顧客要求的備註。沿用同餐時省略會保留，空字串清除；換不同餐不自動沿用。' },
 }

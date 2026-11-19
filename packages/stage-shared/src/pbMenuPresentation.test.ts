@@ -1,11 +1,37 @@
 import { expect, it } from 'vitest'
 
-import { describePbMeal, parsePbDumplingServings, pbDumplingExtraCount, pbProductName } from './pbMenuPresentation'
+import { describePbMeal, parsePbDumplingOrder, parsePbDumplingServings, pbDumplingExtraCount, pbProductName } from './pbMenuPresentation'
+
+// Report: this chat, Nov19 — piece-only and split serving requests must preserve each total-piece configuration.
+it.each([
+  ['水餃10顆', [[10, 1]]],
+  ['水餃12顆', [[12, 1]]],
+  ['水餃10顆2份', [[10, 2]]],
+  ['水餃12顆3份', [[12, 3]]],
+  ['水餃一份十顆、一份12顆', [[10, 1], [12, 1]]],
+  ['水餃一份十顆、一份正常', [[10, 1], [8, 1]]],
+  ['水餃每份十顆，兩份', [[10, 2]]],
+] as const)('retains every serving from %s', (text, expected) => {
+  const order = parsePbDumplingOrder(text, '周氏水餃(最低8顆)', '水餃')
+  expect(order?.map(item => [item.piecesPerServing, item.quantity])).toEqual(expected)
+  for (const item of order ?? [])
+    expect(text.includes(item.evidence)).toBe(true)
+})
+
+it.each(['不要水餃10顆', '水餃10顆多少錢', '水餃再加10顆', '水餃7顆', '水餃109顆', '水餃10顆0份', '水餃10顆、雞腿飯一份', '水餃10顆、取消', '水餃10顆不要蔥'])('leaves unsupported or mixed intent with the planner: %s', (text) => {
+  expect(parsePbDumplingOrder(text, '周氏水餃(最低8顆)', '水餃')).toBeUndefined()
+})
+
+it('keeps short piece answers scoped to the bound product and refuses relative extras', () => {
+  expect(parsePbDumplingOrder('10顆', '另一款水餃', '')).toBeUndefined()
+  expect(parsePbDumplingOrder('再加10顆', '周氏水餃(最低8顆)', '')).toBeUndefined()
+  expect(parsePbDumplingServings('水餃一份十顆、一份正常', '周氏水餃(最低8顆)', '水餃')).toBeUndefined()
+})
 
 it('covers complete literal dumpling servings and leaves other requests intact', () => {
   expect(parsePbDumplingServings('我要水餃十顆兩份', '周氏水餃(最低8顆)', '水餃')).toEqual({ piecesPerServing: 10, quantity: 2, extra: 2 })
   expect(parsePbDumplingServings('水餃兩份每份十二顆', '周氏水餃(最低8顆)', '水餃')).toEqual({ piecesPerServing: 12, quantity: 2, extra: 4 })
-  expect(parsePbDumplingServings('水餃十顆', '周氏水餃(最低8顆)', '水餃')).toBeUndefined()
+  expect(parsePbDumplingServings('水餃十顆', '周氏水餃(最低8顆)', '水餃')).toEqual({ piecesPerServing: 10, quantity: 1, extra: 2 })
   expect(parsePbDumplingServings('水餃兩份每份七顆', '周氏水餃(最低8顆)', '水餃')).toBeUndefined()
   expect(parsePbDumplingServings('水餃十顆兩份不要蔥', '周氏水餃(最低8顆)', '水餃')).toBeUndefined()
 })

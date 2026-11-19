@@ -15,6 +15,71 @@ afterEach(() => release.splice(0).forEach(dispose => dispose()))
 
 const modelTools = ['browser_observe', 'browser_cart_get', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_ask_quantity', 'browser_confirm_add', 'browser_respond']
 
+// Report: this chat, Nov19 — compressed split-table codes must be confirmed before selection.
+it.each([['A31', 'A3-1 桌'], ['A32', 'A3-2 桌']])('confirms %s before selecting the actual split table once', async (spoken, name) => {
+  const { client: original, context, begin, dialogue } = setup()
+  const select = { ...context, name: 'browser_table_select' }
+  const client = { ...original, tools: readonly(shallowRef([...original.tools.value, select])) }
+  const entry = { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A3-1 桌', 'A3-2 桌'], selectedTable: 'A3-2 桌', customerMessage: '請選桌。' }
+  client.execute.mockImplementation(async tool => tool.name === select.name ? { ok: true, source: 'browser', status: 'table-selected', selectedTable: name } : entry)
+  begin(spoken)
+  expect(await executeBrowserCartTool(client, select, { name })).toMatchObject({ effect: 'none', pendingCustomerChoice: { purpose: 'browser-table-confirmation', question: expect.stringContaining(name) } })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === select.name)).toHaveLength(0)
+  expect(dialogue.hasPending()).toBe(true)
+  begin('對')
+  const answer = await prepareBrowserQuestionAnswer(client)
+  expect(answer).toBeTypeOf('function')
+  expect(await answer!()).toMatchObject({ ok: true, selectedTable: name })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === select.name)).toHaveLength(1)
+  expect(client.execute.mock.calls.find(([tool]) => tool.name === select.name)?.[1]).toEqual({ name })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(await prepareBrowserQuestionAnswer(client)).toBeUndefined()
+})
+
+it.each(['不是', 'A3之二', 'manual-change', 'jev-answer'] as const)('handles a pending split-table answer safely: %s', async (answerText) => {
+  const { client: original, context, begin, dialogue } = setup()
+  const select = { ...context, name: 'browser_table_select' }
+  const client = { ...original, tools: readonly(shallowRef([...original.tools.value, select])) }
+  const entry = { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A3-1 桌', 'A3-2 桌'], selectedTable: 'A3-2 桌', customerMessage: '請選桌。' }
+  client.execute.mockImplementation(async (tool, input) => tool.name === select.name ? { ok: true, source: 'browser', effect: 'none', selectedTable: input.name } : { ...entry, observedAt: Date.now() })
+  begin('A31')
+  await executeBrowserCartTool(client, select, { name: 'A3-1 桌' })
+  const question = dialogue.tables.pending(entry)!
+  expect(dialogue.validate(entry, question.questionId)).toEqual(question)
+  if (answerText === 'manual-change')
+    entry.selectedTable = 'A3-1 桌'
+  if (answerText === 'manual-change')
+    expect(dialogue.validate(entry, question.questionId)).toBeUndefined()
+  begin(answerText === 'manual-change' ? '對' : answerText === 'jev-answer' ? '就是那桌' : answerText, answerText === 'jev-answer')
+  if (answerText === 'A3之二') {
+    expect(await executeBrowserCartTool(client, select, { name: 'A3-2 桌' })).toMatchObject({ selectedTable: 'A3-2 桌' })
+  }
+  else {
+    const operation = await prepareBrowserQuestionAnswer(client, answerText === 'jev-answer' ? { questionId: question.questionId, choiceId: 'yes' } : undefined)
+    if (answerText === 'manual-change') {
+      expect(operation).toBeUndefined()
+    }
+    else {
+      expect(operation).toBeTypeOf('function')
+      const result = await operation!()
+      expect(result).toMatchObject(answerText === '不是' ? { effect: 'none', customerMessage: expect.stringContaining('尚未選擇') } : { selectedTable: 'A3-1 桌' })
+    }
+  }
+  const calls = client.execute.mock.calls.filter(([tool]) => tool.name === select.name)
+  expect(calls).toHaveLength(['A3之二', 'jev-answer'].includes(answerText) ? 1 : 0)
+  expect(client.execute.mock.calls.some(([tool]) => tool.name === 'browser_start_ordering')).toBe(false)
+})
+
+it('selects an actual A31 directly rather than asking about A3-1', async () => {
+  const { client, context, begin, dialogue } = setup()
+  const select = { ...context, name: 'browser_table_select' }
+  client.execute.mockImplementation(async tool => tool.name === select.name ? { ok: true, selectedTable: 'A31 桌' } : { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A3-1 桌', 'A31 桌'], customerMessage: '請選桌。' })
+  begin('A31')
+  expect(await executeBrowserCartTool(client, select, { name: 'A31 桌' })).toMatchObject({ selectedTable: 'A31 桌' })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === select.name)).toHaveLength(1)
+})
+
 // Report: this chat, Nov17 — cart review treated 「這樣就好」 as a request to edit a dish.
 it('accepts a completed-cart answer only for cart review and still asks for invoice selection', async () => {
   const { dialogue, facts, answer } = setup()

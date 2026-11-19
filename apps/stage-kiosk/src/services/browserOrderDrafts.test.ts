@@ -14,6 +14,28 @@ function setup() {
   return { dialogue, facts, answer, line, respond }
 }
 
+// Report: this chat, Nov19 — dumpling answers use total pieces, including multiple serving configurations.
+it.each([
+  { text: '10顆', counts: [[10, 1]] },
+  { text: '12顆', counts: [[12, 1]] },
+  { text: '10顆2份', counts: [[10, 2]] },
+  { text: '12顆3份', counts: [[12, 3]] },
+  { text: '一份十顆、一份12顆', counts: [[10, 1], [12, 1]] },
+  { text: '一份十顆、一份正常', counts: [[10, 1], [8, 1]] },
+])('completes the bound dumpling request from $text without another serving question', async ({ text, counts }) => {
+  const { dialogue, facts, respond, answer } = setup()
+  const product = facts.products[0]
+  product.name = '周氏水餃(最低8顆)'
+  product.configurations[0].groups[0].maximum = 100
+  Object.assign(product.configurations[0].groups[0].choices[0], { name: '水餃1顆', maximum: 100 })
+  dialogue.presentQuantity(facts, product.ref, '我要周氏水餃')
+  expect(dialogue.canAnswerLocally(facts, text)).toBe(true)
+  const result = await respond(text)
+  expect(result).toMatchObject({ kind: 'receipt', result: { completeOrder: { proposals: counts.map(([pieces, quantity]) => ({ productRef: product.ref, quantity, unitPrice: pieces * 8, selection: { choices: pieces === 8 ? [] : [{ ref: 'a-1', quantity: pieces - 8 }] } })), evidence: { request: '我要周氏水餃', answers: [{ answer: text }] } } } })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(answer).not.toHaveBeenCalled()
+})
+
 // Report: this chat, Nov12; Main used the spoken PB name, then repeatedly rejected its draft.
 it('recognizes the unique customer-facing PB name and completes its configured purchase', () => {
   const { dialogue, facts, line } = setup()

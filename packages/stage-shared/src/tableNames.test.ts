@@ -2,6 +2,18 @@ import { expect, it } from 'vitest'
 
 import { resolveTableName } from './tableNames'
 
+// Report: this chat, Nov19 — A3-1 and A3-2 cannot be selected reliably.
+it('resolves split table suffixes without collapsing them into their parent or sibling', () => {
+  const choices = ['A3 桌', 'A3-1 桌', 'A3-2 桌', 'A31 桌']
+  expect(resolveTableName('A3-1', choices)).toBe('A3-1 桌')
+  expect(resolveTableName('a03－02桌', choices)).toBe('A3-2 桌')
+  expect(resolveTableName('A三之一桌', choices)).toBe('A3-1 桌')
+  expect(resolveTableName('A3', choices)).toBe('A3 桌')
+  expect(resolveTableName('A31', choices)).toBe('A31 桌')
+  expect(resolveTableName('A3-3', choices)).toBeUndefined()
+  expect(resolveTableName('A3', ['A3-1 桌', 'A3-2 桌'])).toBeUndefined()
+})
+
 it('resolves case, leading zeros and spoken digits without confusing A1 and A10', () => {
   expect(resolveTableName('a3', ['A03 桌', 'A10 桌'])).toBe('A03 桌')
   expect(resolveTableName('A03', ['A3 桌'])).toBe('A3 桌')

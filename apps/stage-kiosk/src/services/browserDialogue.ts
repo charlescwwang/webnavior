@@ -10,7 +10,7 @@ import { browserQuestionChoice } from '@proj-airi/stage-shared/browser-conversat
 import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { explicitServingQuantities, normalizeSlotNumbers } from '@proj-airi/stage-shared/ordering-slots'
 import { pbCheckoutSchema, pbCheckoutStepSchema } from '@proj-airi/stage-shared/pb-checkout'
-import { pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
+import { parsePbDumplingOrder, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { productFragment } from '@proj-airi/stage-shared/product-discovery'
 import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
 import { array, looseObject, number, parse, safeParse, string } from 'valibot'
@@ -19,6 +19,7 @@ import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages
 import { createBrowserOrderDrafts, orderFactsSchema, orderSlotCount } from './browserOrderDrafts'
 import { createBrowserQuestionWindow } from './browserQuestionWindow'
 import { createRecommendationSession } from './recommendationSession'
+import { createTableSelection } from './tableSelection'
 
 const factsSchema = orderFactsSchema
 const phoneMessages = orderingMessages['zh-Hant'].checkout.notificationPhone
@@ -69,6 +70,7 @@ export function createBrowserDialogue(io: {
   const questions = createBrowserQuestionWindow()
   const orders = createBrowserOrderDrafts()
   const recommendations = createRecommendationSession(io.owner)
+  const tables = createTableSelection(io)
   let answeredQuestion: BrowserConversation['answeredQuestion'] | undefined
   let answeredUtteranceId: number | undefined
   let orderEvidence: OrderEvidence | undefined
@@ -160,6 +162,20 @@ export function createBrowserDialogue(io: {
     return matches.length === 1 ? `product:${matches[0].index + 1}` : undefined
   }
 
+  // Short piece replies inherit a product only from its live quantity question.
+  // The parser must cover the entire reply; mixed dishes/changes stay with Main.
+  function dumplingAnswer(raw: unknown, pending: NonNullable<ReturnType<typeof questions.pending>>, transcript: string) {
+    if (pending.kind !== 'quantity')
+      return
+    const products = labelCatalog(parse(factsSchema, raw).products, io.catalogLabels?.())
+    const product = products.find(product => product.ref === pending.product.productRef)
+    if (!product)
+      return
+    const labels = [product.name, pbProductName(product.name), ...product.aliases.filter(alias => products.filter(candidate => candidate.name === alias || candidate.aliases.includes(alias)).length === 1)]
+    const label = labels.find(label => transcript.includes(label)) ?? ''
+    return parsePbDumplingOrder(transcript, product.name, label)
+  }
+
   function receipt(question: ReturnType<typeof questions.presentProducts>) {
     return { ok: true, source: 'browser', status: 'clarification', effect: 'none', pendingCustomerChoice: question, customerMessage: question.question }
   }
@@ -180,6 +196,7 @@ export function createBrowserDialogue(io: {
 
   return {
     recommendations,
+    tables,
     hasSubmissionQuestion: questions.hasSubmissionQuestion,
     /** Returns the current service question or its visitor/document-bound checkout position. */
     checkoutStep(raw: unknown) {
@@ -201,6 +218,7 @@ export function createBrowserDialogue(io: {
       }
     },
     reset: () => {
+      tables.reset()
       checkoutProgress = undefined
       questions.reset()
       orders.reset()
@@ -209,7 +227,7 @@ export function createBrowserDialogue(io: {
       answeredQuestion = undefined
       answeredUtteranceId = undefined
     },
-    hasPending: () => questions.hasPending() || Boolean(checkoutProgress && !checkoutProgress.suspended && checkoutProgress.owner === io.owner() && checkoutProgress.documentId === io.documentId()),
+    hasPending: () => tables.hasPending() || questions.hasPending() || Boolean(checkoutProgress && !checkoutProgress.suspended && checkoutProgress.owner === io.owner() && checkoutProgress.documentId === io.documentId()),
     /** Recovers only the unchanged, accepted selection of this exact utterance. */
     selectionForTurn(raw: unknown, utteranceId?: number) {
       const fresh = snapshot(raw)
@@ -232,7 +250,7 @@ export function createBrowserDialogue(io: {
         || (pending.kind === 'service' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pending.purpose) && notificationPhoneInput(transcript) !== undefined)
         || !!namedAnswer
         || (pending.kind === 'service' && pending.purpose === 'purchase-recommendation' && purchaseAnswerCount(transcript) !== undefined)
-        || (pending.kind === 'quantity' && quantityAnswerCount(transcript) !== undefined)
+        || (pending.kind === 'quantity' && (quantityAnswerCount(transcript) !== undefined || dumplingAnswer(raw, pending, transcript) !== undefined))
         || (pending.kind === 'slot' && orderSlotCount(transcript, pending.slot) !== undefined)
     },
     collectOrder(raw: unknown, input: unknown, source: string, provided?: { productRef: string, quantity?: number, answer?: string }) {
@@ -253,6 +271,11 @@ export function createBrowserDialogue(io: {
     },
     /** Read-only dialogue projection; the private ticket remains the only answer authority. */
     conversation(raw: unknown, utteranceId?: number): Pick<BrowserConversation, 'phase' | 'waitingFor' | 'draft' | 'drafts' | 'answeredQuestion'> {
+      const tableQuestion = tables.pending(raw)
+      // Table admission intentionally has no cart. Its optional confirmation
+      // must be projected before the menu/cart snapshot parser runs.
+      if (raw && typeof raw === 'object' && 'page' in raw && raw.page === 'table')
+        return { phase: 'selecting_table', waitingFor: tableQuestion }
       const binding = snapshot(raw)
       const pending = pendingQuestion(raw, binding)
       const queue = binding && orders.projection(binding)
@@ -275,6 +298,9 @@ export function createBrowserDialogue(io: {
       return { phase: 'confirming_add', waitingFor: pending.question, draft: { productRef: pending.proposal.productRef, name: pending.proposal.productName, quantity: pending.proposal.quantity, note: pending.proposal.note, optionSummary: pending.proposal.optionSummary, missing: ['confirmation'] } }
     },
     validate(raw: unknown, questionId: string) {
+      const tableQuestion = tables.pending(raw)
+      if (raw && typeof raw === 'object' && 'page' in raw && raw.page === 'table')
+        return tableQuestion?.questionId === questionId ? tableQuestion : undefined
       const binding = snapshot(raw)
       const pending = pendingQuestion(raw, binding)
       return pending?.question.questionId === questionId ? pending.question : undefined
@@ -439,6 +465,22 @@ export function createBrowserDialogue(io: {
         }
       }
       if (!selectedAnswer && pending.kind === 'quantity') {
+        const dumplings = dumplingAnswer(raw, pending, transcript)
+        if (dumplings) {
+          const observed = await observe()
+          const fresh = snapshot(observed)
+          if (!fresh || !isCurrent() || questions.pending(fresh)?.question.questionId !== pending.question.questionId)
+            return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '餐點或購物車狀態已變更，請重新確認。' } }
+          try {
+            orders.collect(observed, fresh, { lines: dumplings.map(serving => ({ productRef: pending.product.productRef, evidence: serving.evidence, quantity: serving.quantity, choices: [], askGroups: [], note: '' })) }, pending.request, { productRef: pending.product.productRef, answer: transcript })
+            orderEvidence = { request: pending.request, answers: [{ question: pending.question.question, answer: transcript }] }
+            questions.reset()
+            return { kind: 'receipt' as const, result: nextOrder(observed, fresh)! }
+          }
+          catch (error) {
+            return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: errorMessageFrom(error) ?? '目前無法確認這份水餃的顆數與配置，請重新確認。' } }
+          }
+        }
         // Only a whole, explicit count fills this slot locally. Attached options,
         // other products, refusals and conversational yes/no remain model/domain
         // questions; none can silently become a default serving.

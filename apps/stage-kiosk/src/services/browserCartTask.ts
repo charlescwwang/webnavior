@@ -93,7 +93,7 @@ function missingTableMessage(choices: readonly string[], transcript: string) {
   if (/外送|送到家|宅配/.test(transcript))
     return '這裡提供內用及櫃台自取的外帶，沒有外送服務。內用請先找到座位，再告訴我您的桌號；外帶可以說「櫃台自取」。'
   const compact = (value: string) => value.replaceAll(/\s/g, '').toUpperCase()
-  const codes = [...new Set(normalizeSlotNumbers(transcript).toUpperCase().match(/[A-Z]+\s*\d+/g)?.map(compact) ?? [])]
+  const codes = [...new Set(normalizeSlotNumbers(transcript).toUpperCase().match(/[A-Z]+\s*\d+(?:\s*[-‐‑–—－之]\s*\d+)*/g)?.map(compact) ?? [])]
   // Multiple codes can include a correction or negation. Only one explicit
   // code can prove absence without guessing which part of the turn is intended.
   if (codes.length === 1 && !resolveTableName(codes[0], choices))
@@ -126,8 +126,10 @@ function mentionsProduct(task: NonNullable<typeof active>, name: string, product
 /** Keeps previous visitor details Host-only until this visitor owns the cart. */
 function admitCart(task: NonNullable<typeof active>, raw: unknown, catalogOnly = false) {
   const tableEntry = safeParse(tableEntrySchema, raw)
-  if (tableEntry.success)
-    return { ok: true, source: 'browser', status: 'clarification', page: 'table', code: 'table-selection-required', tableChoices: tableEntry.output.tableChoices, selectedTable: tableEntry.output.selectedTable, customerMessage: missingTableMessage(tableEntry.output.tableChoices, task.transcript) ?? tableEntry.output.customerMessage, effect: 'none' }
+  if (tableEntry.success) {
+    const question = task.dialogue?.tables.offer(raw, task.transcript) ?? task.dialogue?.tables.pending(raw)
+    return { ok: true, source: 'browser', status: 'clarification', page: 'table', code: 'table-selection-required', tableChoices: tableEntry.output.tableChoices, selectedTable: tableEntry.output.selectedTable, ...(question ? { pendingCustomerChoice: question } : {}), customerMessage: question?.question ?? missingTableMessage(tableEntry.output.tableChoices, task.transcript) ?? tableEntry.output.customerMessage, effect: 'none' }
+  }
   const session = task.cartSession
   if (!session)
     return
@@ -178,7 +180,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
   // question. Resolve its one-use answer first; a yes to an alias only selects
   // that product and cannot authorize an invented serving or repeat the question.
   if (task?.dialogue?.hasPending() && !task.answerResolved && context
-    && (writes.has(tool.name) || ['browser_clarify_product', 'browser_product_get'].includes(tool.name))) {
+    && (writes.has(tool.name) || ['browser_clarify_product', 'browser_product_get', 'browser_cart_review'].includes(tool.name))) {
     const resolved = await executeBrowserCartTool(client, context, { includeCatalog: true })
     if (resolved && typeof resolved === 'object'
       && (('ok' in resolved && resolved.ok === false) || 'selectedProduct' in resolved || 'confirmedAddition' in resolved || 'pendingCustomerChoice' in resolved || 'customerMessage' in resolved)) {
@@ -224,6 +226,21 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       const entry = safeParse(tableEntrySchema, await client.execute(context, { includeCatalog: false }))
       if (active !== task || !task.isCurrent() || !entry.success)
         return { ok: false, source: 'host', status: 'rejected', effect: 'none', customerMessage: '目前選桌畫面已變更，請重新確認。' }
+      if (task.dialogue?.tables.offer(entry.output, task.transcript))
+        return admitCart(task, entry.output)
+      const pending = task.dialogue?.tables.pending(entry.output)
+      const confirmed = pending ? task.dialogue?.tables.answer(entry.output, task.transcript, task.selectedAnswer) : undefined
+      if (confirmed) {
+        task.answerResolved = true
+        if ('declined' in confirmed)
+          return { ok: true, source: 'browser', status: 'verified', effect: 'none', customerMessage: orderingMessages['zh-Hant'].tableConfirmation.cancelled }
+        // A yes confirms the offered table only. Even an original Start request
+        // cannot turn this answer into automatic menu entry or a purchase.
+        const select = client.tools.value.find(tool => tool.name === 'browser_table_select')
+        if (!select)
+          return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: orderingMessages['zh-Hant'].tableConfirmation.stale }
+        return client.execute(select, { name: confirmed.name })
+      }
       const missing = missingTableMessage(entry.output.tableChoices, task.transcript)
       if (missing)
         return { ok: true, source: 'host', status: 'clarification', effect: 'none', customerMessage: missing }
@@ -231,8 +248,13 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       // A Start request may use the website's current selection, including its
       // default. A model cannot switch to another table without customer intent.
       const compact = (value: string) => value.replaceAll(/\s/g, '').toUpperCase()
-      const spokenCodes = normalizeSlotNumbers(task.transcript).toUpperCase().match(/[A-Z]+\s*\d+/g)?.map(compact) ?? []
+      const spokenCodes = normalizeSlotNumbers(task.transcript).toUpperCase().match(/[A-Z]+\s*\d+(?:\s*[-‐‑–—－之]\s*\d+)*/g)?.map(compact) ?? []
       const explicitlyNamed = resolveTableName(task.transcript.replaceAll(/[，,。！!]/g, ''), entry.output.tableChoices) === name || compact(task.transcript).includes(compact(name)) || spokenCodes.some(code => resolveTableName(code, entry.output.tableChoices) === name) || (name === '櫃台取餐' && task.transcript.includes('櫃台'))
+      if (pending) {
+        if (!explicitlyNamed || task.selectedAnswer)
+          return admitCart(task, entry.output)
+        task.dialogue?.tables.reset()
+      }
       if (tool.name === 'browser_start_ordering' && task.intentSource !== 'jev' && !explicitlyNamed && entry.output.selectedTable && entry.output.selectedTable !== name)
         return { ok: true, source: 'host', status: 'proposal_rejected', effect: 'none', dataOnly: true, selectedTable: entry.output.selectedTable, tableChoices: entry.output.tableChoices, explanation: '這次提案使用的桌號與畫面目前選擇不同，尚未執行。顧客未要求換桌，請沿用這次回傳的 selectedTable；呼叫 start_ordering_at_table 時省略 tableName，即會使用畫面目前選擇。不必要求顧客重新選桌。' }
       if (!name || !entry.output.tableChoices.includes(name) || (!explicitlyNamed && task.intentSource !== 'jev' && (tool.name === 'browser_table_select' || entry.output.selectedTable !== name)))
@@ -389,7 +411,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
           const old = task.dialogue.conversation(raw).waitingFor
           if (old)
             task.dialogue.releaseService(raw, old.questionId)
-          const question = task.dialogue.presentService(raw, { purpose: 'cart-review', request: task.transcript, question: '餐點、份數和金額正確嗎？確認後繼續選擇發票方式。', choices: [{ id: 'yes', description: '確認目前購物車餐點、份數與金額，繼續選擇發票；不送單。' }, { id: 'no', description: '先不繼續結帳，保留購物車並提出修改。' }] })
+          const question = task.dialogue.presentService(raw, { purpose: 'cart-review', request: task.transcript, question: orderingMessages['zh-Hant'].checkout.cartReview, choices: [{ id: 'yes', description: '確認目前購物車餐點、份數與金額，繼續選擇發票；不送單。' }, { id: 'no', description: '先不繼續結帳，保留購物車並提出修改。' }] })
           return { ...result, ...question, customerMessage: 'customerMessage' in result ? result.customerMessage : question.customerMessage }
         }
       }
@@ -952,7 +974,7 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
   if (tableEntry.success) {
     task.tableSelectionRequired = true
     const state = { phase: 'selecting_table' as const, readOnly: true }
-    return parse(browserConversationSchema, { taskId, sourceUtterance: task.transcript, ...state, page: 'table', tableChoices: tableEntry.output.tableChoices, selectedTable: tableEntry.output.selectedTable, catalog: { complete: false, products: [] }, allowedToolNames: browserToolNames(state, toolNames) })
+    return parse(browserConversationSchema, { taskId, sourceUtterance: task.transcript, ...state, page: 'table', tableChoices: tableEntry.output.tableChoices, selectedTable: tableEntry.output.selectedTable, waitingFor: task.dialogue?.tables.pending(raw), catalog: { complete: false, products: [] }, allowedToolNames: browserToolNames(state, toolNames) })
   }
   const facts = parse(looseObject({ itemSelectionOpen: optional(boolean()), ok: literal(true), source: literal('browser'), page: optional(picklist(['table', 'menu', 'cart', 'checkout'])), cart: looseObject({ version: string(), lines: array(looseObject({ ref: string(), name: string(), quantity: number() })) }), products: array(object({ ref: string(), name: string(), price: optional(number()), configurations: array(productConfigurationSchema) })) }), raw)
   const denied = admitCart(task, raw, true)
@@ -1046,6 +1068,32 @@ export async function prepareBrowserQuestionAnswer(client: Pick<ReturnType<typeo
   if (!task?.dialogue?.hasPending() || task.answerResolved || !task.isCurrent() || !read)
     return
   const facts = await client.execute(read, { includeCatalog: true })
+  if (active !== task || !task.isCurrent())
+    return
+  const tableQuestion = task.dialogue.tables.pending(facts)
+  if (tableQuestion) {
+    if (task.intentSource === 'jev' && input && Object.keys(input).length) {
+      const selected = safeParse(strictObject({ questionId: string(), choiceId: string() }), input)
+      if (!selected.success || selected.output.questionId !== tableQuestion.questionId || !tableQuestion.choices.some(choice => choice.id === selected.output.choiceId))
+        return
+      task.selectedAnswer = selected.output
+    }
+    else if (!task.dialogue.tables.canAnswer(facts, task.transcript)) {
+      return
+    }
+    const select = client.tools.value.find(tool => tool.name === 'browser_table_select')
+    if (!select)
+      return
+    let consumed = false
+    return async () => {
+      if (consumed || active !== task || !task.isCurrent())
+        return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: orderingMessages['zh-Hant'].tableConfirmation.stale }
+      consumed = true
+      // The normal Host table executor re-reads the selector and consumes the
+      // answer only while visitor, document, offered list and selection match.
+      return executeBrowserCartTool(client, select, {})
+    }
+  }
   // Keep the exact already-selected Jev answer. Question consumption still
   // checks visitor, document, cart and expiry; another model gets no vote.
   if (active !== task || !task.isCurrent() || admitCart(task, facts) || (task.intentSource !== 'jev' && !task.dialogue.canAnswerLocally(facts, task.transcript)))
@@ -1232,6 +1280,10 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   if (!facts.cart.lines.length)
     return { ok: true, source: 'browser', effect: 'none', customerMessage: '購物車目前沒有餐點。想點哪一道？' }
   const pendingStep = task.dialogue.checkoutStep(raw)
+  // A checked native radio only describes the website's form default. Until
+  // this visitor enters a later checkout step, continuing must ask the actual
+  // invoice choice rather than infer consent from that default.
+  const needsInvoiceChoice = action === 'invoice-options' || (action === 'continue' && (!pendingStep || ['cart-review', 'review-checkout', 'invoice-method'].includes(pendingStep)))
   if (!task.answerResolved && ((action === 'invoice' && ['cart-review', 'review-checkout'].includes(pendingStep ?? ''))
     || (action === 'phone' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pendingStep ?? '')))) {
     const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')!
@@ -1250,7 +1302,7 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   const tool = client.tools.value.find(tool => tool.name === name)
   if (!tool)
     throw new Error('目前網站尚未提供這項結帳操作。')
-  let parameters: Record<string, unknown> = { focus: action === 'invoice-options' ? 'invoice' : 'next' }
+  let parameters: Record<string, unknown> = { focus: needsInvoiceChoice ? 'invoice' : 'next' }
   if (action === 'invoice')
     parameters = { method: parse(pbInvoiceMethodSchema, input.method) }
   if (action === 'phone' || action === 'phone-confirmed') {
@@ -1270,7 +1322,7 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   const pending = task.dialogue.conversation(binding).waitingFor
   if (pending)
     task.dialogue.releaseService(binding, pending.questionId)
-  if (action === 'invoice-options' || !checkout.methods.some(method => method.selected)) {
+  if (needsInvoiceChoice || !checkout.methods.some(method => method.selected)) {
     const question = task.dialogue.presentService(binding, { purpose: 'invoice-method', request: task.transcript, question: `${orderingMessages['zh-Hant'].checkout.invoiceOptions.replace('{methods}', checkout.methods.map(method => method.label).join('、'))}${orderingMessages['zh-Hant'].checkout.entryModes}`, choices: checkout.methods.map(method => ({ id: method.method, description: `選擇${method.label}，只設定發票，不送出訂單。` })) })
     return { ...parsed.output, ...question, dataOnly: false }
   }

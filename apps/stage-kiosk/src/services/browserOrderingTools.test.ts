@@ -22,6 +22,57 @@ import { runFastPath } from './kiosk-fast-path'
 const cleanup: Array<() => void> = []
 afterEach(() => cleanup.splice(0).forEach(dispose => dispose()))
 
+// Report: this chat, Nov19 — Main must preserve the Host's near-table question, even if it proposes the ASR spelling.
+it.each(['select_table', 'start_ordering_at_table'] as const)('preserves a compressed table confirmation through %s without dispatch', async (name) => {
+  const { call, execute } = setup('A31')
+  execute.mockResolvedValue({ ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A3-1 桌'], selectedTable: 'A3-1 桌', customerMessage: '請選桌。' })
+  expect(await call(name, { tableName: 'A31' })).toMatchObject({ effect: 'none', pendingCustomerChoice: { purpose: 'browser-table-confirmation' } })
+  expect(execute.mock.calls.every(([tool]) => tool.name === 'browser_cart_get')).toBe(true)
+})
+
+it('runs Jev table suggestion and confirmation through the existing Host executor without native Start', async () => {
+  const { client, dialogue, execute } = setup('A31')
+  const raw = { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A3-1 桌', 'A3-2 桌'], selectedTable: 'A3-2 桌', customerMessage: '請選桌。' }
+  execute.mockImplementation(async (tool, input) => tool.name === 'browser_table_select'
+    ? { ...raw, selectedTable: input.name, effect: 'none', customerMessage: '已選桌，請說開始點餐。' }
+    : { ...raw, observedAt: Date.now() })
+  const source = (transcript: string) => createBrowserFastPathSource({
+    tools: client.tools.value,
+    read: client.execute,
+    hasPendingQuestion: dialogue.hasPending,
+    pendingQuestion: raw => dialogue.conversation(raw).waitingFor,
+    execute: async (tool, input) => {
+      const release = beginBrowserCartTask(transcript, { intentSource: 'jev', dialogue, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'system-one', admission: 'issued-plan' }) })
+      try {
+        // Keep the task alive through readback, matching KioskScene's executor.
+        return tool.name === 'browser_answer_question'
+          ? await (await prepareBrowserQuestionAnswer(client, input))?.()
+          : await executeBrowserCartTool(client, tool, input)
+      }
+      finally { release() }
+    },
+  })
+  const traces: unknown[] = []
+  const first = await runFastPath({ isEnabled: async () => true, source: source('A31'), transcript: 'A31', decide: async () => ({ kind: 'FAST_ACTION', actionId: 'table:confirm', confidence: 0.99 }), onTrace: trace => traces.push(trace), webMcp: { tools: client.tools.value, execute } })
+  expect(first.kind, JSON.stringify(traces)).toBe('FAST_ACTION')
+  expect(first).toMatchObject({ kind: 'FAST_ACTION', result: { pendingCustomerChoice: { purpose: 'browser-table-confirmation' } } })
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_table_select')).toBe(false)
+  const second = await runFastPath({ isEnabled: async () => true, source: source('對'), transcript: '對', decide: async () => ({ kind: 'FAST_ACTION', actionId: 'yes', confidence: 0.99 }), webMcp: { tools: client.tools.value, execute } })
+  expect(second).toMatchObject({ kind: 'FAST_ACTION', result: { selectedTable: 'A3-1 桌', effect: 'none' } })
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_table_select')).toHaveLength(1)
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_start_ordering')).toBe(false)
+})
+
+// Report: this chat, Nov19 01:19 — Qwen emitted a schema-level `parameters`
+// wrapper for reply_to_customer; no website action had been attempted.
+it('returns an undispatched correction receipt for invalid reply arguments', async () => {
+  const { call, execute } = setup('我想點餐')
+  const result = await call('reply_to_customer', { replyType: 'checkout-guidance', parameters: '{}' })
+  expect(result).toMatchObject({ ok: false, status: 'rejected', effect: 'none', dataOnly: true, code: 'INVALID_TOOL_ARGUMENTS' })
+  expect(result.customerMessage).not.toContain('Invalid key')
+  expect(execute).not.toHaveBeenCalled()
+})
+
 // Report: this chat, Nov16 — real-model boundary cases fell back to generic acknowledgements.
 it.each(['off-topic', 'food-safety', 'promotion-policy', 'unsupported-budget', 'unsupported-delivery', 'unsupported-taxi', 'menu-unavailable', 'unsupported-permission'] as const)('renders the %s policy without website effects or consuming the pending meal question', async (replyType) => {
   const { call, dialogue, execute } = setup('先問其他事情', true)
@@ -48,7 +99,8 @@ function setup(transcript: string, pending = false, labels: CatalogLabel[] = [])
       if (tool.name === 'browser_invoice_select') {
         checkout.methods.forEach(method => method.selected = method.method === input.method)
         const method = checkout.methods.find(method => method.selected)!
-        checkout.fields = method.method === 'none' ? [] : [{ kind: method.method, label: method.label, value: '', valid: false }]
+        const contacts = checkout.fields.filter(field => field.kind === 'phone' || field.kind === 'email')
+        checkout.fields = [...(method.method === 'none' ? [] : [{ kind: method.method, label: method.label, value: '', valid: false }]), ...contacts]
         checkout.ready = false
       }
       if (tool.name === 'browser_notification_phone') {
@@ -100,6 +152,37 @@ function setup(transcript: string, pending = false, labels: CatalogLabel[] = [])
   }
   return { call, execute, facts, dialogue, answer, checkout, publicTools, client: { tools: readonly(tools), execute } }
 }
+
+// Report: this chat, Nov18 — the website defaults to none before the customer chooses.
+it.each(['continue_checkout', 'open_cart', 'choose_invoice_method'])('keeps cart assent on invoice choices when Main chooses %s', async (tool) => {
+  const { call, facts, dialogue, checkout, execute, answer } = setup('結帳')
+  Object.assign(facts, { page: 'cart', checkout })
+  const reviewed = await call('open_cart', {})
+  expect(reviewed.pendingCustomerChoice.question).toBe('餐點、份數和金額正確嗎？')
+  cleanup.push(beginBrowserCartTask('正確', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const result = await call(tool, tool === 'choose_invoice_method' ? { method: 'none' } : {})
+  expect(result.pendingCustomerChoice.question).toContain('發票要用哪種方式')
+  expect(result.customerMessage).not.toContain('避免重複操作')
+  expect(answer).not.toHaveBeenCalled()
+  expect(execute.mock.calls.filter(([current]) => current.name === 'browser_cart_review')).toHaveLength(1)
+  expect(execute.mock.calls.filter(([current]) => current.name === 'browser_invoice_select')).toHaveLength(0)
+  expect(execute.mock.calls.filter(([current]) => current.name === 'browser_order_submit')).toHaveLength(0)
+})
+
+// Report: this chat, Nov18 — the website defaults to none before the customer chooses.
+it('asks for an invoice method before contact details when continuing an already open cart', async () => {
+  const { call, facts, dialogue, checkout, execute } = setup('餐點確認好了，繼續結帳')
+  Object.assign(facts, { page: 'cart', checkout })
+  checkout.fields = [{ kind: 'phone', label: '通知手機', value: '', valid: false }]
+  const result = await call('continue_checkout', {})
+  expect(result.pendingCustomerChoice.question).toContain('發票要用哪種方式')
+  expect(result.pendingCustomerChoice.question).not.toContain('接下來請提供通知手機')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_select')).toHaveLength(0)
+  cleanup.push(beginBrowserCartTask('無載具', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const selected = await call('choose_invoice_method', { method: 'none' })
+  expect(selected.pendingCustomerChoice.question).toContain('通知手機')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
+})
 
 // Report: this chat, Nov15: 確認無誤 / 我要用載具 repeated cart guidance instead of continuing.
 it('resolves the pending cart review when Main chooses continue_checkout after a weak fast-path answer', async () => {
@@ -271,6 +354,47 @@ it('resolves the unique dumpling extra by its observed option identity instead o
   const result = await call('add_items_to_cart', { items: [{ name: product.name, quantity: 1, piecesPerServing: 10 }] })
   expect(result.status).toBe('verified')
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_add' }), expect.objectContaining({ quantity: 1, unitPrice: 80, selection: { version: 'config', variantRef: '', choices: [{ ref: 'dumpling', quantity: 2 }] } }))
+})
+
+// Report: this chat, Nov14; servings and dumpling extras must remain distinct.
+it.each([
+  { text: '水餃10顆', servings: [[10, 1]] },
+  { text: '水餃12顆', servings: [[12, 1]] },
+  { text: '水餃10顆2份', servings: [[10, 2]] },
+  { text: '水餃12顆3份', servings: [[12, 3]] },
+  { text: '水餃一份十顆、一份12顆', servings: [[10, 1], [12, 1]] },
+  { text: '水餃一份十顆、一份正常', servings: [[10, 1], [8, 1]] },
+])('compiles all Main configurations for $text without multiplying extras by servings', async ({ text, servings }) => {
+  const { facts, call, execute } = setup(text)
+  const product = facts.products[0]
+  product.name = '周氏水餃(最低8顆)'
+  product.configurations[0].unitPrice = 64
+  product.configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', unitPrice: 8, maximum: 100 }] }]
+  const result = await call('add_items_to_cart', { items: servings.map(([piecesPerServing, quantity]) => ({ name: product.name, quantity, piecesPerServing })) })
+  expect(result.status).toBe('verified')
+  const additions = execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add').map(([, input]) => input)
+  expect(additions).toEqual(servings.map(([pieces, quantity]) => expect.objectContaining({ quantity, unitPrice: pieces * 8, selection: { version: 'config', variantRef: '', choices: pieces === 8 ? [] : [{ ref: 'dumpling', quantity: pieces - 8 }] } })))
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
+})
+
+// Report: this chat, Nov14; servings and dumpling extras must remain distinct.
+it('executes the complete mixed dumpling answer once through the Host question path', async () => {
+  const { facts, dialogue, client, execute } = setup('一份十顆、一份正常')
+  const product = facts.products[0]
+  product.name = '周氏水餃(最低8顆)'
+  product.configurations[0].unitPrice = 64
+  product.configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', unitPrice: 8, maximum: 100 }] }]
+  dialogue.presentQuantity(facts, product.ref, '我要周氏水餃')
+  const answer = await prepareBrowserQuestionAnswer(client)
+  expect(answer).toBeTypeOf('function')
+  await answer!()
+  const additions = execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add').map(([, input]) => input)
+  expect(additions).toEqual([
+    expect.objectContaining({ quantity: 1, unitPrice: 80, selection: { version: 'config', variantRef: '', choices: [{ ref: 'dumpling', quantity: 2 }] } }),
+    expect.objectContaining({ quantity: 1, unitPrice: 64, selection: { version: 'config', variantRef: '', choices: [] } }),
+  ])
+  expect(await prepareBrowserQuestionAnswer(client)).toBeUndefined()
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
 })
 
 // Report: this chat, Nov14; servings and dumpling extras must remain distinct.
@@ -1070,9 +1194,12 @@ it('treats a completion during invoice entry as a form recheck even if Main prop
 
 // Report: this chat, Nov17 cases 4/5 — a rejected native final press needs fresh consent, never a cart-review loop.
 it.each(['none', 'unknown'] as const)('handles a final submission with %s effect without replaying it', async (effect) => {
-  const { call, client, facts, dialogue, checkout, execute } = setup('幫我結帳')
-  Object.assign(checkout, { fields: [{ kind: 'phone', label: '通知手機', value: '0912345678', valid: true }], ready: true, missing: [] })
+  const { call, client, facts, dialogue, checkout, execute, answer } = setup('無載具')
   Object.assign(facts, { page: 'cart', checkout })
+  await call('choose_invoice_method', { method: 'none' })
+  Object.assign(checkout, { fields: [{ kind: 'phone', label: '通知手機', value: '0912345678', valid: true }], ready: true, missing: [] })
+  cleanup.push(beginBrowserCartTask('好了', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  answer.mockResolvedValueOnce({ kind: 'ANSWER', choiceId: 'yes', provider: 'main' })
   const summary = await call('continue_checkout', {})
   const original = execute.getMockImplementation()!
   execute.mockImplementation((tool, input) => tool.name === 'browser_order_submit' ? Promise.resolve({ ok: false, source: 'browser', status: effect === 'none' ? 'rejected' : 'unknown', effect, customerMessage: effect === 'none' ? '控制項尚未就緒，尚未送出。' : '送出結果尚未確認。' }) : original(tool, input))
@@ -1096,9 +1223,12 @@ it.each(['none', 'unknown'] as const)('handles a final submission with %s effect
 it('reissues an expired final summary without sending the order or repeating invoice selection', async () => {
   vi.useFakeTimers()
   try {
-    const { call, client, facts, dialogue, checkout, execute } = setup('結帳')
-    Object.assign(checkout, { fields: [{ kind: 'phone', label: '通知手機', value: '0912345678', valid: true }], ready: true, missing: [] })
+    const { call, client, facts, dialogue, checkout, execute, answer } = setup('無載具')
     Object.assign(facts, { page: 'cart', checkout })
+    await call('choose_invoice_method', { method: 'none' })
+    Object.assign(checkout, { fields: [{ kind: 'phone', label: '通知手機', value: '0912345678', valid: true }], ready: true, missing: [] })
+    cleanup.push(beginBrowserCartTask('好了', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+    answer.mockResolvedValueOnce({ kind: 'ANSWER', choiceId: 'yes', provider: 'main' })
     const previous = await call('continue_checkout', {})
     vi.setSystemTime(Date.now() + 120_001)
     cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
@@ -1107,19 +1237,22 @@ it('reissues an expired final summary without sending the order or repeating inv
     expect(result).toMatchObject({ pendingCustomerChoice: { question: expect.stringContaining('確認送出') } })
     expect((result as typeof previous).pendingCustomerChoice.questionId).not.toBe(previous.pendingCustomerChoice.questionId)
     expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
-    expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_select')).toHaveLength(0)
+    expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_select')).toHaveLength(1)
   }
   finally { vi.useRealTimers() }
 })
 
 // Report: this chat, Nov17 case 4 — a mistaken invoice tool may not send final consent back to invoice choice.
 it('resolves the actual final question when Main proposes invoice selection for a bare confirmation', async () => {
-  const { call, facts, dialogue, checkout, execute } = setup('結帳')
-  Object.assign(checkout, { fields: [{ kind: 'phone', label: '通知手機', value: '0912345678', valid: true }], ready: true, missing: [] })
+  const { call, facts, dialogue, checkout, execute, answer } = setup('無載具')
   Object.assign(facts, { page: 'cart', checkout })
+  await call('choose_invoice_method', { method: 'none' })
+  Object.assign(checkout, { fields: [{ kind: 'phone', label: '通知手機', value: '0912345678', valid: true }], ready: true, missing: [] })
+  cleanup.push(beginBrowserCartTask('好了', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  answer.mockResolvedValueOnce({ kind: 'ANSWER', choiceId: 'yes', provider: 'main' })
   await call('continue_checkout', {})
   cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   await call('choose_invoice_method', { method: 'carrier' })
   expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(1)
-  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_select')).toHaveLength(0)
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_select')).toHaveLength(1)
 })

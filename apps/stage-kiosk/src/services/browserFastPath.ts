@@ -20,6 +20,7 @@ import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
 import { array, literal, looseObject, number, optional, safeParse, string } from 'valibot'
 
 import { createMenuReplyWindow } from './questionPresentation'
+import { approximateTables } from './tableSelection'
 
 const factsSchema = looseObject({
   page: optional(string()),
@@ -100,12 +101,25 @@ export function createBrowserFastPathSource(io: {
         const table = safeParse(looseObject({ page: literal('table'), tableChoices: array(string()), selectedTable: optional(string()) }), raw)
         if (!table.success || !table.output.tableChoices.length)
           return { contextError: '目前無法取得可選桌號，請確認畫面。' }
+        const pending = io.pendingQuestion(raw)
+        if (pending?.purpose === 'browser-table-confirmation') {
+          const plans = Object.fromEntries(pending.choices.map(choice => [choice.id, { name: 'browser_answer_question', input: { questionId: pending.questionId, choiceId: choice.id } }]))
+          issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans, answerIds: pending.choices.map(choice => choice.id) }
+          return { phase: 'selecting_table', waitingFor: pending, tableSelectionRequired: true, tableSelection: { choices: table.output.tableChoices, selectedTable: table.output.selectedTable }, candidates: pending.choices }
+        }
+        const approximate = approximateTables(transcript, table.output.tableChoices)
+        if (approximate.length && approximate.length <= 19) {
+          // This plan asks only. The shared Host table executor must issue its
+          // bound confirmation before any native selection, for Main and Jev.
+          issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans: { 'table:confirm': { name: 'browser_table_select', input: { name: approximate[0] } } }, answerIds: ['table:confirm'] }
+          return { phase: 'selecting_table', tableSelectionRequired: true, tableSelection: { choices: table.output.tableChoices, selectedTable: table.output.selectedTable }, candidates: [{ id: 'table:confirm', description: `詢問並確認近似桌號：${approximate.join('、')}；這次不選桌、不開始點餐。` }] }
+        }
         const choices = table.output.tableChoices.map((name, index) => ({ id: `table-${index}`, description: name }))
         if (table.output.selectedTable && table.output.tableChoices.includes(table.output.selectedTable))
           choices.push({ id: 'start', description: `使用目前選擇${table.output.selectedTable}開始點餐` })
         // Visible table facts cannot manufacture an unasked question. Exact
         // spoken codes can narrow a target, without restricting other wording.
-        const spoken = normalizeSlotNumbers(transcript).match(/[a-z]+\s*\d+(?:\s*桌)?/i)?.[0]
+        const spoken = normalizeSlotNumbers(transcript).match(/[a-z]+\s*\d+(?:\s*[-‐‑–—－之]\s*\d+)*(?:\s*桌)?/i)?.[0]
         const selected = spoken ? resolveTableName(spoken, table.output.tableChoices) : resolveTableName(transcript.replaceAll(/[，,。！!]/g, ''), table.output.tableChoices) ?? (/開始/.test(transcript) ? table.output.selectedTable : undefined)
         const selectionText = transcript.replaceAll(/[\s，,。！!]/g, '').replace(/開始點餐吧?$/, '').replace(/^(?:請幫我|幫我|我要|我想要|請)?(?:選擇|選|我的桌號是|桌號是)?/, '')
         // A table code inside a larger food request is not whole-utterance

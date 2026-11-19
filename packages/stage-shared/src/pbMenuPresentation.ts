@@ -20,19 +20,57 @@ export function pbDumplingExtraCount(name: string, piecesPerServing: number): nu
   return piecesPerServing - 8
 }
 
-/** Closed literal coverage for Jev; incomplete or mixed requests remain with Main. */
+/**
+ * Parses complete piece/serving clauses for this verified product. A piece-only
+ * request denotes one serving; different configurations retain separate spans.
+ * An empty label is allowed only when the caller already owns a product question.
+ * Parsing data does not establish purchase intent or authorize a cart mutation.
+ */
+export function parsePbDumplingOrder(transcript: string, productName: string, spokenLabel: string) {
+  if (productName !== '周氏水餃(最低8顆)' || (spokenLabel && !transcript.includes(spokenLabel)))
+    return
+  function serving(evidence: string) {
+    if (spokenLabel && evidence.split(spokenLabel).length > 2)
+      return
+    const labelAt = spokenLabel ? evidence.indexOf(spokenLabel) : -1
+    const continuation = normalizeSlotNumbers(labelAt >= 0 ? evidence.slice(labelAt + spokenLabel.length) : evidence).replaceAll(/\s/g, '')
+    if (/^(?:再加|多加|加量|增加|加)\d+顆/.test(continuation))
+      return // Relative extras need their own scope; they are not a total-piece order.
+    const slots = normalizeSlotNumbers(spokenLabel ? evidence.replace(spokenLabel, '') : evidence)
+      .replaceAll(/[\s，,。！!]/g, '')
+      .replace(/^(?:請幫我|請給我|幫我|給我|我要|我想要|再加|再來|[請要加來再多])?(?:要|加)?/, '')
+      .replace(/謝謝$/, '')
+    const match = slots.match(/^(?:(\d+)顆(?:(\d+)份)?|(\d+)份(?:每份)?(\d+)顆|每份(\d+)顆(?:要|共)?(\d+)份)$/)
+    // "正常" applies only to an explicitly counted serving of this product;
+    // it never copies a previous customer's optional extras.
+    const basic = slots.match(/^(?:(\d+)份(?:正常|基本|原本)|(?:正常|基本|原本)(\d+)份)$/)
+    if (!match && !basic)
+      return
+    const piecesPerServing = basic ? 8 : Number(match![1] ?? match![4] ?? match![5])
+    const quantity = basic ? Number(basic[1] ?? basic[2]) : Number(match![2] ?? match![3] ?? match![6] ?? 1)
+    if (piecesPerServing < 8 || piecesPerServing > 108 || quantity < 1 || quantity > 99)
+      return
+    return { evidence, piecesPerServing, quantity, extra: pbDumplingExtraCount(productName, piecesPerServing) }
+  }
+  // A pause inside "每份十顆，兩份" is still one configuration. Split only
+  // when the whole utterance is not one complete piece/serving clause.
+  const whole = serving(transcript)
+  if (whole)
+    return [whole]
+  const clauses = transcript.split(/[，,、；;和與]|另外|還要|以及/).map(clause => clause.trim()).filter(Boolean)
+  if (clauses.length < 2 || clauses.length > 10)
+    return
+  const order = clauses.map(serving)
+  return order.every(item => item !== undefined) ? order : undefined
+}
+
+/** Closed single-configuration coverage for Jev; compound requests remain with Main. */
 export function parsePbDumplingServings(transcript: string, productName: string, spokenLabel: string) {
-  if (productName !== '周氏水餃(最低8顆)' || !spokenLabel || transcript.split(spokenLabel).length !== 2)
+  const order = parsePbDumplingOrder(transcript, productName, spokenLabel)
+  if (order?.length !== 1)
     return
-  const slots = normalizeSlotNumbers(transcript.replace(spokenLabel, '')).replaceAll(/[\s，,。！!]/g, '')
-  const match = slots.match(/^(?:請幫我|請給我|幫我|給我|我要|我想要|再加|再來|[請要加來再多])?(?:要|加)?(?:(\d+)顆(\d+)份|(\d+)份(?:每份)?(\d+)顆|每份(\d+)顆(?:要|共)?(\d+)份)(?:謝謝)?$/)
-  if (!match)
-    return
-  const piecesPerServing = Number(match[1] ?? match[4] ?? match[5])
-  const quantity = Number(match[2] ?? match[3] ?? match[6])
-  if (piecesPerServing < 8 || piecesPerServing > 108 || quantity < 1 || quantity > 99)
-    return
-  return { piecesPerServing, quantity, extra: pbDumplingExtraCount(productName, piecesPerServing) }
+  const { piecesPerServing, quantity, extra } = order[0]
+  return { piecesPerServing, quantity, extra }
 }
 
 /** Confirmed per-serving options; omission means the adapter could not prove them. */
