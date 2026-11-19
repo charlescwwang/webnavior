@@ -48,6 +48,8 @@
     "./falcon-audio": "./src/falconAudio.ts",
     "./falcon-settings": "./src/falconSettings.ts",
     "./kiosk-desktop": "./src/kioskDesktop.ts",
+    "./kiosk-array-input": "./src/kioskArrayInput.ts",
+    "./kiosk-native-audio": "./src/kioskNativeAudio.ts",
     "./interaction-lifecycle": "./src/interactionLifecycle.ts",
     "./kiosk-service-mode": "./src/kioskServiceMode.ts"
   },

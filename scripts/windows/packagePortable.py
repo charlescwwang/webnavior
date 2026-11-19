@@ -20,7 +20,7 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def package(runtime_zip, output):
+def package(runtime_zip, output, audio_runtime, reference):
     if digest(runtime_zip) != RUNTIME_SHA256:
         raise ValueError('Official Windows x64 runtime SHA256 mismatch; nothing was extracted.')
     outputs = ['main/index.js', 'preload/index.cjs', 'service/pb.js']
@@ -28,9 +28,22 @@ def package(runtime_zip, output):
     for relative in outputs:
         if not (built / relative).is_file() or not (built / relative).stat().st_size:
             raise ValueError(f'Missing build output: {relative}; run the desktop build first.')
+    if not reference.is_file():
+        raise ValueError('The OpenVINO GPU qualification reference is required.')
+    audio_manifest = json.loads((audio_runtime / 'AUDIO-MANIFEST.json').read_text())
+    if audio_manifest['provider'] != 'OpenVINO' or audio_manifest['device'] != 'GPU.0':
+        raise ValueError('The GPU package requires OpenVINO Intel GPU audio assets.')
+    for relative, expected in audio_manifest['files'].items():
+        path = (audio_runtime / relative).resolve()
+        if not path.is_relative_to(audio_runtime.resolve()) or digest(path) != expected:
+            raise ValueError(f'Audio runtime hash mismatch: {relative}')
+    audio_source = ROOT / 'apps/stage-kiosk-desktop/audio'
+    for source in (audio_source / 'src').rglob('*.py'):
+        if digest(source) != digest(audio_runtime / source.relative_to(audio_source)):
+            raise ValueError('Audio source changed after runtime preparation.')
     output.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')
-    archive = output / f'Webnavior-Kiosk-Windows-x64-{stamp}.zip'
+    archive = output / f'Webnavior-Kiosk-GPU-Windows-x64-{stamp}.zip'
     with tempfile.TemporaryDirectory(prefix='webnavior-portable-') as temporary:
         app = Path(temporary) / 'Webnavior Kiosk'
         app.mkdir()
@@ -58,15 +71,29 @@ def package(runtime_zip, output):
             target = payload / 'out' / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(built / relative, target)
-        settings = {'kioskUrl': 'http://100.92.1.80:5169/kiosk/', 'windowed': True, 'diagnosticPort': 0}
+        shutil.copy2(ROOT / 'scripts/windows/diagnoseAudio.py', app / 'diagnoseAudio.py')
+        launcher = (ROOT / 'scripts/windows/testOpenVinoGpu.cmd').read_text(encoding='ascii')
+        (app / 'Test OpenVINO GPU.cmd').write_bytes(launcher.replace('\n', '\r\n').encode('ascii'))
+        shutil.copy2(reference, app / 'openvinoReference.npz')
+        bypass_launcher = (ROOT / 'scripts/windows/startWithoutDenoiser.cmd').read_text(encoding='ascii')
+        (app / 'Start Without UL-UNAS.cmd').write_bytes(bypass_launcher.replace('\n', '\r\n').encode('ascii'))
+        shutil.copy2(ROOT / 'scripts/windows/probeNativeCapture.py', app / 'probeNativeCapture.py')
+        native_launcher = (ROOT / 'scripts/windows/testNativeCapture.cmd').read_text(encoding='ascii')
+        (app / 'Test Native Eight Channel.cmd').write_bytes(native_launcher.replace('\n', '\r\n').encode('ascii'))
+        audio_target = app / 'resources/audio'
+        for relative in [*audio_manifest['files'], 'AUDIO-MANIFEST.json']:
+            target = audio_target / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(audio_runtime / relative, target)
+        settings = json.loads((ROOT / 'apps/stage-kiosk-desktop/kiosk.settings.example.json').read_text(encoding='utf-8'))
         for name in ['kiosk.settings.json', 'kiosk.settings.example.json']:
             (app / name).write_text(json.dumps(settings, ensure_ascii=False, indent=2) + '\n', encoding='utf-8-sig')
         (app / 'Edit Settings.cmd').write_bytes(b'@echo off\r\nnotepad.exe "%~dp0kiosk.settings.json"\r\n')
-        (app / '管理後台.url').write_bytes(b'[InternetShortcut]\r\nURL=http://100.92.1.80:5169/admin/system/models\r\n')
+        (app / '管理後台.url').write_bytes(b'[InternetShortcut]\r\nURL=https://webnavior.aikcitri.qzz.io/admin/system/models\r\n')
         guide = (ROOT / 'scripts/windows/portableQuickStart.txt').read_text(encoding='utf-8')
         (app / '先看我.txt').write_text(guide.replace('\n', '\r\n'), encoding='utf-8-sig', newline='')
         # The whitelist above deliberately excludes source trees, environment files, keys and profiles.
-        manifest = {'version': app_version, 'createdAt': datetime.now().astimezone().isoformat(), 'gitCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'electron': VERSION, 'embeddedNode': '24.22.1', 'architecture': 'win32-x64', 'runtimeArchiveSha256': RUNTIME_SHA256, 'signed': False, 'windowsPhysicalValidation': False, 'files': {str(path.relative_to(app)): digest(path) for path in sorted(app.rglob('*')) if path.is_file()}}
+        manifest = {'version': app_version, 'createdAt': datetime.now().astimezone().isoformat(), 'gitCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'electron': VERSION, 'embeddedNode': '24.22.1', 'architecture': 'win32-x64', 'runtimeArchiveSha256': RUNTIME_SHA256, 'audioProvider': 'OpenVINO', 'audioDevice': 'GPU.0', 'signed': False, 'windowsPhysicalValidation': False, 'files': {str(path.relative_to(app)): digest(path) for path in sorted(app.rglob('*')) if path.is_file()}}
         (app / 'PACKAGE-MANIFEST.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
         with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=5) as target:
             for path in sorted(app.rglob('*')):
@@ -87,5 +114,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runtime-zip', type=Path, required=True)
     parser.add_argument('--output-dir', type=Path, default=Path('/tmp'))
+    parser.add_argument('--audio-runtime-dir', type=Path, required=True)
+    parser.add_argument('--reference', type=Path, required=True, help='Independent ONNX spectral qualification fixture')
     arguments = parser.parse_args()
-    package(arguments.runtime_zip, arguments.output_dir)
+    package(arguments.runtime_zip, arguments.output_dir, arguments.audio_runtime_dir, arguments.reference)

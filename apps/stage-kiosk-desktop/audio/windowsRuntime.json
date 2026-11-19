@@ -1,0 +1,77 @@
+{
+  "python": {
+    "version": "3.13.17",
+    "url": "https://www.python.org/ftp/python/3.13.17/python-3.13.17-embed-amd64.zip",
+    "sha256": "9e35319bffedab8b36ad44d8f377cb4f1733bcec257a0b6d04d94f01486ddb38",
+    "bytes": 11441267
+  },
+  "wheels": [
+    {
+      "file": "numpy-2.5.5-cp313-cp313-win_amd64.whl",
+      "sha256": "e0608d1585557b68dcb6a70a41654f7536567960afad79d91752d2863b242b68",
+      "url": "https://files.pythonhosted.org/packages/45/74/bb9161943fb65caf24e4bb04c788f5c7815e6cb78ac595e7f46781033c82/numpy-2.5.5-cp313-cp313-win_amd64.whl"
+    },
+    {
+      "file": "pywebrtc_audio-0.2.0-cp313-cp313-win_amd64.whl",
+      "sha256": "346f57a3e06e164fa9e8298c7ecb91d19333618e29a0ff6d972ac4c46a970a9d",
+      "url": "https://files.pythonhosted.org/packages/89/1e/ff2d90d0450bb2c117f314c946b4a780ff80e65d98d7e760bb4a8d627b22/pywebrtc_audio-0.2.0-cp313-cp313-win_amd64.whl"
+    },
+    {
+      "file": "scipy-1.18.1-cp313-cp313-win_amd64.whl",
+      "sha256": "559ed65f60c1af5a03f3912605a1b5114f522c7c32fb23c3376ae8f03219fe28",
+      "url": "https://files.pythonhosted.org/packages/93/0e/e0348fbc0dbab65c114cf78957e7dfeb49f8e8b556b4d930cc12ff195e18/scipy-1.18.1-cp313-cp313-win_amd64.whl"
+    },
+    {
+      "file": "webrtcvad_wheels-2.0.14.post1-cp313-cp313-win_amd64.whl",
+      "sha256": "ffbe00c93e2b03ee511c7fad29c4d92ec17cd33bc181c55636334079252b633f",
+      "url": "https://files.pythonhosted.org/packages/5c/cc/a952cbd2980618b3d238cd34227ae99df1a7c78e47f44fd50c592fe654f3/webrtcvad_wheels-2.0.14.post1-cp313-cp313-win_amd64.whl"
+    },
+    {
+      "file": "openvino-2026.4.1-22982-cp313-cp313-win_amd64.whl",
+      "sha256": "37c270c99d6de23439965e97cb5106389d3c8985f3b8bb90909a6ea0270db3f2",
+      "url": "https://files.pythonhosted.org/packages/35/e2/917952cd8d21351d10bf0ce694421de92a2b14a6269f0ba13d2504fcf6a9/openvino-2026.4.1-22982-cp313-cp313-win_amd64.whl"
+    },
+    {
+      "file": "openvino_telemetry-2025.2.0-py3-none-any.whl",
+      "sha256": "bcb667e83a44f202ecf4cfa49281715c6d7e21499daec04ff853b7f964833599",
+      "url": "https://files.pythonhosted.org/packages/3b/ac/5ab0ca0aa269ad3c73f7bfc3801b10e5f56f75a31bf68c1ae8bd51cf70a4/openvino_telemetry-2025.2.0-py3-none-any.whl"
+    },
+    {
+      "file": "sounddevice-0.5.6-py3-none-win_amd64.whl",
+      "sha256": "7f4162f514f007b0bf25a3ccfed3f1705bc2ec311888a90232729eec4f57a4f4",
+      "url": "https://files.pythonhosted.org/packages/8d/3e/cbc593c31a5f0d817b3fe97e64aa8461bd0f55cb07b67ce1b776296ae336/sounddevice-0.5.6-py3-none-win_amd64.whl"
+    },
+    {
+      "file": "cffi-2.1.1-cp313-cp313-win_amd64.whl",
+      "sha256": "1aa5645c30469b09530c4ebca77ebf8f17618293c58f8549cb1a543a50236e7d",
+      "url": "https://files.pythonhosted.org/packages/60/a6/8b149b2c3f2e11aaa1618ef64500b45f50f22c57a977a4dff1aff1f91042/cffi-2.1.1-cp313-cp313-win_amd64.whl"
+    },
+    {
+      "file": "pycparser-3.12-py3-none-any.whl",
+      "sha256": "a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e",
+      "url": "https://files.pythonhosted.org/packages/b6/ae/315bbeee126a769cbde43cf4908acb4b40408d8bf8bbf334dd7368d8dadf/pycparser-3.12-py3-none-any.whl"
+    }
+  ],
+  "modelSha256": "c01acec2b279802f4df99d9470624c70b0b4f0d03ecbd77fbbbc0361216e49f5",
+  "visualCpp": {
+    "url": "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+    "resolvedUrl": "https://download.visualstudio.microsoft.com/download/pr/e9604e21-4b79-4096-a4b3-1b63d4b55b4d/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
+    "sha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
+    "bytes": 25635768,
+    "attachedCabOffset": 686152,
+    "attachedCabSha256": "468f1264d50b9e3b9d309ab9e13c02ff379fd95a2837383bf65c9616583013d6",
+    "minimumCab": "a12",
+    "version": "14.44.35211",
+    "files": {
+      "msvcp140.dll": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
+      "msvcp140_1.dll": "bfad5aef4c63a669e3c140655cdfdf395b6c979b400a447bd5dcb65ed8826c3d",
+      "msvcp140_2.dll": "3ea06f0ee098b4823cb79599df3780e7f23cce52c19aac31d2a0d47efe33a5e9",
+      "msvcp140_atomic_wait.dll": "640b2aefced484d0368eea5bdd06addd0658a3a70a49256e560d6923b404a479",
+      "msvcp140_codecvt_ids.dll": "f2069a52880ec885ee7f0511186100eb7fada0411a2b4948fafea7735b878a18",
+      "concrt140.dll": "2405355f0a58067b258f8df33c327e3a3d716eaac5a3a5aebb757842d85bd376",
+      "vcomp140.dll": "55aba23cdcd6484fbb06f4155b8ca75adfce7a881f10afd0c49457165e677164"
+    },
+    "licenseSource": "u10",
+    "licenseSha256": "28f63bad9c2960395106011761993049546607f8a850d344d6a54042176bf03f"
+  }
+}
