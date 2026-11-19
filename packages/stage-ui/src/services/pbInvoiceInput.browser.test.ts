@@ -49,6 +49,38 @@ it('rejects invalid input locally and leaves phone/email untouched', () => {
   expect(document.querySelector<HTMLInputElement>('#email')!.value).toBe('')
 })
 
+// Report: this chat, Nov18 — selecting an invoice method must accept the next scan without an extra field click.
+it.each([false, true])('moves from contact editing to the newly selected scanner field once (deferred render: %s)', async (deferred) => {
+  const { field, submit } = setup()
+  const radio = document.querySelector<HTMLInputElement>('input[type="radio"]')!
+  radio.checked = false
+  field.hidden = true
+  const phone = document.querySelector<HTMLInputElement>('#phone')!
+  phone.focus()
+  radio.addEventListener('change', () => {
+    if (deferred) {
+      field.remove()
+      queueMicrotask(() => {
+        field.hidden = false
+        radio.closest('label')!.append(field)
+      })
+    }
+    else {
+      field.hidden = false
+    }
+  })
+  // PB selects through the label's native click; the previously edited contact
+  // can retain DOM focus until the newly rendered invoice field takes ownership.
+  radio.closest('label')!.click()
+  await vi.waitFor(() => expect(document.activeElement).toBe(field))
+  expect(input!.pending()).toBe(true)
+  phone.focus()
+  document.querySelector('form')!.insertAdjacentHTML('beforeend', '<span>其他更新</span>')
+  await Promise.resolve()
+  expect(document.activeElement).toBe(phone)
+  expect(submit).not.toHaveBeenCalled()
+})
+
 it('revokes ownership on blur, reset or navigation without repeatedly stealing focus', async () => {
   const { field } = setup()
   field.value = '/AB12345'

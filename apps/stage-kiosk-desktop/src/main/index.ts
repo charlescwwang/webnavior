@@ -6,10 +6,15 @@ import { dirname, resolve } from 'node:path'
 import { defineInvokeHandler } from '@moeru/eventa'
 import { createContext } from '@moeru/eventa/adapters/electron/main'
 import { errorMessageFrom } from '@moeru/std'
+import { arrayInputControlSchema, invokeArrayInput } from '@proj-airi/stage-shared/kiosk-array-input'
 import { desktopServiceRequestSchema, desktopSurfaceActivity, desktopSurfaceNavigation, desktopSurfaceRequestSchema, invokeDesktopService, updateDesktopSurface } from '@proj-airi/stage-shared/kiosk-desktop'
+import { invokeNativeAudio, nativeAudioRequestSchema } from '@proj-airi/stage-shared/kiosk-native-audio'
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { parse } from 'valibot'
 
+import { ArrayInput } from './arrayInput'
+import { Diagnostics } from './diagnostics'
+import { NativeAudio } from './nativeAudio'
 import { isHostClipboardWrite, isHostMediaRequest, isHostPage, parsePageUrl } from './policy'
 import { defaultConnections, readPortableSettings } from './portableSettings'
 import { ServiceSurface } from './surface'
@@ -96,6 +101,8 @@ async function start() {
     },
   })
   const textConsole = new TextConsoleWindow(window, entry)
+  const diagnostics = new Diagnostics(resolve(app.getPath('userData'), 'diagnostics'), () => app.getAppMetrics())
+  diagnostics.observe(window.webContents, 'host')
   // Check and request callbacks share one policy. OS consent and the Kiosk's
   // device/profile controls still decide whether capture can actually start.
   const hostSession = window.webContents.session
@@ -112,7 +119,44 @@ async function start() {
       event.preventDefault()
   })
   const transport = createContext(ipcMain, window, { onlySameWindow: true, messageEventName: 'airi-kiosk-desktop', pushEventName: 'airi-kiosk-desktop-push', errorEventName: 'airi-kiosk-desktop-error' })
-  const surface = new ServiceSurface(window, activity => transport.context.emit(desktopSurfaceActivity, activity), await readFile(resolve(import.meta.dirname, '../service/pb.js'), 'utf8'), navigation => transport.context.emit(desktopSurfaceNavigation, navigation))
+  const audioDirectory = app.isPackaged ? resolve(process.resourcesPath, 'audio') : resolve(app.getAppPath(), 'audio')
+  const createAudio = (captureOnly = false) => new NativeAudio({
+    captureOnly,
+    executable: app.isPackaged ? resolve(audioDirectory, 'python/python.exe') : process.env.KIOSK_AUDIO_PYTHON ?? resolve(audioDirectory, '.venv/bin/python'),
+    entry: resolve(audioDirectory, 'src/entry.py'),
+    model: resolve(audioDirectory, 'models/ulunas_stream.onnx'),
+    stateDirectory: resolve(app.getPath('userData'), 'audio'),
+    provider: !app.isPackaged && process.env.KIOSK_AUDIO_PROVIDER === 'cpu' ? 'cpu' : 'openvino',
+  })
+  let audio = createAudio()
+  const arrayInput = new ArrayInput(window.webContents, () => createAudio(true))
+  defineInvokeHandler(transport.context, invokeArrayInput, async (input, options) => {
+    const event = options?.raw?.ipcMainEvent
+    if (event?.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !isHostPage(event.senderFrame.url, entry))
+      throw new Error('Native array input belongs only to the trusted Kiosk main frame.')
+    const request = parse(arrayInputControlSchema, input)
+    if (request.kind === 'devices')
+      return arrayInput.devices()
+    if (request.kind === 'disconnect')
+      return arrayInput.disconnect(request.generation)
+    const finish = diagnostics.operation('array-input-connect')
+    try {
+      return await arrayInput.connect(request.generation, request.inputDevice)
+    }
+    finally { finish() }
+  })
+  defineInvokeHandler(transport.context, invokeNativeAudio, async (request, options) => {
+    const event = options?.raw?.ipcMainEvent
+    if (event?.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !isHostPage(event.senderFrame.url, entry))
+      throw new Error('Native audio belongs only to the trusted Kiosk main frame.')
+    const input = parse(nativeAudioRequestSchema, request)
+    const finish = ['status', 'start', 'open'].includes(input.kind) ? diagnostics.operation(`native-audio-${input.kind}`) : undefined
+    try {
+      return await audio.request(input)
+    }
+    finally { finish?.() }
+  })
+  const surface = new ServiceSurface(window, activity => transport.context.emit(desktopSurfaceActivity, activity), await readFile(resolve(import.meta.dirname, '../service/pb.js'), 'utf8'), navigation => transport.context.emit(desktopSurfaceNavigation, navigation), diagnostics)
   defineInvokeHandler(transport.context, updateDesktopSurface, (request, options) => {
     const event = options?.raw?.ipcMainEvent
     // onlySameWindow filters replies, not inbound handler admission. Check the actual sender/frame.
@@ -135,8 +179,12 @@ async function start() {
       event.preventDefault()
   })
   window.webContents.on('did-start-navigation', (event) => {
-    if (event.isMainFrame && !event.isSameDocument)
+    if (event.isMainFrame && !event.isSameDocument) {
+      arrayInput.dispose()
+      audio.dispose()
+      audio = createAudio()
       surface.resetHost()
+    }
   })
   window.webContents.on('did-navigate', () => {
     // Old pagehide cleanup can arrive after navigation starts with the retiring
@@ -144,11 +192,14 @@ async function start() {
     surface.resetHost()
   })
   window.on('close', () => {
+    arrayInput.dispose()
+    audio.dispose()
     hostSession.setPermissionCheckHandler(() => false)
     hostSession.setPermissionRequestHandler((_contents, _permission, reply) => reply(false))
     transport.dispose()
     textConsole.dispose()
     surface.dispose()
+    void diagnostics.dispose()
   })
   app.on('second-instance', () => {
     window.restore()

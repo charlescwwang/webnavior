@@ -11,7 +11,7 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-function setup(read: () => Promise<readonly string[]> = async () => ['櫃台取餐', 'A1 桌', 'B1 吧檯']) {
+function setup(read: () => Promise<readonly string[]> = async () => ['櫃台取餐', 'A1 桌', 'B1 吧檯'], options = ['櫃台取餐', 'A1 桌', 'B1 吧檯']) {
   history.replaceState({}, '', tablePath)
   document.body.innerHTML = '<div class="table-row__select"><input role="combobox" aria-controls="tables" aria-expanded="false"><div class="el-select__placeholder">櫃台取餐</div></div><button id="start">開始點餐</button><ul id="other"><li role="option">A1 桌</li></ul>'
   const start = vi.fn()
@@ -22,7 +22,7 @@ function setup(read: () => Promise<readonly string[]> = async () => ['櫃台取�
     control.setAttribute('aria-expanded', 'true')
     const list = document.createElement('ul')
     list.id = 'tables'
-    for (const name of ['櫃台取餐', 'A1 桌', 'B1 吧檯']) {
+    for (const name of options) {
       const option = document.createElement('li')
       option.setAttribute('role', 'option')
       option.textContent = name
@@ -39,6 +39,22 @@ function setup(read: () => Promise<readonly string[]> = async () => ['櫃台取�
   picker = installTablePicker(tablePath, read)
   return { start, chosen, control }
 }
+
+// Report: this chat, Nov19 — preserve the merchant's separate A3 sub-tables
+// through both real enhancement button taps and spoken-name resolution.
+it('selects A3-1 and A3-2 as separate real dropdown options without pressing Start', async () => {
+  const names = ['櫃台取餐', 'A3 桌', 'A3-1 桌', 'A3-2 桌']
+  const { chosen, start } = setup(async () => names, names)
+  await picker!.choices()
+  const shadow = document.querySelector('[data-webnavior-table-picker]')!.shadowRoot!
+  const button = Array.from(shadow.querySelectorAll('button')).find(button => button.textContent === 'A3-1 桌')!
+  button.click()
+  await expect.poll(() => chosen.mock.calls).toEqual([['A3-1 桌']])
+  await expect.poll(() => picker!.selection()).toBe('A3-1 桌')
+  expect(await picker!.choose('A3-2')).toBe('A3-2 桌')
+  expect(chosen.mock.calls).toEqual([['A3-1 桌'], ['A3-2 桌']])
+  expect(start).not.toHaveBeenCalled()
+})
 
 it('shows real table names and the current website default without starting automatically', async () => {
   setup()

@@ -11,6 +11,7 @@ import { describePbMeal, pbProductName } from '@proj-airi/stage-shared/pb-menu-p
 import { browserPresentationInputSchema, browserRecommendationLimit } from '@proj-airi/stage-shared/product-presentation'
 import { array, boolean, integer, isValiError, literal, looseObject, maxLength, maxValue, minLength, minValue, nullable, number, optional, parse, picklist, pipe, safeParse, strictObject, string, unknown } from 'valibot'
 
+import { orderingMessages } from '../../../i18n/src/orderingMessages'
 import { createCartOperations, describeCartLines, readCartPage, verifyCartRowEdit } from './pbCart'
 import { readCatalog as collectCatalog } from './pbCatalog'
 import { createCheckout } from './pbCheckout'
@@ -103,7 +104,7 @@ export function createPbService() {
   let activeVisual: AbortController | undefined
   for (const eventName of ['pointerdown', 'keydown', 'wheel']) {
     document.addEventListener(eventName, (event) => {
-      if (event.isTrusted && !presentation.isCovered() && !invoiceInput.owns(event)) {
+      if (event.isTrusted && !invoiceInput.owns(event)) {
         // Scrolling cancels the visual cue but changes no cart data. Checkout
         // field editing is likewise excluded above; form values are separately
         // fingerprinted before the final submission ticket can be consumed.
@@ -126,6 +127,7 @@ export function createPbService() {
   // explicit in the model schema so an otherwise valid plan cannot mix them.
   const cartVersion = { type: 'string', description: 'Copy cart.version exactly from the latest browser_cart_get result. Never use selection.version or a product configuration version here.' }
   const tools: ToolDescriptor[] = [
+    { name: 'browser_reception_reset', description: 'Host-only explicit staff initialization. Retires local operation warnings and consent; never reads, clears, submits or cancels a PB order/cart/payment. Reload the configured entry afterwards.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
     { name: 'browser_checkout_prepare', description: 'Read actual invoice/notification fields and prepare one expiring confirmation. No submission.', inputSchema: { type: 'object', properties: { focus: { type: 'string', enum: ['invoice', 'next'] } }, required: [], additionalProperties: false } },
     { name: 'browser_invoice_select', description: 'Select one actually offered native invoice method. No order submission.', inputSchema: { type: 'object', properties: { method: { type: 'string', enum: ['none', 'carrier', 'citizen', 'tax', 'donation'] } }, required: ['method'], additionalProperties: false } },
     { name: 'browser_notification_phone', description: 'Fill only the notification phone draft. No invoice carrier, email, submission or payment.', inputSchema: { type: 'object', properties: { phone: { type: 'string', pattern: '^\\d{10,15}$' } }, required: ['phone'], additionalProperties: false } },
@@ -134,7 +136,7 @@ export function createPbService() {
     ...(tablePicker
       ? [
           { name: 'browser_table_select', description: 'Select exactly one currently offered dining table by name. Selection only; use browser_start_ordering when the customer asks to enter the menu. Never infer a customer choice from the initial website default.', inputSchema: { type: 'object', properties: { name: { type: 'string', maxLength: 200 } }, required: ['name'], additionalProperties: false } },
-          { name: 'browser_start_ordering', description: 'Select the customer-specified table and press the actual Start ordering button to enter its menu. name must be a current tableChoices name explicitly requested by the customer or the verified selectedTable. Ask which table if neither exists. forReset is only for Host reception cleanup behind its cover. This does not add food, submit an order or pay. New navigation must read back the table/cart before ordering.', inputSchema: { type: 'object', properties: { name: { type: 'string', maxLength: 200 }, forReset: { type: 'boolean' } }, required: ['name'], additionalProperties: false } },
+          { name: 'browser_start_ordering', description: 'Select the customer-specified table and press the actual Start ordering button to enter its menu. name must be a current tableChoices name explicitly requested by the customer or the verified selectedTable. Ask which table if neither exists. forReset is only for explicit Host reception cleanup while the website stays visible. This does not add food, submit an order or pay. New navigation must read back the table/cart before ordering.', inputSchema: { type: 'object', properties: { name: { type: 'string', maxLength: 200 }, forReset: { type: 'boolean' } }, required: ['name'], additionalProperties: false } },
         ]
       : []),
     { name: 'browser_present', description: 'Present exact current catalog refs, never cart quantities or subtotal. Default mode=recommendation presents at most three in the supplied ranking order; use it for named selections and ordinary recommendations. other-recommendations requests a different batch and shares the three-item limit; only that mode permits Host exclusion of the last introduced batch. mode=information is only for explicit named comparisons/menu information and allows up to ten. The full requested ref list is validated first; limiting is not evidence of absent products. If the prior search hides any selected product, clears the native search and verifies ALL selected cards before speaking. [] cancels visuals only; browser_search query="" clears the search. Never changes cart. Explicit presentation may return to the menu; preservePage=true keeps both the page and search unchanged.', inputSchema: { type: 'object', properties: { preservePage: { type: 'boolean', description: 'Host speech cue only: keep the current page and search unchanged; skip framing if the cards are not already visible.' }, deferVisual: { type: 'boolean', description: 'Host reserves validated dishes for reply-time cues; no frame or scroll until speech or visible reply starts.' }, productRefs: { type: 'array', items: { type: 'string' }, maxItems: 100 }, mode: { type: 'string', enum: ['recommendation', 'other-recommendations', 'information'], description: 'Defaults to recommendation (three). other-recommendations is only for explicitly requesting a different recommendation batch. Information is only for explicit customer-requested comparisons or factual lists.' } }, required: ['productRefs'], additionalProperties: false }, annotations: { readOnlyHint: true } },
@@ -387,35 +389,45 @@ export function createPbService() {
     remove: (ref, onDispatch, equivalentRefs) => editLine(ref, undefined, onDispatch, equivalentRefs),
   })
 
-  /** A retired cart write can be discarded explicitly, never replayed or mistaken for a pending submission. */
+  /** Explicit reception reset may discard the editable draft after accepted calls settle; it never replays submission. */
   function canResetCart(operationId?: string) {
     const marker = localStorage.getItem(blockedKey)
-    // Add/edit markers are UUIDs. `order:` and `reset:` remain barriers after
-    // reload: neither a late submission nor a late clear may be replayed.
-    // Only a different, retired document's cart marker may be reconciled by
-    // clear + fresh readback. Current-document uncertain writes stay blocked.
-    const retiredCart = marker !== null && marker !== writeMarker && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(marker)
-    return (!marker || retiredCart) && cartOperations.canRecover()
+    // These markers block ordinary ordering and automatic recovery. An
+    // explicit Restart has different authority: clear only the current editable
+    // draft, verify it empty, then retire the previous warning into the old
+    // reception's audit event. Result/payment pages expose no reset tool.
+    const knownMarker = marker !== null && /^(?:order:|reset:)?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(marker)
+    return (!marker || knownMarker) && cartOperations.canRecover()
       && ![...(active?.operations.entries() ?? [])].some(([id, operation]) => id !== operationId && operation.name !== 'browser_recovery_context' && operation.status === 'pending')
   }
 
   /** Reads live site state without navigation; account fields never leave this document. */
   async function recoveryContext() {
-    const [products, cart] = await Promise.all([readCatalog(), readCart()])
-    // Re-read only: an earlier add/edit can have committed before its readback
-    // failed. Clear this document's cart marker only after the coordinator
-    // proves the entire expected result. Submission/reset markers never qualify.
-    if (writeMarker && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(writeMarker)
-      && localStorage.getItem(blockedKey) === writeMarker && cartOperations.verifyPending(cart)) {
-      localStorage.removeItem(blockedKey)
-      writeMarker = undefined
+    const atTable = location.pathname === journey.tablePath
+    let state: unknown
+    if (atTable) {
+      // PB can require Start before its cart endpoint exists. Table admission
+      // may authorize that one non-commerce transition, but proves no empty
+      // cart and grants no retry of the old demand.
+      state = { manualRevision, table: tablePicker?.selection(), page: 'table' }
     }
-    // Equality evidence covers options/prices and pickup as well as the cart.
-    // It is a local observation digest, never a vendor revision or write receipt.
-    const state = { manualRevision, products, cart, visible: observe(true) }
+    else {
+      const [products, cart] = await Promise.all([readCatalog(), readCart()])
+      // Re-read only: an earlier add/edit can have committed before its readback
+      // failed. Clear this document's cart marker only after the coordinator
+      // proves the entire expected result. Submission/reset markers never qualify.
+      if (writeMarker && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(writeMarker)
+        && localStorage.getItem(blockedKey) === writeMarker && cartOperations.verifyPending(cart)) {
+        localStorage.removeItem(blockedKey)
+        writeMarker = undefined
+      }
+      // Equality evidence covers options/prices and pickup as well as the cart.
+      // It is a local observation digest, never a vendor revision or write receipt.
+      state = { manualRevision, products, cart, visible: observe(true) }
+    }
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(state)))
     const contextKey = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
-    const canRetry = !localStorage.getItem(blockedKey) && cartOperations.canRecover() && ![...(active?.operations.values() ?? [])].some(operation => operation.name !== 'browser_recovery_context' && operation.status === 'pending')
+    const canRetry = !atTable && !localStorage.getItem(blockedKey) && cartOperations.canRecover() && ![...(active?.operations.values() ?? [])].some(operation => operation.name !== 'browser_recovery_context' && operation.status === 'pending')
     const marker = localStorage.getItem(blockedKey)
     let blockedBy: 'order' | 'reset' | 'cart' | 'operation' | undefined
     if (marker?.startsWith('order:'))
@@ -424,7 +436,7 @@ export function createPbService() {
       blockedBy = 'reset'
     else if (marker || !cartOperations.canRecover())
       blockedBy = 'cart'
-    else if (!canRetry)
+    else if (!canRetry && !atTable)
       blockedBy = 'operation'
     return { source: 'browser', documentId, contextKey, canRetry, canReset: canResetCart(), ...(blockedBy ? { blockedBy } : {}) }
   }
@@ -499,16 +511,15 @@ export function createPbService() {
     activeVisual = controller
     if (admittedControlRevision !== controlRevision)
       controller.abort()
-    // Host hides the vendor view while retiring a reception. Only its private
-    // reset may operate behind that cover; ordinary customer actions still
-    // require visibility. Document binding, cancellation, target checks and
-    // merchant readback remain mandatory for both paths.
+    // Reception reset stays visible. It may also finish while explicit Host
+    // settings own visibility; document binding, cancellation, target checks
+    // and merchant readback remain mandatory.
     const operation = createOperation({ documentId, operationId, signal: controller.signal, allowHidden: name === 'browser_customer_reset', follow: async (target, label, dispatch, prepare) => {
       if (name === 'browser_customer_reset') {
         invoiceInput.reset()
         checkout.reset()
-        // Reception maintenance runs behind a loading cover. Skip illustrative
-        // travel/dwell only; dispatch still performs all ownership,
+        // Reset stays visible and skips illustrative travel/dwell only;
+        // dispatch still performs all ownership,
         // hit-target and fresh-cart checks, then verifies the actual effect.
         target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
         await dispatch()
@@ -522,9 +533,7 @@ export function createPbService() {
     } })
 
     try {
-      const result = name === 'browser_customer_reset'
-        ? await presentation.cover(executeAction)
-        : await executeAction()
+      const result = await executeAction()
       return { ...result, execution: operation.snapshot() }
     }
     catch (error) {
@@ -732,8 +741,18 @@ export function createPbService() {
         return { ok: true, source: 'browser', dataOnly: true, products, cart: await cartOperations.observe() }
       }
       else if (['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'].includes(name)) {
-        if (localStorage.getItem(blockedKey))
-          return { ok: false, source: 'browser', status: 'unknown', customerMessage: '先前購物車操作的結果尚未確認，請先確認購物車；已暫停新的代操作。' }
+        const previousMarker = localStorage.getItem(blockedKey)
+        if (previousMarker) {
+          let blockedBy: 'order' | 'reset' | 'cart' = 'cart'
+          if (previousMarker.startsWith('order:'))
+            blockedBy = 'order'
+          else if (previousMarker.startsWith('reset:'))
+            blockedBy = 'reset'
+          // The earlier operation remains unconfirmed. This request has not
+          // entered any vendor step, so its own effect is definitively none.
+          // Do not erase the persisted marker or turn this refusal into a retry.
+          return { ok: false, source: 'browser', status: 'rejected', effect: 'none', code: 'previous-operation-unconfirmed', blockedBy, customerMessage: orderingMessages['zh-Hant'].previousOperation[blockedBy] }
+        }
         const fields = name === 'browser_cart_replace'
           ? parse(strictObject({ version: text, lineRef: text, lineRefs: optional(pipe(array(text), minLength(1), maxLength(2_000))), retainQuantity: optional(pipe(number(), integer(), minValue(0), maxValue(197999))), productRef: text, quantity, unitPrice: pipe(number(), minValue(0)), note: text, selection: selectionSchema }), input)
           : name === 'browser_cart_add'
@@ -791,11 +810,12 @@ export function createPbService() {
         parse(strictObject({}), input)
         if (!canResetCart(operationId))
           throw new Error('先前操作尚未確認，請先由工作人員查看購物車。')
-        // The customer's explicit Restart replaces the old cart intent with
-        // discard. Retain its marker through clear/readback, including failure;
-        // no previous add/edit is repeated and order markers are never adopted.
+        // Restart discards the current draft; it never repeats an old add or
+        // submission. Keep its barrier until clear/readback succeeds. The Host
+        // records the retired warning in the ending visitor's audit history.
         const priorWriteMarker = writeMarker
-        writeMarker = localStorage.getItem(blockedKey) ?? undefined
+        const previousMarker = localStorage.getItem(blockedKey)
+        writeMarker = previousMarker ?? undefined
         const cleared = await cartOperations.clear()
         if (!cleared.ok) {
           // A missing/disabled clear control dispatched nothing. Keep the old
@@ -806,12 +826,6 @@ export function createPbService() {
         }
         // Clear is verified independently from returning to the menu. If later
         // navigation fails, an empty-cart retry will not click clear a second time.
-        const remainingMarker = localStorage.getItem(blockedKey)
-        if (remainingMarker && remainingMarker !== writeMarker)
-          throw new Error('其他點餐畫面的操作仍在確認，請由工作人員查看。')
-        if (remainingMarker)
-          localStorage.removeItem(blockedKey)
-        writeMarker = undefined
         // Only PB's product draft may be closed; generic confirmations and
         // order submission controls never belong to the customer-reset flow.
         // PB puts role=dialog on el-overlay-dialog, outside .menu-dialog.
@@ -827,10 +841,26 @@ export function createPbService() {
         const after = await readCart()
         if (drafts.some(dialog => dialog.getClientRects().length > 0) || (!atTable && search?.value !== '') || after.lines.length || after.subtotal !== 0)
           throw new Error('換客期間的商品視窗或購物車尚未確認，請工作人員查看。')
+        // Keep the previous warning through the final verification so a failed
+        // reset can still be audited when the operator retries Restart.
+        const remainingMarker = localStorage.getItem(blockedKey)
+        if (remainingMarker && remainingMarker !== writeMarker)
+          throw new Error('其他點餐畫面的操作仍在確認，請由工作人員查看。')
+        if (remainingMarker)
+          localStorage.removeItem(blockedKey)
+        writeMarker = undefined
         // Revoke prior cart versions/retry digests without replacing this PB document.
         // The Host then revokes its connection and visitor consent independently.
         manualRevision++
-        return { ok: true, source: 'browser', status: 'customer-reset', cartCleared: true, documentId }
+        let retiredOperation: 'order' | 'reset' | 'cart' | undefined
+        if (previousMarker) {
+          retiredOperation = 'cart'
+          if (previousMarker.startsWith('order:'))
+            retiredOperation = 'order'
+          else if (previousMarker.startsWith('reset:'))
+            retiredOperation = 'reset'
+        }
+        return { ok: true, source: 'browser', status: 'customer-reset', cartCleared: true, documentId, ...(retiredOperation ? { retiredOperation } : {}) }
       }
       else if (name === 'browser_recovery_context') {
         parse(strictObject({}), input)
@@ -953,10 +983,34 @@ export function createPbService() {
     const request = parse(discoveryRequestSchema, raw)
     if (active?.id !== request.connectionId)
       active = { id: request.connectionId, operations: new Map() }
-    const available = isPbOrderResultUrl(entry, location.href) ? tools.filter(tool => tool.name === 'browser_state_get') : tools
+    const available = isPbOrderResultUrl(entry, location.href) ? tools.filter(tool => ['browser_state_get', 'browser_reception_reset'].includes(tool.name)) : tools
     return { ...request, documentId, toolsRevision: 1, tools: available }
   }
   function enqueue(request: InferOutput<typeof executionRequestSchema>, binding: NonNullable<typeof active>) {
+    if (request.name === 'browser_reception_reset') {
+      parse(strictObject({}), request.input)
+      // This local lifecycle command bypasses the commerce FIFO. Retire queued
+      // controls before clearing our marker; already-dispatched PB work is not
+      // cancelled or classified as successful. The Host immediately renews entry.
+      controlRevision++
+      activeVisual?.abort()
+      presentation.cancel()
+      invoiceInput.leave()
+      checkout.reset()
+      manualRevision++
+      const marker = localStorage.getItem(blockedKey)
+      let retiredOperation: 'order' | 'reset' | 'cart' | undefined
+      if (marker) {
+        retiredOperation = 'cart'
+        if (marker.startsWith('order:'))
+          retiredOperation = 'order'
+        else if (marker.startsWith('reset:'))
+          retiredOperation = 'reset'
+      }
+      localStorage.removeItem(blockedKey)
+      writeMarker = undefined
+      return Promise.resolve({ ok: true, source: 'browser', status: 'reception-reset', documentId, merchantState: 'untouched', ...(retiredOperation ? { retiredOperation } : {}) })
+    }
     const revision = presentation.revision()
     const admittedControlRevision = controlRevision
     if (request.name === 'browser_present') {

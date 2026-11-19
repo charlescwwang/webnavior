@@ -21,8 +21,8 @@ export interface KioskCustomerSessionOptions {
   activeCardId: Ref<string>
   /** Chat persistence owned by the stage host. */
   chatSession: ReturnType<typeof useChatSessionStore>
-  /** Clears or reloads the host's currently embedded interactive service. */
-  resetInteractiveSurface: () => void | Promise<void>
+  /** The reason lets hosts distinguish explicit staff initialization from automatic merchant cleanup. */
+  resetInteractiveSurface: (reason: 'completed' | 'idle' | 'staff') => void | Promise<void>
   /** Kiosk requires host-confirmed completion; both policies expire unanswered idle confirmation. */
   resetPolicy?: 'automatic' | 'confirmed-completion'
   /** Customer inactivity before the confirmation dialog; defaults to 45 seconds for Stage Web. */
@@ -211,7 +211,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
       const completedChatSessionId = standbyChatSessionId.value
 
       try {
-        await options.resetInteractiveSurface()
+        await options.resetInteractiveSurface(reason)
         standbyChatSessionId.value = await options.chatSession.createSession(
           options.activeCardId.value || 'default',
           { setActive: true, title: 'Kiosk 等候中' },

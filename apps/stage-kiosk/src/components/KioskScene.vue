@@ -3,6 +3,7 @@ import type { DeviceSettingsSnapshot, DeviceSettingsValues, KioskVoiceVadSetting
 import type { BrowserConversation } from '@proj-airi/stage-shared/browser-conversation'
 import type { FalconTiming } from '@proj-airi/stage-shared/falcon-audio'
 import type { InteractionLifecycleMessage } from '@proj-airi/stage-shared/interaction-lifecycle'
+import type { VADEvents } from '@proj-airi/stage-ui/libs/audio/vad'
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
 import type { ArrayProcessing } from '../audio/captureProtocol'
@@ -55,15 +56,14 @@ import KioskIdleDiagnostics from './KioskIdleDiagnostics.vue'
 import KioskPresenceDiagnostics from './KioskPresenceDiagnostics.vue'
 import KioskSessionNotice from './KioskSessionNotice.vue'
 import KioskVoiceDiagnostics from './KioskVoiceDiagnostics.vue'
-import OrderingPreparation from './orderingPreparation.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
 import { createArrayCapture } from '../audio/capture'
 import { InputGain } from '../audio/inputGain'
+import { createNativeCapture } from '../audio/nativeCapture'
 import { connectPlaybackReference } from '../audio/playbackReference'
 import { useFeedbackInvitationSettings } from '../composables/useFeedbackInvitationSettings'
 import { useKioskCameraPreview } from '../composables/useKioskCameraPreview'
-import { useKioskCartPreparation } from '../composables/useKioskCartPreparation'
 import { useKioskCharacterMotion } from '../composables/useKioskCharacterMotion'
 import { useKioskConversationFontSize } from '../composables/useKioskConversationFontSize'
 import { useKioskConversationProgress } from '../composables/useKioskConversationProgress'
@@ -92,7 +92,7 @@ import { createBrowserPresentation } from '../services/browserPresentation'
 import { offerCheckout } from '../services/checkoutInvitation'
 import { requestMessageId } from '../services/conversationMessages'
 import { createFalconCapture, FalconCaptureError } from '../services/falconCapture'
-import { createFixedGreetings, readGreetingPhase } from '../services/fixedGreetings'
+import { createFixedGreetings, createGreetingDelivery, readGreetingPhase } from '../services/fixedGreetings'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { createKioskVadRecording, transcribeKioskUtterance } from '../services/kiosk-audio'
 import { admitBrowserPlan, decideBrowserAnswer, decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, synthesizeKioskSpeech, transcribeFalconAudio, transcribeKioskAudio } from '../services/kiosk-device'
@@ -100,7 +100,7 @@ import { conversationDecisionStateFrom, createDecisionFeedback, createIncomplete
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
 import { applyAudioOutput } from '../services/kioskAudioOutput'
-import { BrowserRestartBlocked, createRetryContext, isKioskConversationRetrySafeTool, readConversationRetryContext, recoverConversationService, resumeConversationRetry } from '../services/kioskConversationRetry'
+import { BrowserRecoveryBlocked, BrowserRestartBlocked, createRetryContext, isKioskConversationRetrySafeTool, readConversationRetryContext, recoverConversationService, resumeConversationRetry } from '../services/kioskConversationRetry'
 import { createSpeechPlayer } from '../services/kioskSpeech'
 import { createUtteranceTiming } from '../services/kioskTiming'
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
@@ -170,20 +170,34 @@ const paused = shallowRef(false)
 const settingsAudioDeviceStore = useSettingsAudioDevice()
 const { language } = storeToRefs(useSettings())
 const fixedGreetings = createFixedGreetings(synthesizeKioskSpeech)
+const greetingDelivery = createGreetingDelivery()
 const { enabled, stream, selectedAudioInput, audioInputs } = storeToRefs(settingsAudioDeviceStore)
 const microphone = useKioskMicrophone()
+const recognition = useKioskSpeechRecognition(() => Boolean(props.device) && props.voiceConversationOnly)
 const arrayMicrophone = computed(() => microphone.isArray(audioInputs.value.find(device => device.deviceId === selectedAudioInput.value)?.label || stream.value?.getAudioTracks()[0]?.label || ''))
-watch(arrayMicrophone, (array) => {
-  settingsAudioDeviceStore.inputConstraints = array
+const nativeArrayMicrophone = computed(() => desktopHost && microphone.settings.value.inputMode !== 'standard' && microphone.nativeSelected.value)
+const nativeLcmvMicrophone = computed(() => desktopHost && microphone.usesNativeLcmv(recognition.policy.value?.mode, arrayMicrophone.value))
+const nativeHardwareMicrophone = computed(() => nativeArrayMicrophone.value || nativeLcmvMicrophone.value)
+watch([arrayMicrophone, nativeHardwareMicrophone], ([array, native]) => {
+  settingsAudioDeviceStore.browserCaptureEnabled = !native
+  settingsAudioDeviceStore.inputConstraints = array && !native
     ? { channelCount: { exact: 8 }, sampleRate: { ideal: 48000 }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     : undefined
-}, { immediate: true })
-onScopeDispose(() => settingsAudioDeviceStore.inputConstraints = undefined)
-let arrayCapture: Awaited<ReturnType<typeof createArrayCapture>> | undefined
+}, { immediate: true, flush: 'sync' })
+onScopeDispose(() => {
+  settingsAudioDeviceStore.inputConstraints = undefined
+  settingsAudioDeviceStore.browserCaptureEnabled = true
+})
+const audioInputStarted = shallowRef(false)
+const nativeIsSpeech = shallowRef(false)
+const nativeProbability = shallowRef(0)
+let arrayCapture: Awaited<ReturnType<typeof createArrayCapture>> | Awaited<ReturnType<typeof createNativeCapture>> | undefined
 const activeArrayProcessing = shallowRef<ArrayProcessing>()
 const arrayDiagnostics = shallowRef<{ inputDb: number, outputDb: number, peak: number, limitedPercent: number, lagMs: number, referenceSignalFrames: number, inputFrames: number, outputFrames: number }>()
 let arrayLevels = { inputDb: -Infinity, outputDb: -Infinity, peak: 0, limited: 0, samples: 0 }
 const arrayProcessingLabel = computed(() => {
+  if (nativeArrayMicrophone.value && audioInputStarted.value)
+    return 'GPU · RTF / MVDR'
   const processing = activeArrayProcessing.value
   if (!processing)
     return undefined
@@ -193,8 +207,7 @@ const arrayProcessingLabel = computed(() => {
 })
 let audioCaptureController: AbortController | undefined
 let audioCaptureAttempt = 0
-const recognition = useKioskSpeechRecognition(() => Boolean(props.device) && props.voiceConversationOnly)
-const falconMode = computed(() => recognition.policy.value?.mode === 'falcon')
+const falconMode = computed(() => !nativeArrayMicrophone.value && recognition.policy.value?.mode === 'falcon')
 const mouthAssistanceEnabled = computed(() => !falconMode.value && (props.deviceSettings?.mouthDetectionEnabled ?? defaultDeviceSettingsValues.mouthDetectionEnabled))
 const visualSpeechRequired = computed(() => falconMode.value || mouthAssistanceEnabled.value)
 let falconCapture = createFalconCapture(15, 3000)
@@ -286,13 +299,13 @@ const visibleProgress = computed(() => conversationProgress.value ?? (decisionSt
   : undefined))
 watch([
   () => props.device?.id,
-  () => props.greetingPhrases,
+  () => JSON.stringify(props.greetingPhrases),
   () => props.deviceSettings?.greetingEnabled,
   () => props.proactiveVlmEnabled,
   language,
   locale,
 ], () => {
-  interactionTurn.cancelProactive()
+  interactionTurn.cancelProactive('greeting-settings-changed')
   if (!props.device || !props.deviceSettings?.greetingEnabled || props.proactiveVlmEnabled) {
     void fixedGreetings.prepare(undefined)
     return
@@ -498,6 +511,13 @@ const stopToolDiagnostics = interactiveServiceClient.onExecution((event) => {
     activeServiceOperations.delete(event.operationId)
   if (!owner || owner.sessionId !== interactionRecording.visitorSessionId.value)
     return
+  if (event.phase === 'resolved' && ['browser_customer_reset', 'browser_reception_reset'].includes(event.tool.name)
+    && event.result && typeof event.result === 'object' && 'ok' in event.result && event.result.ok === true
+    && 'retiredOperation' in event.result && ['order', 'reset', 'cart'].includes(String(event.result.retiredOperation))) {
+    // append captures the ending visitor now, before customer-session cleanup
+    // closes it. This historical warning has no authority over the next visitor.
+    void interactionRecording.append('service_event', JSON.stringify({ kind: 'browser_previous_operation_retired', operationKind: event.result.retiredOperation, resolution: event.tool.name === 'browser_reception_reset' ? 'host-only-initialization' : 'explicit-reception-reset', editableCartCleared: event.tool.name === 'browser_customer_reset', documentId: event.documentId, resetOperationId: event.operationId }), { source: 'browser_previous_operation_retired' })
+  }
   if (event.phase === 'resolved' && event.result && typeof event.result === 'object'
     && 'source' in event.result && event.result.source === 'browser'
     && 'status' in event.result && event.result.status === 'unknown') {
@@ -564,52 +584,7 @@ const {
   startNewCustomerSession: resetForNewCustomer,
   state: customerSessionState,
 } = customerSession
-const cartPreparation = useKioskCartPreparation({
-  context: () => {
-    const state = customerSessionState.value
-    const documentId = interactiveServiceClient.getDocumentId()
-    const serviceUrl = scenarioRegistry.activeScenario.value?.serviceUrl
-    if (state === 'completing' || state === 'resetting' || interactiveServiceClient.availability.value !== 'ready' || !documentId || !serviceUrl)
-      return undefined
-    return { documentId, serviceUrl, receptionState: state }
-  },
-  prepare: async (context, isCurrent) => {
-    const read = interactiveServiceClient.tools.value.find(tool => tool.name === 'browser_cart_get')
-    if (!read)
-      return
-    const owner = await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
-    if (!isCurrent())
-      return
-    if (!owner)
-      throw new Error('點餐會話尚未建立，請確認連線後重新載入。')
-    await browserCartSession.prepare(owner, context.serviceUrl, input => interactiveServiceClient.execute(read, input), isCurrent)
-  },
-  onFailure: (cause, context) => {
-    console.warn('[stage-kiosk] cart preparation failed:', cause)
-    void interactionRecording.append('service_event', JSON.stringify({
-      kind: 'browser_cart_preparation_failed',
-      documentId: context.documentId,
-      error: errorMessageFrom(cause)?.slice(0, 500),
-    }), { source: 'browser_cart_preparation' })
-  },
-})
-const cartAdmissionPending = cartPreparation.pending
-const cartAdmissionFailed = cartPreparation.failed
-const cartAdmissionError = computed(() => {
-  if (cartAdmissionFailed.value)
-    return t('stage.kiosk.cart-handoff.failed')
-  if (browserCartSession.blocked.value)
-    return t('stage.kiosk.cart-handoff.required')
-  return undefined
-})
 const assistantPresence = computed<{ description: string, mode: KioskAssistantPresenceMode, title: string }>(() => {
-  if (cartAdmissionPending.value || cartAdmissionFailed.value || browserCartSession.blocked.value) {
-    return {
-      description: t('stage.kiosk.cart-handoff.preparation-guidance'),
-      mode: 'processing',
-      title: t(cartAdmissionPending.value ? 'stage.kiosk.cart-handoff.checking' : 'stage.kiosk.cart-handoff.preparation-title'),
-    }
-  }
   if (interactionTurn.phase.value === 'hearing-speech') {
     return {
       description: '你說完後，我會接著協助你。',
@@ -651,9 +626,6 @@ function rememberIdleQuestion(utteranceId: number) {
 const sessionNotice = computed(() => {
   if (customerSessionState.value === 'resetting')
     return t('stage.kiosk.restarting-order')
-  // The preparation panel already owns this explanation and action.
-  if (cartAdmissionPending.value || cartAdmissionFailed.value || browserCartSession.blocked.value)
-    return undefined
   return customerResetError.value ?? notice.value
 })
 const customerSessionButtonLabel = computed(() => (
@@ -701,6 +673,17 @@ const voicePresence = createVoicePresenceGate()
 const lastPresenceCandidate = shallowRef<Omit<PresenceCandidate, 'greetingRoiHit' | 'interactionRoiHit'>>()
 let visualEngagementProtectionStartedAtMs: number | undefined
 const presenceDiagnostics = shallowRef<{ cadenceTier: 'idle' | 'boost' | 'stable', faceActive: boolean, poseIntervalMs: number }>({ cadenceTier: 'idle', faceActive: false, poseIntervalMs: performanceSettings.value.detectionIntervalMs })
+const avatarState = shallowRef<'pending' | 'loading' | 'mounted'>('pending')
+let avatarLoadingAt = performance.now()
+watch(avatarState, (state) => {
+  if (state === 'loading') {
+    avatarLoadingAt = performance.now()
+    console.info('[webnavior-performance]', JSON.stringify({ kind: 'model', model: 'avatar', phase: 'start', durationMs: 0 }))
+  }
+  else if (state === 'mounted') {
+    console.info('[webnavior-performance]', JSON.stringify({ kind: 'model', model: 'avatar', phase: 'ready', durationMs: Math.round(performance.now() - avatarLoadingAt) }))
+  }
+})
 const localObservationRequired = computed(() => {
   // Voice admission also needs live inference in standby, including devices
   // whose greetings and reminders are disabled. No VLM request is involved.
@@ -768,8 +751,6 @@ function voiceBlockReason(): string | undefined {
     return 'preparing'
   if (customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
     return 'reception-reset'
-  if (cartAdmissionPending.value || cartAdmissionFailed.value || browserCartSession.blocked.value)
-    return 'preparing'
   if (!allowsObservedVoice(visualSpeechRequired.value))
     return 'presence-required'
 }
@@ -778,7 +759,7 @@ function allowsObservedVoice(requireVisualPresence = true) {
     return false
   if (props.device && !recognition.policy.value)
     return false
-  if (cartAdmissionPending.value || cartAdmissionFailed.value || browserCartSession.blocked.value || customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
+  if (customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
     return false
   // Proactive greetings still require observation. Ordinary speech may opt out
   // without disabling the independent camera/presence policy for greetings.
@@ -812,24 +793,14 @@ const adminVoiceTest = useKioskVoiceTest({
 })
 const processingCue = useKioskProcessingCue(
   () => speechPreparationCount.value > 0 || transcriptionCount.value > 0 || Boolean(utteranceQueueState.value.active) || utteranceQueueState.value.pending.length > 0 || Boolean(currentAgentRequest()),
-  () => paused.value || adminPanelOpen.value || serviceRecoveryBlocked.value || cartAdmissionFailed.value || browserCartSession.blocked.value || customerSessionState.value === 'completing' || customerSessionState.value === 'resetting',
+  () => paused.value || adminPanelOpen.value || serviceRecoveryBlocked.value || customerSessionState.value === 'completing' || customerSessionState.value === 'resetting',
   () => processingSpeechActive.value,
   () => transcriptionCount.value > 0 || utteranceQueueState.value.pending.length > 0,
 )
-const { dispose, inferenceError, init, loaded, start, processAudio, isSpeech, isSpeechProb } = useVAD(workletUrl, {
-  externalPCM: arrayMicrophone,
-  // Only legacy customer ASR uses visual onset admission. Falcon and the
-  // administrator's microphone test keep their existing VAD paths. A discarded
-  // tail still runs VAD until silence, but can never create a customer candidate.
-  canStartSpeech: () => falconMode.value || adminVoiceTestActive.value || discardSpeechUntilBoundary || (!voiceBlockReason() && mouthActivity.allowsStart(performance.now())),
-  threshold: computed(() => props.voiceVadSettings.threshold),
-  minSpeechDurationMs: computed(() => props.voiceVadSettings.minSpeechDurationMs),
-  maxSpeechDurationS: computed(() => falconMode.value ? recognition.policy.value!.maxUtteranceSeconds : props.voiceVadSettings.maxSpeechDurationS),
-  minSilenceDurationMs: computed(() => props.voiceVadSettings.minSilenceDurationMs),
-  // Two 10 fps visual observations can arrive after audio onset. Keep at least
-  // 400 ms of source PCM, while preserving a larger operator-configured pad.
-  speechPadMs: computed(() => falconMode.value || adminVoiceTestActive.value ? props.voiceVadSettings.speechPadMs : Math.max(400, props.voiceVadSettings.speechPadMs)),
+const voiceEvents = {
   onSpeechStart: () => {
+    if (nativeArrayMicrophone.value)
+      nativeIsSpeech.value = true
     if (discardSpeechUntilBoundary)
       return
     const blocked = adminVoiceTestActive.value ? undefined : voiceBlockReason()
@@ -856,7 +827,9 @@ const { dispose, inferenceError, init, loaded, start, processAudio, isSpeech, is
     if (!falconMode.value)
       speechInterruption.begin(activeVoiceCandidate.id)
   },
-  onSpeechProbability: (probability, timeMs) => {
+  onSpeechProbability: (probability: number, timeMs: number) => {
+    if (nativeArrayMicrophone.value)
+      nativeProbability.value = probability
     if (falconMode.value || adminVoiceTestActive.value)
       return
     const interrupt = speechInterruption.observe(activeVoiceCandidate?.id, timeMs, probability, props.voiceVadSettings.threshold, !discardSpeechUntilBoundary && !voiceBlockReason() && mouthActivity.complete(activeMouthLease, timeMs), backgroundSpeechMode.value)
@@ -867,10 +840,11 @@ const { dispose, inferenceError, init, loaded, start, processAudio, isSpeech, is
     }
   },
   onSpeechEnd: () => {
+    nativeIsSpeech.value = false
     if (captureDiagnosticId !== undefined)
       updateVoiceDiagnostic(captureDiagnosticId, { status: 'speech-end' })
   },
-  onSpeechReady: (event) => {
+  onSpeechReady: (event: VADEvents['speech-ready']) => {
     const { buffer } = event
     falconCapture.end()
     if (discardSpeechUntilBoundary) {
@@ -953,7 +927,24 @@ const { dispose, inferenceError, init, loaded, start, processAudio, isSpeech, is
     }
     void processVoiceCandidate(buffer, candidate, reservation, captureDiagnosticId, falconPacket, captureRecognitionSignal)
   },
+}
+const { dispose, inferenceError, init, loaded, start, processAudio, isSpeech: vadIsSpeech, isSpeechProb: vadProbability } = useVAD(workletUrl, {
+  externalPCM: arrayMicrophone,
+  // Only legacy customer ASR uses visual onset admission. Falcon and the
+  // administrator's microphone test keep their existing VAD paths. A discarded
+  // tail still runs VAD until silence, but can never create a customer candidate.
+  canStartSpeech: () => falconMode.value || adminVoiceTestActive.value || discardSpeechUntilBoundary || (!voiceBlockReason() && mouthActivity.allowsStart(performance.now())),
+  threshold: computed(() => props.voiceVadSettings.threshold),
+  minSpeechDurationMs: computed(() => props.voiceVadSettings.minSpeechDurationMs),
+  maxSpeechDurationS: computed(() => falconMode.value ? recognition.policy.value!.maxUtteranceSeconds : props.voiceVadSettings.maxSpeechDurationS),
+  minSilenceDurationMs: computed(() => props.voiceVadSettings.minSilenceDurationMs),
+  // Two 10 fps visual observations can arrive after audio onset. Keep at least
+  // 400 ms of source PCM, while preserving a larger operator-configured pad.
+  speechPadMs: computed(() => falconMode.value || adminVoiceTestActive.value ? props.voiceVadSettings.speechPadMs : Math.max(400, props.voiceVadSettings.speechPadMs)),
+  ...voiceEvents,
 })
+const isSpeech = computed(() => nativeArrayMicrophone.value ? nativeIsSpeech.value : vadIsSpeech.value)
+const isSpeechProb = computed(() => nativeArrayMicrophone.value ? nativeProbability.value : vadProbability.value)
 
 // Poll only while operator diagnostics are visible; samples themselves remain
 // owned by the capture/VAD path and are never retained for this snapshot.
@@ -970,24 +961,29 @@ useIntervalFn(() => {
     referenceSignalFrames: statistics.referenceSignalFrames,
     inputFrames: statistics.inputFrames,
     outputFrames: statistics.outputFrames,
+    ...('levels' in arrayCapture ? arrayCapture.levels : {}),
   }
 }, 250)
-const audioInputStarted = shallowRef(false)
-const isAudioListening = computed(() => enabled.value && audioInputStarted.value && !inferenceError.value && customerSessionState.value !== 'completing' && customerSessionState.value !== 'resetting')
+const isAudioListening = computed(() => enabled.value && audioInputStarted.value && (nativeArrayMicrophone.value || !inferenceError.value) && customerSessionState.value !== 'completing' && customerSessionState.value !== 'resetting')
 
 // Diagnostic snapshots contain lifecycle state only, never audio, images or
 // device identifiers. An existing visitor session owns each persisted snapshot.
 watch([interactionRecording.visitorSessionId, () => JSON.stringify({
   enabled: enabled.value,
   mode: recognition.policy.value?.mode,
-  processing: arrayMicrophone.value ? activeArrayProcessing.value : 'browser-vad',
-  requestedLegacyAlgorithm: arrayMicrophone.value && !falconMode.value ? microphone.algorithm.value : undefined,
+  processing: nativeArrayMicrophone.value ? 'native-rtf-mvdr-gpu' : arrayMicrophone.value ? activeArrayProcessing.value : 'browser-vad',
+  requestedLegacyAlgorithm: arrayMicrophone.value && !nativeArrayMicrophone.value && !falconMode.value ? microphone.algorithm.value : undefined,
   falconGainDb: arrayMicrophone.value && falconMode.value ? microphone.falconGainDb.value : undefined,
   policyLoaded: Boolean(recognition.policy.value),
-  vadLoaded: loaded.value,
+  vadLoaded: nativeArrayMicrophone.value ? audioInputStarted.value : loaded.value,
   listening: isAudioListening.value,
   microphoneTracks: stream.value?.getAudioTracks().map(track => ({ state: track.readyState, muted: track.muted })) ?? [],
-  error: (inferenceError.value || audioStartupError.value)?.slice(0, 300),
+  captureSource: nativeHardwareMicrophone.value ? 'portaudio' : 'browser',
+  physicalChannels: nativeHardwareMicrophone.value && audioInputStarted.value ? 8 : undefined,
+  inputFailure: nativeHardwareMicrophone.value ? undefined : settingsAudioDeviceStore.inputError,
+  inputConstraints: settingsAudioDeviceStore.inputConstraints,
+  microphonePermission: nativeHardwareMicrophone.value ? undefined : settingsAudioDeviceStore.permissionState,
+  error: ((nativeHardwareMicrophone.value ? undefined : settingsAudioDeviceStore.inputError?.message || inferenceError.value) || audioStartupError.value)?.slice(0, 300),
 })], ([sessionId, snapshot]) => {
   if (sessionId && voiceDiagnosticsEnabled.value)
     void interactionRecording.append('service_event', snapshot, { source: 'audio_runtime' })
@@ -1001,22 +997,74 @@ async function startAudioInteraction() {
   const input = stream.value
   audioStartupError.value = undefined
   try {
-    await init()
-    if (controller.signal.aborted || attempt !== audioCaptureAttempt || !input || input !== stream.value || !enabled.value || (!props.voiceConversationOnly && !adminVoiceTestActive.value))
+    if (controller.signal.aborted || attempt !== audioCaptureAttempt || (!nativeHardwareMicrophone.value && (!input || input !== stream.value)) || !enabled.value || (!props.voiceConversationOnly && !adminVoiceTestActive.value))
       return
+    if (nativeArrayMicrophone.value) {
+      const bridge = window.airiKioskAudio
+      if (!bridge)
+        throw new Error('GPU audio requires the updated Kiosk executable.')
+      const capture = await createNativeCapture(audioContext, {
+        bridge,
+        signal: controller.signal,
+        ...microphone.nativeConfiguration(),
+        silenceMs: Math.max(100, Math.min(3000, props.voiceVadSettings.minSilenceDurationMs)),
+        minSpeechMs: Math.max(20, Math.min(1000, props.voiceVadSettings.minSpeechDurationMs)),
+        ...voiceEvents,
+        onSpeechCancelled: () => {
+          nativeIsSpeech.value = false
+          nativeProbability.value = 0
+          if (activeVoiceCandidate) {
+            speechInterruption.release(activeVoiceCandidate.id)
+            interactionTurn.completeVoiceCandidate(activeVoiceCandidate)
+            activeVoiceCandidate = undefined
+          }
+          updateVoiceDiagnostic(captureDiagnosticId ?? startVoiceDiagnostic(), { status: 'ignored' })
+        },
+        onError: (reason) => {
+          if (attempt === audioCaptureAttempt) {
+            audioInputStarted.value = false
+            audioStartupError.value = reason
+            controller.abort()
+          }
+        },
+      })
+      if (controller.signal.aborted || attempt !== audioCaptureAttempt) {
+        capture.dispose()
+        return
+      }
+      arrayCapture = capture
+      audioInputStarted.value = true
+      return
+    }
+    if (!input && !nativeLcmvMicrophone.value)
+      return
+    const modelStartedAt = loaded.value ? undefined : performance.now()
+    if (modelStartedAt !== undefined)
+      console.info('[webnavior-performance]', JSON.stringify({ kind: 'model', model: 'vad', phase: 'start', durationMs: 0 }))
+    try {
+      await init()
+    }
+    finally {
+      if (modelStartedAt !== undefined)
+        console.info('[webnavior-performance]', JSON.stringify({ kind: 'model', model: 'vad', phase: loaded.value ? 'ready' : 'failed', durationMs: Math.round(performance.now() - modelStartedAt) }))
+    }
     if (!loaded.value)
       throw new Error(inferenceError.value || 'VAD initialization failed.')
     if (arrayMicrophone.value) {
-      const track = input.getAudioTracks()[0]
+      const track = input?.getAudioTracks()[0]
       const actual = track?.getSettings()
       // Browser processing must not mix the physical array before custom AEC3.
       // A pending VueUse reacquisition will trigger another startup for its stream.
-      if (!actual || actual.channelCount !== 8 || actual.echoCancellation !== false)
+      if (!nativeLcmvMicrophone.value && (!actual || actual.channelCount !== 8 || actual.echoCancellation !== false))
         throw new Error(t('stage.kiosk.array-audio.raw-unavailable'))
       const config = microphone.configuration(falconMode.value ? 'falcon' : 'legacy')
       const gain = new InputGain()
       const falconGain = new InputGain()
-      const capture = await createArrayCapture(audioContext, audioContext.createMediaStreamSource(input), {
+      const bridge = window.airiKioskArrayInput
+      if (nativeLcmvMicrophone.value && !bridge)
+        throw new Error(t('stage.kiosk.array-audio.native-update'))
+      const capture = await createArrayCapture(audioContext, nativeLcmvMicrophone.value ? undefined : audioContext.createMediaStreamSource(input!), {
+        ...(nativeLcmvMicrophone.value && bridge ? { nativeInput: { bridge, inputDevice: microphone.arrayInputDevice.value } } : {}),
         ...config,
         signal: controller.signal,
         onPcm: async (packet, endTimeMs) => {
@@ -1062,7 +1110,7 @@ async function startAudioInteraction() {
       activeArrayProcessing.value = config.processing
     }
     else {
-      await start(input)
+      await start(input!)
     }
     if (!controller.signal.aborted && attempt === audioCaptureAttempt)
       audioInputStarted.value = true
@@ -1937,7 +1985,7 @@ async function validatedQuestionReceipt(result: unknown) {
   const question = questionReceiptFrom(result)
   if (!question)
     return undefined
-  if (['browser-product-choice', 'browser-order-quantity', 'browser-order-slot', 'browser-confirm-add', 'browser-service-question'].includes(question.purpose)) {
+  if (['browser-product-choice', 'browser-order-quantity', 'browser-order-slot', 'browser-confirm-add', 'browser-service-question', 'browser-table-confirmation'].includes(question.purpose)) {
     const read = interactiveServiceClient.tools.value.find(tool => tool.name === 'browser_cart_get')
     if (!read)
       return undefined
@@ -1990,6 +2038,7 @@ function interruptAssistantOutput() {
 }
 
 function cancelReceptionWork() {
+  greetingDelivery.cancel()
   proactiveVision.resetTarget()
   mouthActivity.reset()
   mouthStartAllowed.value = false
@@ -2074,11 +2123,13 @@ const speechPlayer = createSpeechPlayer({
   },
 })
 
-async function speakAssistantReply(text: string, turn: ReturnType<typeof interactionTurn.begin>, preparedAudio?: Blob, signal = turn.signal, channel: 'progress' | 'reply' = 'reply') {
+async function speakAssistantReply(text: string, turn: ReturnType<typeof interactionTurn.begin>, preparedAudio?: Blob, signal = turn.signal, channel: 'progress' | 'reply' = 'reply'): Promise<'completed' | 'cancelled' | 'failed' | 'blocked'> {
   if (!falconMode.value && backgroundSpeechMode.value !== 'enforce' && speechInterruption.blocksPlayback())
-    return
+    return 'blocked'
+  if (turn.kind === 'proactive' && (isSpeech.value || activeVoiceCandidate || transcriptionCount.value > 0))
+    return 'blocked'
   if (customerSessionState.value === 'completing' || customerSessionState.value === 'resetting' || signal.aborted || !interactionTurn.isCurrent(turn) || (turn.kind === 'proactive' && !allowsObservedVoice()))
-    return
+    return signal.aborted ? 'cancelled' : 'blocked'
   interruptAssistantOutput()
   const stop = () => speechPlayer.stop()
   stopAssistantAudio = stop
@@ -2110,6 +2161,7 @@ async function speakAssistantReply(text: string, turn: ReturnType<typeof interac
     if (stopAssistantAudio === stop)
       stopAssistantAudio = undefined
   }
+  return outcome
 }
 
 function stopAudioInteraction() {
@@ -2126,6 +2178,8 @@ function stopAudioInteraction() {
   arrayCapture?.dispose()
   arrayCapture = undefined
   activeArrayProcessing.value = undefined
+  nativeIsSpeech.value = false
+  nativeProbability.value = 0
   arrayDiagnostics.value = undefined
   arrayLevels = { inputDb: -Infinity, outputDb: -Infinity, peak: 0, limited: 0, samples: 0 }
   falconCapture.reset()
@@ -2145,7 +2199,14 @@ watch([recognition.policy, mouthAssistanceEnabled], ([next, assisted], [previous
   stopAudioInteraction()
 }, { flush: 'sync' })
 
-watch([enabled, () => props.voiceConversationOnly, adminVoiceTestActive, () => recognition.policy.value ? `${recognition.policy.value.mode}:${recognition.policy.value.maxUtteranceSeconds}` : undefined, stream, () => JSON.stringify(microphone.settings.value), arrayMicrophone, () => arrayMicrophone.value && !falconMode.value ? JSON.stringify([microphone.algorithm.value, microphone.spatialMask.value]) : undefined, () => arrayMicrophone.value && falconMode.value ? microphone.falconGainDb.value : undefined, mouthAssistanceEnabled], async ([isEnabled, voiceConversationOnly, testing, policy]) => {
+watch(nativeHardwareMicrophone, () => {
+  // The selector already points to the new backend. Inspect both speech flags
+  // before disposing the old capture so its unfinished sentence cannot leak.
+  discardSpeechUntilBoundary = props.voiceConversationOnly && (nativeIsSpeech.value || vadIsSpeech.value)
+  stopAudioInteraction()
+}, { flush: 'sync' })
+
+watch([enabled, () => props.voiceConversationOnly, adminVoiceTestActive, () => recognition.policy.value ? `${recognition.policy.value.mode}:${recognition.policy.value.maxUtteranceSeconds}` : undefined, stream, () => JSON.stringify([microphone.settings.value, microphone.nativeSettings.value, microphone.arrayInputDevice.value]), nativeArrayMicrophone, nativeLcmvMicrophone, arrayMicrophone, () => arrayMicrophone.value && !falconMode.value ? JSON.stringify([microphone.algorithm.value, microphone.spatialMask.value]) : undefined, () => arrayMicrophone.value && falconMode.value ? microphone.falconGainDb.value : undefined, mouthAssistanceEnabled], async ([isEnabled, voiceConversationOnly, testing, policy]) => {
   if (isEnabled && ((voiceConversationOnly && (!props.device || policy)) || testing)) {
     await startAudioInteraction().catch((error) => {
       audioStartupError.value = errorMessageFrom(error) ?? 'Microphone startup failed.'
@@ -2175,6 +2236,11 @@ async function prepareMicrophone() {
 
   try {
     audioStartupError.value = undefined
+    if (nativeHardwareMicrophone.value) {
+      settingsAudioDeviceStore.stopStream()
+      enabled.value = true
+      return
+    }
     await prepareKioskMicrophonePermission({
       audioInputEnabled: enabled.value,
       requestPermission: requestMicrophonePermission,
@@ -2201,7 +2267,7 @@ async function prepareMicrophone() {
   }
 }
 
-watch([() => props.voiceConversationOnly, adminVoiceTestActive, recognition.policy], () => void prepareMicrophone(), { immediate: true })
+watch([() => props.voiceConversationOnly, adminVoiceTestActive, recognition.policy, nativeHardwareMicrophone], () => void prepareMicrophone(), { immediate: true })
 watch(recognition.error, (failed) => {
   if (failed && !recognition.policy.value) {
     initialMicrophonePermission.settle()
@@ -2212,7 +2278,7 @@ watch(recognition.error, (failed) => {
 watch(language, locale => setKioskLocale(locale), { immediate: true })
 
 watch([stream, loaded], async ([audioStream, vadLoaded]) => {
-  if (enabled.value && vadLoaded && audioStream) {
+  if (enabled.value && !nativeHardwareMicrophone.value && vadLoaded && audioStream) {
     await start(audioStream)
       .then(() => audioInputStarted.value = true)
       .catch((error) => {
@@ -2223,7 +2289,7 @@ watch([stream, loaded], async ([audioStream, vadLoaded]) => {
   }
 })
 
-watch(proactiveSettings, () => {
+watch(() => JSON.stringify(proactiveSettings.value), () => {
   voicePresence.reset()
   proactiveWindow = createInteractionWindow(proactiveSettings.value.proactiveGreeting)
   assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value.assistanceReminder)
@@ -2234,9 +2300,12 @@ watch(proactiveSettings, () => {
   presenceDecision.value = undefined
   if (customerSessionState.value === 'active')
     assistanceReminderWindow.start(performance.now())
-}, { deep: true })
+})
 
 async function syncProactiveVision() {
+  // Reactive mode changes can reach this function before onMounted's gate.
+  // Never overlap a camera prompt with acquisition of the owned microphone.
+  await initialMicrophonePermission.wait()
   if (!cameraRequired.value) {
     proactiveVision.stop()
     return
@@ -2246,10 +2315,16 @@ async function syncProactiveVision() {
     await proactiveVision.start(proactiveCamera.value)
 }
 
-watch([cameraRequired, localObservationRequired, mouthTrackingRequired, falconMode, () => props.deviceSettings], () => {
-  // Stop in-flight camera work before applying a remote policy, including a
-  // recording downgrade while observation itself remains enabled.
-  interactionTurn.cancelProactive()
+watch([cameraRequired, localObservationRequired, mouthTrackingRequired, falconMode, () => JSON.stringify([
+  props.deviceSettings?.faceDetectionConfidence,
+  props.deviceSettings?.presenceVisionMode,
+  performanceSettings.value.camera,
+  performanceSettings.value.maxFaces,
+  effectiveMediaCaptureMode.value,
+])], () => {
+  // Only camera/model/capture policy changes restart vision. Unrelated remote
+  // settings must not reset presence and cut off an already playing welcome.
+  interactionTurn.cancelProactive('vision-reconfigured')
   mediaCapture.stopContinuousCapture()
   proactiveVision.stop()
   void syncProactiveVision()
@@ -2340,8 +2415,9 @@ function handlePresenceCandidate(candidate: Omit<PresenceCandidate, 'greetingRoi
   if (!localObservationRequired.value)
     return
   voicePresence.observe(performance.now(), candidate, proactiveSettings.value.observation.detectionZone)
-  if (!allowsObservedVoice())
-    interactionTurn.cancelProactive()
+  const serviceBlocked = !allowsObservedVoice(false)
+  if (serviceBlocked || voicePresence.shouldCancelProactive({ enabled: localObservationRequired.value, observing: proactiveVision.status.value === 'observing', nowMs: performance.now() }))
+    interactionTurn.cancelProactive(serviceBlocked ? 'admission-changed' : 'presence-expired')
   lastPresenceCandidate.value = candidate
   const decision = presenceWindow.decide(performance.now(), candidate)
   presenceDecision.value = decision
@@ -2394,8 +2470,13 @@ function syncPresenceIdleSuppression(decision: ReturnType<typeof presenceWindow.
   customerSession.setPresenceIdleSuppressed(!visualProtectionExpired)
 }
 
-async function startProactiveGreeting(onStarted?: () => void) {
-  if (!allowsObservedVoice() || customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value)
+async function startProactiveGreeting(onStarted?: () => void, retry = false) {
+  const generation = receptionGeneration
+  const eligibleSession = () => retry
+    ? customerSessionState.value === 'active' && !hasCustomerActivity.value && greetingDelivery.canRetry(generation, performance.now())
+    : customerSessionState.value === 'standby'
+  const customerBusy = () => isSpeech.value || Boolean(activeVoiceCandidate) || transcriptionCount.value > 0 || Boolean(currentAgentRequest()) || Boolean(utteranceQueueState.value.active) || utteranceQueueState.value.pending.length > 0
+  if (!allowsObservedVoice() || !eligibleSession() || !interactionTurn.canProactivelySpeak.value || customerBusy())
     return
 
   // Discovery/loading failures must leave the visitor unclaimed so a later
@@ -2404,12 +2485,17 @@ async function startProactiveGreeting(onStarted?: () => void) {
     console.warn('[stage-kiosk] skipped welcome because service state is unavailable:', error)
     return undefined
   })
-  if (!allowsObservedVoice() || !phase || customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value || currentAgentRequest())
+  if (generation !== receptionGeneration || !allowsObservedVoice() || !phase || !eligibleSession() || !interactionTurn.canProactivelySpeak.value || customerBusy())
     return
 
   const frame = props.proactiveVlmEnabled ? captureProactiveCameraFrame(proactiveCamera.value) : undefined
   if (props.proactiveVlmEnabled && !frame)
     return
+  const attempt = greetingDelivery.claim(generation, performance.now())
+  if (!attempt)
+    return
+  let result: ProactiveDeliveryResult = { status: 'cancelled', reason: 'setup-cancelled' }
+  let recordingSession: string | undefined
 
   // Claim the proactive slot before asynchronous session setup. Otherwise a
   // customer utterance could start between setup awaits and be superseded by
@@ -2419,12 +2505,14 @@ async function startProactiveGreeting(onStarted?: () => void) {
     // Begin before asking the LLM so another camera frame cannot create a
     // second greeting while the selected provider is still streaming.
     visualEngagementProtectionStartedAtMs = undefined
-    await customerSession.begin()
+    if (!retry)
+      await customerSession.begin()
     syncPresenceIdleSuppression(presenceDecision.value)
     if (!interactionTurn.isCurrent(turn))
       return
     onStarted?.()
     await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
+    recordingSession = interactionRecording.visitorSessionId.value
     if (!interactionTurn.isCurrent(turn))
       return
     mediaCapture.startSessionCapture(effectiveMediaCaptureMode.value)
@@ -2437,8 +2525,8 @@ async function startProactiveGreeting(onStarted?: () => void) {
       mediaCapture.captureInteractionClip(greetingEvent?.id)
     const releasePendingWork = customerSession.beginPendingWork()
     try {
-      const delivered = await sendAssistantAction('greeting', frame, turn)
-      if (delivered)
+      result = await sendAssistantAction('greeting', frame, turn)
+      if (result.status === 'completed')
         assistanceReminderWindow.start(performance.now())
     }
     finally {
@@ -2446,20 +2534,42 @@ async function startProactiveGreeting(onStarted?: () => void) {
     }
   }
   catch (error) {
-    console.error('[stage-kiosk] failed to create proactive greeting:', error)
+    result = { status: turn.signal.aborted ? 'cancelled' : 'failed', reason: turn.signal.aborted && typeof turn.signal.reason === 'string' ? turn.signal.reason : errorMessageFrom(error) || 'greeting-failed' }
+    if (!turn.signal.aborted)
+      console.error('[stage-kiosk] failed to create proactive greeting:', error)
   }
   finally {
+    if (turn.signal.aborted && result.status !== 'completed')
+      result = { status: 'cancelled', reason: typeof turn.signal.reason === 'string' ? turn.signal.reason : 'turn-cancelled' }
+    const sameReception = generation === receptionGeneration
+    greetingDelivery.finish(attempt, result.status === 'completed' ? 'delivered' : sameReception && !hasCustomerActivity.value ? 'retry' : 'closed', performance.now())
+    // Never attach an old terminal result to a replacement visitor session.
+    if (voiceDiagnosticsEnabled.value && recordingSession && recordingSession === interactionRecording.visitorSessionId.value) {
+      void interactionRecording.append('service_event', JSON.stringify({ attemptId: attempt.id, reception: generation, retry, ...result, interruption: speechInterruption.snapshot(), presenceState: presenceDecision.value?.state, presenceCandidate: lastPresenceCandidate.value, retryPending: sameReception && greetingDelivery.canRetry(generation, performance.now() + 1500) }), { source: 'greeting_delivery' })
+    }
     if (interactionTurn.isCurrent(turn))
       interactionTurn.complete(turn)
   }
 }
 
+watch(hasCustomerActivity, (active) => {
+  if (active)
+    greetingDelivery.cancel()
+}, { flush: 'sync' })
+
+// Retries keep the same reception and re-read the live browser phase; they
+// cannot reset a cart, welcome over a question, or displace customer work.
+useIntervalFn(() => {
+  if (props.deviceSettings?.greetingEnabled && !hasCustomerActivity.value && customerSessionState.value === 'active' && interactionTurn.canProactivelySpeak.value && greetingDelivery.canRetry(receptionGeneration, performance.now()))
+    void startProactiveGreeting(undefined, true)
+}, 500)
+
 // Without observation there is no presence edge to trigger an enabled welcome.
 // Welcome once when an idle entry is admitted; never borrow Falcon's camera to
 // silently re-enable observation or welcome over an unresolved previous cart.
 let entryWelcomeRunning = false
-watch([isAudioListening, localObservationRequired, () => props.deviceSettings?.greetingEnabled, interactiveServiceClient.availability, cartAdmissionPending, cartAdmissionFailed, browserCartSession.blocked, serviceRecoveryBlocked, customerSessionState, adminPanelOpen], () => {
-  if (entryWelcomeRunning || !isAudioListening.value || localObservationRequired.value || !props.deviceSettings?.greetingEnabled || interactiveServiceClient.availability.value !== 'ready' || cartAdmissionPending.value || cartAdmissionFailed.value || browserCartSession.blocked.value || serviceRecoveryBlocked.value || customerSessionState.value !== 'standby' || adminPanelOpen.value)
+watch([isAudioListening, localObservationRequired, () => props.deviceSettings?.greetingEnabled, interactiveServiceClient.availability, serviceRecoveryBlocked, customerSessionState, adminPanelOpen], () => {
+  if (entryWelcomeRunning || !isAudioListening.value || localObservationRequired.value || !props.deviceSettings?.greetingEnabled || interactiveServiceClient.availability.value !== 'ready' || serviceRecoveryBlocked.value || customerSessionState.value !== 'standby' || adminPanelOpen.value)
     return
   entryWelcomeRunning = true
   void startProactiveGreeting().finally(() => entryWelcomeRunning = false)
@@ -2474,7 +2584,7 @@ async function recordCustomerActivity(source: 'asr_simulation' | 'manual' | 'sce
   // A real touch takes precedence over a welcome that is warming or playing.
   // Cancelling only the proactive turn preserves unrelated customer work.
   if (source === 'manual' || source === 'scenario' || source === 'completed')
-    interactionTurn.cancelProactive()
+    interactionTurn.cancelProactive('customer-activity')
   if (customerSessionState.value === 'standby')
     visualEngagementProtectionStartedAtMs = undefined
   if (lastPresenceCandidate.value) {
@@ -2500,7 +2610,7 @@ async function recordCustomerActivity(source: 'asr_simulation' | 'manual' | 'sce
 
 async function simulateAsrTranscript(text: string) {
   const transcript = text.trim()
-  if (!transcript || props.voiceConversationOnly || cartAdmissionPending.value || cartAdmissionFailed.value || browserCartSession.blocked.value || customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
+  if (!transcript || props.voiceConversationOnly || customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
     return
   // An explicit correction can replace pre-operation service recovery. Never
   // use ambient speech or this path to cancel an accepted browser mutation.
@@ -2519,60 +2629,64 @@ async function simulateAsrTranscript(text: string) {
       : undefined
 }
 
+interface ProactiveDeliveryResult {
+  status: 'completed' | 'cancelled' | 'failed' | 'blocked'
+  reason: string
+}
+
 async function sendAssistantAction(
   kind: 'greeting' | 'reminder',
   capturedFrame?: string,
   existingTurn?: ReturnType<typeof interactionTurn.begin>,
-) {
+): Promise<ProactiveDeliveryResult> {
   if (!allowsObservedVoice())
-    return false
+    return { status: 'blocked', reason: 'presence-unavailable' }
   const serviceId = scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction'
   // The effective device policy selects fixed openings or a vision request.
   // Fixed mode never captures a frame for welcome generation.
   const frame = props.proactiveVlmEnabled ? capturedFrame ?? captureProactiveCameraFrame(proactiveCamera.value) : undefined
   if (props.proactiveVlmEnabled && !frame) {
     console.warn('[stage-kiosk] skipped proactive assistant action because the camera frame is unavailable')
-    return
+    return { status: 'blocked', reason: 'camera-frame-unavailable' }
   }
   const turn = existingTurn ?? interactionTurn.begin('proactive', 'thinking')
   if (!interactionTurn.isCurrent(turn))
-    return
+    return { status: 'cancelled', reason: 'turn-cancelled' }
   conversationWorkStatus.value = kind === 'greeting' ? t('stage.kiosk.welcome.preparing') : '正在觀察現場…'
-  let delivered = false
   try {
     const phase = await readGreetingPhase(interactiveServiceClient, browserDialogue.hasPending, kind)
     if (!interactionTurn.isCurrent(turn) || !phase || currentAgentRequest())
-      return false
+      return { status: 'blocked', reason: !phase ? 'service-phase-unavailable' : 'customer-work' }
     if (kind === 'greeting' && !props.proactiveVlmEnabled) {
-      const welcome = await fixedGreetings.next(phase)
+      const welcome = await fixedGreetings.next(phase, AbortSignal.any([turn.signal, AbortSignal.timeout(10_000)]))
       if (!interactionTurn.isCurrent(turn))
-        return false
+        return { status: 'cancelled', reason: 'turn-cancelled' }
       // TTS may still be cold. Re-read browser state so late audio cannot
       // welcome over a new checkout page or an unresolved customer question.
       const latest = await readGreetingPhase(interactiveServiceClient, browserDialogue.hasPending, kind)
       if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn) || latest !== phase || currentAgentRequest())
-        return false
+        return { status: 'blocked', reason: latest !== phase ? 'service-phase-changed' : 'admission-changed' }
       await interactionRecording.append('assistant_text', welcome.text, { source: 'fixed_greeting' })
       if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn))
-        return false
+        return { status: 'blocked', reason: 'admission-changed' }
       conversationMessages.value = [...conversationMessages.value, { role: 'assistant', content: welcome.text, slices: [], tool_results: [] }]
       playTransientMotion('greeting')
       interactionTurn.advance(turn, 'speaking')
-      await speakAssistantReply(welcome.text, turn, welcome.audio)
-      return !turn.signal.aborted
+      const status = await speakAssistantReply(welcome.text, turn, welcome.audio)
+      return { status, reason: `playback-${status}` }
     }
     // Entry welcomes do not invite a meal choice before the phone decision.
     // Contextual reminders remain limited to the ordering screen.
     if (kind === 'reminder' && phase !== 'ordering')
-      return false
+      return { status: 'blocked', reason: 'service-phase-unavailable' }
     const response = await interactionRecording.runAssistantAction(serviceId, kind, frame, turn.signal, kind === 'reminder', phase)
     const answer = response?.answer
     if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn))
-      return
+      return { status: 'blocked', reason: 'admission-changed' }
     if (kind === 'greeting') {
       const latest = await readGreetingPhase(interactiveServiceClient, browserDialogue.hasPending, kind)
       if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn) || latest !== phase || currentAgentRequest())
-        return false
+        return { status: 'blocked', reason: latest !== phase ? 'service-phase-changed' : 'admission-changed' }
     }
     if (answer) {
       const invitation = questionReceiptFrom(response)
@@ -2585,8 +2699,8 @@ async function sendAssistantAction(
       if (kind === 'greeting')
         playTransientMotion('greeting')
       interactionTurn.advance(turn, 'speaking')
-      await speakAssistantReply(answer, turn)
-      delivered = !turn.signal.aborted
+      const status = await speakAssistantReply(answer, turn)
+      return { status, reason: `playback-${status}` }
     }
   }
   finally {
@@ -2595,7 +2709,7 @@ async function sendAssistantAction(
       conversationWorkStatus.value = undefined
     }
   }
-  return delivered
+  return { status: 'blocked', reason: 'empty-response' }
 }
 
 /**
@@ -3132,10 +3246,6 @@ async function recoverOrderingService(isCurrent: () => boolean = () => true) {
     await recoverConversationService(interactiveServiceClient, [agentOrderOwner.value, pendingAgentOrderOwner.value])
     if (!current())
       return
-    // A rejected cart read leaves transport ready, so reconnect alone cannot
-    // rerun admission. Only retry that read after recovery proved no pending effect.
-    if (cartAdmissionFailed.value && !await cartPreparation.retry())
-      throw new Error('購物車準備仍未完成，保留目前接待並等待再次核對。')
     if (!current())
       return
     agentOrderOwner.value = undefined
@@ -3149,15 +3259,19 @@ async function recoverOrderingService(isCurrent: () => boolean = () => true) {
   catch (error) {
     if (!current())
       return
-    conversationWorkStatus.value = t(interactiveServiceClient.availability.value === 'ready' ? 'stage.kiosk-agent.operation-unconfirmed' : 'stage.kiosk-agent.service-unavailable')
+    const blocked = error instanceof BrowserRecoveryBlocked
+    conversationWorkStatus.value = blocked ? error.message : t(interactiveServiceClient.availability.value === 'ready' ? 'stage.kiosk-agent.operation-unconfirmed' : 'stage.kiosk-agent.service-unavailable')
+    if (blocked)
+      pendingTranscript.value = error.message
+    void interactionRecording.append('service_event', JSON.stringify({ kind: 'browser_service_recovery', status: blocked ? 'operation-blocked' : 'unavailable', availability: interactiveServiceClient.availability.value, error: errorMessageFrom(error)?.slice(0, 500) }), { source: 'browser_service_recovery' }).catch(error => console.error('Failed to record browser recovery:', error))
     console.warn('[stage-kiosk] ordering recovery remains paused:', error)
   }
   finally { serviceRecovering.value = false }
 }
 
 const automaticServiceRecovery = useKioskServiceRecovery({
-  blocked: () => serviceRecoveryBlocked.value || cartAdmissionFailed.value || interactiveServiceClient.availability.value === 'unavailable',
-  busy: () => conversationSending.value || serviceRecovering.value || cartAdmissionPending.value || activeServiceOperations.size > 0,
+  blocked: () => serviceRecoveryBlocked.value || interactiveServiceClient.availability.value === 'unavailable',
+  busy: () => conversationSending.value || serviceRecovering.value || activeServiceOperations.size > 0,
   context: () => serviceRecoveryContext.value,
   recover: recoverOrderingService,
 })
@@ -3229,7 +3343,7 @@ async function restartCustomerSession() {
 }
 
 async function startOrRestartCustomerSession() {
-  if (customerSessionState.value === 'standby' && !browserCartSession.blocked.value && !cartAdmissionFailed.value) {
+  if (customerSessionState.value === 'standby' && !browserCartSession.blocked.value) {
     await recordCustomerActivity('manual')
     return
   }
@@ -3238,7 +3352,6 @@ async function startOrRestartCustomerSession() {
 
 async function recordBrowserCartResume() {
   customerResetError.value = undefined
-  cartPreparation.resetFailure()
   browserDialogue.reset()
   retryableConversationRequest.value = undefined
   await interactionRecording.append('service_event', 'browser_cart_reviewed', { source: 'staff' })
@@ -3263,7 +3376,7 @@ let stopMenuCompletionListener: (() => void) | undefined
 onMounted(() => {
   stopMenuActivityListener = scenarioRegistry.on('activity', () => void recordCustomerActivity('scenario'))
   stopMenuCompletionListener = scenarioRegistry.on('completed', message => void handleScenarioCompleted(message))
-  void initialMicrophonePermission.wait().then(syncProactiveVision)
+  void syncProactiveVision()
 })
 
 onUnmounted(() => {
@@ -3326,6 +3439,7 @@ onUnmounted(() => {
     <section :class="['service-hero', `is-${orientation}`]" :style="stageBackgroundStyle">
       <section :class="['stage-region', `is-${assistantPresence.mode}`]" aria-label="虛擬服務員">
         <WidgetStage
+          v-model:state="avatarState"
           class="stage-model"
           :cursor-position="cursorPosition"
           :enable-orbit-controls="false"
@@ -3387,7 +3501,7 @@ onUnmounted(() => {
         :output-db="arrayDiagnostics?.outputDb"
         :limited-percent="arrayDiagnostics?.limitedPercent"
         :blocked-reason="voiceBlockReason()"
-        :error="inferenceError || audioStartupError"
+        :error="settingsAudioDeviceStore.inputError?.message || inferenceError || audioStartupError"
         :target="customerTarget"
         :interruption="interruptionDiagnostic"
         :background-speech-mode="backgroundSpeechMode"
@@ -3395,17 +3509,7 @@ onUnmounted(() => {
     </section>
 
     <div v-if="desktopHost && !props.voiceConversationOnly" v-show="!textConsoleFloating" id="kiosk-text-console-dock" :class="['native-text-console']" />
-    <ScenarioSurface :presentation="productPresentation.current.value" :listening="isAudioListening" :occluded="adminPanelOpen || cartAdmissionPending || cartAdmissionFailed || browserCartSession.blocked.value" class="menu-region" @activity="!productPresentation.introducing.value && recordCustomerActivity('manual')">
-      <template #preparation>
-        <OrderingPreparation
-          v-if="cartAdmissionPending || cartAdmissionFailed || browserCartSession.blocked.value"
-          :state="cartAdmissionPending ? 'pending' : browserCartSession.blocked.value ? 'blocked' : 'failed'"
-          :message="customerResetError ?? cartAdmissionError"
-          :restart-disabled="interactiveServiceClient.availability.value !== 'ready' || activeServiceOperations.size > 0 || customerSessionState === 'resetting'"
-          @restart="restartCustomerSession"
-        />
-      </template>
-    </ScenarioSurface>
+    <ScenarioSurface :presentation="productPresentation.current.value" :listening="isAudioListening" :occluded="adminPanelOpen" :class="['menu-region']" @activity="!productPresentation.introducing.value && recordCustomerActivity('manual')" />
     <KioskAgentControl
       v-if="agentOrderOwner"
       :releasing="manualControlPending"

@@ -89,7 +89,7 @@ export function createInteractiveServiceClient() {
             failedBinding = undefined
           }
           binding = { connectionId, documentId: response.documentId, toolsRevision: response.toolsRevision }
-          tools.value = response.tools.filter(tool => !editorRetired.value || tool.name === 'browser_state_get').map(tool => ({ ...tool, origin }))
+          tools.value = response.tools.filter(tool => !editorRetired.value || ['browser_state_get', 'browser_reception_reset'].includes(tool.name)).map(tool => ({ ...tool, origin }))
           availability.value = 'ready'
           return
         }

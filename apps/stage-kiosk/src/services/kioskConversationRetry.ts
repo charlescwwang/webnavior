@@ -81,8 +81,14 @@ export async function readConversationRetryContext(client: Pick<ReturnType<typeo
   const browser = client.tools.value.find(tool => tool.name === 'browser_recovery_context')
   if (browser) {
     const state = parse(browserRecoveryContextSchema, await client.execute(browser, {}))
-    if (!state.canRetry)
-      throw new Error('Browser operations are not settled; keep retry paused.')
+    if (!state.canRetry) {
+      // A healthy transport can report an unsettled commerce operation. Keep
+      // the barrier, but do not label it as a connection failure or retry it.
+      const message = state.blockedBy === 'order'
+        ? orderingMessages['zh-Hant'].recovery.order
+        : orderingMessages['zh-Hant'].previousOperation[state.blockedBy ?? 'operation']
+      throw new BrowserRecoveryBlocked(message)
+    }
     return JSON.stringify(['browser', state.documentId, state.contextKey])
   }
   const stateTool = client.tools.value.find(tool => tool.name === 'kiosk_interaction_state')
@@ -93,6 +99,9 @@ export async function readConversationRetryContext(client: Pick<ReturnType<typeo
     throw new Error('Current retry context is unavailable.')
   return serviceContextKey(current)
 }
+
+/** A live site replied with an unresolved operation; reconnection cannot authorize replay. */
+export class BrowserRecoveryBlocked extends Error {}
 
 /**
  * Anchors retry to the beginning of one Main demand, never to a later round's
@@ -183,7 +192,17 @@ export async function resetConversationService(client: Pick<ReturnType<typeof cr
     throw new Error('Browser service does not support a verified customer reset.')
   const reader = client.tools.value.find(tool => tool.name === 'browser_cart_get')
   if (reader) {
-    const current = parse(looseObject({ ok: literal(true), page: string(), selectedTable: optional(string()), cart: looseObject({ lines: array(unknown()) }) }), await client.execute(reader, { includeCatalog: false, forAdmission: true }))
+    // forAdmission on a menu may click PB's announcement. Reset preflight is
+    // read-only; only the table route needs its private previous-cart read.
+    let raw = await client.execute(reader, { includeCatalog: false })
+    if (raw && typeof raw === 'object' && 'page' in raw && raw.page === 'table')
+      raw = await client.execute(reader, { includeCatalog: false, forAdmission: true })
+    const failure = safeParse(looseObject({ ok: literal(false), customerMessage: optional(string()) }), raw)
+    if (failure.success)
+      throw new BrowserRestartBlocked(failure.output.customerMessage ?? orderingMessages['zh-Hant'].restart.unavailable)
+    const current = parse(looseObject({ ok: literal(true), page: string(), selectedTable: optional(string()), cartAdmission: optional(string()), cart: optional(looseObject({ lines: array(unknown()) })) }), raw)
+    if (!current.cart && (current.page !== 'table' || current.cartAdmission !== 'after-table-entry'))
+      throw new Error('目前無法核對購物車，請稍後再重新開始。')
     // Inspect the barrier on both table and checkout pages before offering
     // Restart. An unknown final submission is not an ordinary leftover cart.
     const recovery = client.tools.value.find(tool => tool.name === 'browser_recovery_context')!
@@ -195,9 +214,9 @@ export async function resetConversationService(client: Pick<ReturnType<typeof cr
     if (current.page === 'table') {
       // A verified empty table cart needs no hidden Start or fake reset receipt.
       // The lifecycle still retires this visitor and reloads the table entry.
-      if (!current.cart.lines.length && state.canRetry)
+      if (current.cart?.lines.length === 0 && state.canRetry)
         return 'reload' as const
-      if (current.cart.lines.length) {
+      if (!current.cart || current.cart.lines.length) {
         const start = client.tools.value.find(tool => tool.name === 'browser_start_ordering')
         if (!start || !current.selectedTable)
           throw new Error('請先選擇桌號或櫃台取餐，才能清除未完成的購物車。')
@@ -220,9 +239,9 @@ export async function resetConversationService(client: Pick<ReturnType<typeof cr
           // A ready transport may still be the table document while PB awaits
           // its Start request. Read-only polling waits for the actual SPA route;
           // it never repeats Start or a cart effect.
-          const menu = parse(looseObject({ ok: literal(true), page: picklist(['table', 'menu']), cart: looseObject({ tableName: optional(string()) }) }), await client.execute(freshReader, { includeCatalog: false, forAdmission: true }))
+          const menu = parse(looseObject({ ok: literal(true), page: picklist(['table', 'menu']), cart: optional(looseObject({ tableName: optional(string()) })) }), await client.execute(freshReader, { includeCatalog: false }))
           if (menu.page === 'menu') {
-            if (menu.cart.tableName !== current.selectedTable)
+            if (menu.cart?.tableName !== current.selectedTable)
               throw new Error('清理購物車前的桌號尚未確認。')
             break
           }

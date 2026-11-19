@@ -12,6 +12,10 @@ import { notificationField } from './pbCheckout'
 export function installInvoiceInput() {
   let owned: { field: HTMLInputElement, method: ScannedInvoiceMethod, path: string } | undefined
   let selectedField: HTMLInputElement | undefined
+  // A method change can precede Vue's conditional field render. Retain that
+  // one focus transfer until the selected radio's own field becomes visible.
+  let selectedRadio: HTMLInputElement | undefined
+  let disposed = false
   let keypad: { field: HTMLInputElement, root: HTMLElement, trigger: HTMLButtonElement } | undefined
   let keyboardClosed = false
   const copy = orderingMessages['zh-Hant'].checkout
@@ -31,6 +35,8 @@ export function installInvoiceInput() {
   }
 
   function sync() {
+    if (disposed)
+      return
     const phone = location.pathname.endsWith('/orders/create') ? notificationField('phone') : undefined
     if (keypad && (keypad.field !== phone || !keypad.root.isConnected)) {
       keypad.root.remove()
@@ -101,16 +107,21 @@ export function installInvoiceInput() {
       }
     }
     const selected = current()
+    if (selectedRadio && (!selectedRadio.isConnected || !selectedRadio.checked))
+      selectedRadio = undefined
+    const selectedByCustomer = Boolean(selected && selectedRadio?.closest('label')?.contains(selected.field))
+    if (selectedByCustomer)
+      selectedRadio = undefined
     if (owned && (selected?.field !== owned.field || owned.path !== location.pathname))
       owned = undefined
-    if (selected?.field === selectedField)
+    if (selected?.field === selectedField && !selectedByCustomer)
       return
     selectedField = selected?.field
     // Do not repeatedly steal focus back after a customer clicks elsewhere.
     // A newly rendered selected field follows the owned Menu's invoice focus.
     if (selected) {
       const focused = document.activeElement
-      if (focused && focused !== document.body && focused !== selected.field && !focused.matches('input[type="radio"]'))
+      if (!selectedByCustomer && focused && focused !== document.body && focused !== selected.field && !focused.matches('input[type="radio"]'))
         return
       selected.field.focus({ preventScroll: true })
       if (document.activeElement === selected.field)
@@ -155,6 +166,15 @@ export function installInvoiceInput() {
     if (ownsScanner(event))
       owned!.field.setCustomValidity('')
   }
+  function change(event: Event) {
+    if (!(event.target instanceof HTMLInputElement) || !event.target.matches('.order-create input[type="radio"]:checked'))
+      return
+    // A deliberate method change transfers editing from the previous contact
+    // field. Wait for Vue's conditional field render; unrelated mutations never
+    // get this permission to take focus back from the customer.
+    selectedRadio = event.target
+    queueMicrotask(sync)
+  }
   function keydown(event: KeyboardEvent) {
     if (!ownsScanner(event) || event.key !== 'Enter')
       return
@@ -179,8 +199,9 @@ export function installInvoiceInput() {
   document.addEventListener('focusin', focus, true)
   document.addEventListener('focusout', blur, true)
   document.addEventListener('input', input, true)
+  document.addEventListener('change', change, true)
   document.addEventListener('keydown', keydown, true)
-  const observer = new MutationObserver(sync)
+  const observer = new MutationObserver(() => sync())
   observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'disabled', 'readonly'] })
   sync()
   return {
@@ -196,6 +217,7 @@ export function installInvoiceInput() {
     pending: () => Boolean(owned && current()?.field === owned.field && document.activeElement === owned.field && owned.path === location.pathname),
     /** Leaves draft editing and closes its floating panel without clearing entered values. */
     leave() {
+      selectedRadio = undefined
       const field = owned?.field
       owned = undefined
       // Native submission checks occlusion. Close our own panel before leaving
@@ -212,8 +234,13 @@ export function installInvoiceInput() {
         field.blur()
     },
     /** Reception reset invalidates expected input without clearing shared login. */
-    reset() { owned = undefined },
+    reset() {
+      owned = undefined
+      selectedRadio = undefined
+    },
     dispose() {
+      disposed = true
+      selectedRadio = undefined
       owned = undefined
       keypad?.root.remove()
       keypad?.trigger.remove()
@@ -223,6 +250,7 @@ export function installInvoiceInput() {
       document.removeEventListener('focusin', focus, true)
       document.removeEventListener('focusout', blur, true)
       document.removeEventListener('input', input, true)
+      document.removeEventListener('change', change, true)
       document.removeEventListener('keydown', keydown, true)
     },
   }

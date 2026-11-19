@@ -19,9 +19,6 @@ export function createPresentation() {
   let active: AbortController | undefined
   let root: HTMLElement | undefined
   let currentHand: HTMLElement | undefined
-  // Reception maintenance spans SPA navigation; ordinary cue cancellation must
-  // not expose the intermediate cart. Its caller owns cleanup in finally.
-  let maintenance: HTMLElement | undefined
   let introduction: symbol | undefined
   let position = { x: 32, y: 64 }
   function retire(preserveRoot: boolean) {
@@ -69,7 +66,6 @@ export function createPresentation() {
   return {
     cancel,
     revision: () => revision,
-    isCovered: () => Boolean(maintenance),
     /** Locks one introduction batch, including movement between dishes; cancel releases it immediately. */
     async introduce<T>(work: () => Promise<T>): Promise<T> {
       const owner = Symbol('introduction')
@@ -81,43 +77,6 @@ export function createPresentation() {
         // A cancelled batch may settle after a replacement starts.
         if (introduction === owner)
           introduction = undefined
-      }
-    },
-    /** Masks fast lifecycle controls while leaving native actionability checks intact. */
-    async cover<T>(work: () => Promise<T>): Promise<T> {
-      cancel()
-      const container = document.createElement('div')
-      container.dataset.webnaviorMaintenance = 'true'
-      container.setAttribute('aria-hidden', 'true')
-      container.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:rgb(248,250,252);display:grid;place-items:center;'
-      const shadow = container.attachShadow({ mode: 'closed' })
-      const style = document.createElement('style')
-      style.textContent = '.spinner{width:48px;height:48px;border:5px solid #d8e6e7;border-top-color:#287a7c;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none}}'
-      const spinner = document.createElement('div')
-      spinner.className = 'spinner'
-      shadow.append(style, spinner)
-      maintenance = container
-      document.documentElement.append(container)
-      // The cover is pointer-transparent so our hit tests still see PB's real
-      // controls/overlays. Capture trusted input instead: customers must not
-      // unknowingly click a covered cart, while programmatic native clicks run.
-      const blockInput = (event: Event) => {
-        if (event.isTrusted) {
-          event.preventDefault()
-          event.stopImmediatePropagation()
-        }
-      }
-      const events = ['pointerdown', 'click', 'keydown', 'wheel']
-      for (const event of events)
-        document.addEventListener(event, blockInput, { capture: true, passive: false })
-      try {
-        return await work()
-      }
-      finally {
-        for (const event of events)
-          document.removeEventListener(event, blockInput, { capture: true })
-        container.remove()
-        maintenance = undefined
       }
     },
     async show(products: ProductPresentation['products'], target?: HTMLElement, press = false, related: HTMLElement[] = [], control?: { label: string, dispatch: (onPress: () => void) => Promise<void>, prepare?: () => Promise<void> }, holdMs = 0): Promise<ProductPresentation> {

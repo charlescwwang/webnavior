@@ -85,7 +85,7 @@ export function useKioskInteractionRecording() {
   // Only timing/runtime observations may use the independent upload lane.
   // User input, action claims, tool receipts and questions keep their original
   // order; no generic service_event is assumed to be optional evidence.
-  const diagnosticSources = new Set(['browser_tool_metrics', 'voice_recognition_timing', 'utterance_timing', 'audio_runtime', 'main_task_metrics', 'main_presentation_metrics'])
+  const diagnosticSources = new Set(['browser_tool_metrics', 'voice_recognition_timing', 'utterance_timing', 'audio_runtime', 'greeting_delivery', 'main_task_metrics', 'main_presentation_metrics'])
 
   async function start(serviceId: string) {
     if (visitorSessionId.value)
@@ -454,9 +454,10 @@ export function useKioskInteractionRecording() {
             const presentation = safeParse(productPresentationSchema, payload?.presentation)
             if (!rejected && payload?.ok === true && payload.source === 'browser' && payload.status === 'verified' && ['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_confirm_add'].includes(nativeOrderingToolName(toolCall.function.name)) && presentation.success && presentation.output.cue === 'shown')
               lastBrowserWritePresentation = presentation.output
-            browserFailureReceipt = payload?.source === 'browser' && payload?.ok === false
+            browserFailureReceipt = ['browser', 'host'].includes(payload?.source) && payload?.ok === false
               && ['unknown', 'rejected'].includes(payload.status) && typeof payload.customerMessage === 'string'
-              && (nativeOrderingToolName(toolCall.function.name).startsWith('browser_cart_') || toolCall.function.name === 'browser_confirm_add')
+              && ((payload.status === 'rejected' && payload.effect === 'none')
+                || nativeOrderingToolName(toolCall.function.name).startsWith('browser_cart_') || toolCall.function.name === 'browser_confirm_add')
             if (!rejected && payload?.dataOnly !== true && Array.isArray(payload?.items) && (payload?.presentation?.kind === 'recommendation' || ['menu_recommend', 'menu_show_recommendations'].includes(nativeOrderingToolName(toolCall.function.name))))
               recommendationPresented = true
             if (!rejected && recommendationRead && payload?.ok === true && payload.source === 'browser' && payload.dataOnly !== true && presentation.success && presentation.output.products.length)

@@ -196,6 +196,31 @@ it('does not choose the first same-name option when the vendor duplicates a grou
   await expect(controls.prepare('每日新品', 'daily-ref', configuration, selection, 1, '')).rejects.toThrow('無法確認')
   expect(document.querySelector<HTMLInputElement>('.product-item input')!.value).toBe('0')
 })
+// Report: this chat, Nov19 03:04 — real Electron + production PB reset fails
+// because the coupon dialog covers the announcement's acknowledgement button.
+it('defers the observed coupon before dismissing a covered store announcement', async () => {
+  const { controls, operation } = setup()
+  document.body.insertAdjacentHTML('beforeend', '<div id="announcement" role="dialog" style="position:fixed;inset:0;z-index:100;background:white"><button>我知道了，開始點餐</button></div><div id="coupon" role="dialog" style="position:fixed;inset:0;z-index:101;background:white"><button>稍後再領</button><button>立即領取</button><label><input type="checkbox">不再顯示此優惠</label></div>')
+  const clicked: string[] = []
+  document.querySelector('#announcement button')!.addEventListener('click', () => {
+    clicked.push('announcement')
+    document.querySelector('#announcement')!.remove()
+  })
+  document.querySelector('#coupon button')!.addEventListener('click', () => {
+    clicked.push('later')
+    document.querySelector('#coupon')!.remove()
+  })
+  const claim = vi.fn()
+  const preference = vi.fn()
+  document.querySelectorAll('#coupon button')[1]!.addEventListener('click', claim)
+  document.querySelector('#coupon input')!.addEventListener('change', preference)
+  await controls.navigate(location.pathname)
+  expect(clicked).toEqual(['later', 'announcement'])
+  expect(claim).not.toHaveBeenCalled()
+  expect(preference).not.toHaveBeenCalled()
+  expect(operation.snapshot().steps.map(step => step.effect)).toEqual(['draft', 'draft'])
+})
+
 it.each([false, true])('visits the native cart and returns whether the optional store announcement exists (notice=%s)', async (announcement) => {
   const { controls, operation } = setup()
   let amount = 1
@@ -373,6 +398,7 @@ it('clicks the scoped native buttons for options and servings, waiting for each 
   const { controls, configuration, selection, operation } = setup()
   await controls.open('每日新品')
   const clicks: string[] = []
+  const released = vi.fn()
   for (const input of Array.from(document.querySelectorAll<HTMLInputElement>('input[type=number]'))) {
     const wrapper = document.createElement('div')
     wrapper.className = 'el-input-number'
@@ -384,7 +410,10 @@ it('clicks the scoped native buttons for options and servings, waiting for each 
       button.setAttribute('role', 'button')
       button.textContent = delta > 0 ? '+' : '−'
       wrapper.append(button)
-      button.addEventListener('click', () => {
+      // Element Plus v-repeat-click starts on mousedown, not click:
+      // https://github.com/element-plus/element-plus/blob/dev/packages/directives/repeat-click/index.ts
+      button.addEventListener('mousedown', () => {
+        document.addEventListener('mouseup', released, { once: true })
         clicks.push(`${input.closest('.product-item') ? 'option' : 'servings'}:${delta}`)
         setTimeout(() => {
           input.value = String(Number(input.value) + delta)
@@ -398,15 +427,34 @@ it('clicks the scoped native buttons for options and servings, waiting for each 
   expect(clicks).toEqual(['option:1', 'option:1', 'servings:1', 'servings:1', 'option:-1', 'servings:-1', 'servings:-1'])
   expect(document.querySelector<HTMLInputElement>('.dialog-footer input')!.value).toBe('1')
   expect(operation.snapshot().steps.filter(step => step.action === 'quantity')).toHaveLength(4)
+  expect(released).toHaveBeenCalledTimes(clicks.length)
 })
 
-it('clicks cart quantity buttons through replaced rows, checks preflight once and verifies the final cart', async () => {
+// Report: this chat, Nov18 — checkout was attempted behind an open product dialog.
+it('closes the product dialog before navigating to the cart', async () => {
+  const { controls, operation } = setup()
+  await controls.open('每日新品')
+  const link = document.createElement('button')
+  link.textContent = '去結算'
+  document.querySelector('main')!.append(link)
+  link.addEventListener('click', () => {
+    if (document.querySelector('[role="dialog"]'))
+      return
+    history.pushState({}, '', '/order/store/1kgJeql/pick_up/orders/create')
+    document.body.innerHTML = '<main class="order-create"></main>'
+  })
+  await controls.navigate('/order/store/1kgJeql/pick_up/orders/create')
+  expect(location.pathname).toBe('/order/store/1kgJeql/pick_up/orders/create')
+  expect(operation.snapshot().steps.map(step => step.action)).toEqual(['open-product', 'close-product', 'navigate'])
+})
+
+it.each(['click', 'mousedown'] as const)('uses %s cart quantity buttons through replaced rows with one preflight and final verification', async (event) => {
   history.replaceState({}, '', '/order/store/1kgJeql/pick_up/orders/create')
   const clicks: number[] = []
   const render = (quantity: number) => {
     document.body.innerHTML = `<main class="order-create"><div class="produce-item"><h3>水餃 <span>$64</span></h3><div class="line-actions"><button aria-label="減少水餃份數">−</button><input type="number" min="0" value="${quantity}"><button aria-label="增加水餃份數">+</button></div></div></main>`
     for (const [index, delta] of [[0, -1], [1, 1]]) {
-      document.querySelectorAll('button')[index].addEventListener('click', () => {
+      document.querySelectorAll('button')[index].addEventListener(event, () => {
         clicks.push(delta)
         const input = document.querySelector('input')!
         input.value = String(quantity + delta)

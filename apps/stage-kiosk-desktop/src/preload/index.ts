@@ -1,8 +1,12 @@
+import type { KioskArrayInputBridge } from '@proj-airi/stage-shared/kiosk-array-input'
 import type { KioskDesktopBridge } from '@proj-airi/stage-shared/kiosk-desktop'
+import type { KioskNativeAudioBridge } from '@proj-airi/stage-shared/kiosk-native-audio'
 
 import { defineInvoke } from '@moeru/eventa'
 import { createContext } from '@moeru/eventa/adapters/electron/renderer'
+import { arrayInputControlSchema, arrayInputPortChannel, arrayInputPortSchema, invokeArrayInput } from '@proj-airi/stage-shared/kiosk-array-input'
 import { desktopServiceRequestSchema, desktopSurfaceActivity, desktopSurfaceActivitySchema, desktopSurfaceNavigation, desktopSurfaceNavigationSchema, desktopSurfaceResultSchema, invokeDesktopService, updateDesktopSurface } from '@proj-airi/stage-shared/kiosk-desktop'
+import { invokeNativeAudio, nativeAudioRequestSchema, nativeAudioResultSchema } from '@proj-airi/stage-shared/kiosk-native-audio'
 import { contextBridge, ipcRenderer } from 'electron'
 import { parse, safeParse } from 'valibot'
 
@@ -29,4 +33,24 @@ if (location.protocol === 'http:' || location.protocol === 'https:') {
     }),
   }
   contextBridge.exposeInMainWorld('airiKioskDesktop', bridge)
+  const audio: KioskNativeAudioBridge = {
+    version: 3,
+    request: async input => parse(nativeAudioResultSchema, await defineInvoke(transport.context, invokeNativeAudio)(
+      parse(nativeAudioRequestSchema, input),
+      { signal: AbortSignal.timeout((input.kind === 'block' || input.kind === 'poll') ? 6000 : 182000) },
+    )),
+  }
+  contextBridge.exposeInMainWorld('airiKioskAudio', audio)
+  const array: KioskArrayInputBridge = {
+    version: 1,
+    request: async input => parse(nativeAudioResultSchema, await defineInvoke(transport.context, invokeArrayInput)(parse(arrayInputControlSchema, input), { signal: AbortSignal.timeout(30000) })),
+  }
+  ipcRenderer.on(arrayInputPortChannel, (event, metadata) => {
+    const result = safeParse(arrayInputPortSchema, metadata)
+    if (result.success && event.ports.length === 1)
+      window.postMessage({ channel: arrayInputPortChannel, ...result.output }, location.origin, event.ports)
+    else
+      event.ports.forEach(port => port.close())
+  })
+  contextBridge.exposeInMainWorld('airiKioskArrayInput', array)
 }

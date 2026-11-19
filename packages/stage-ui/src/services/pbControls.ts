@@ -70,6 +70,19 @@ function fill(element: HTMLInputElement, value: string) {
   element.blur()
 }
 
+/** Dispatch one press/release; Element Plus starts repeat-click on mousedown. */
+function pressQuantity(control: HTMLElement) {
+  // A click alone never reaches Element Plus's v-repeat-click handler. Release
+  // synchronously so its hold timer cannot produce additional quantity writes.
+  // https://github.com/element-plus/element-plus/blob/dev/packages/directives/repeat-click/index.ts
+  control.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, buttons: 1 }))
+  const releaseTarget = control.isConnected ? control : document
+  releaseTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0, buttons: 0 }))
+  // Plain native buttons and the PB lab stepper use click rather than repeat-click.
+  if (control.isConnected)
+    control.click()
+}
+
 /** Resolve one native step within this input's own control, never a nearby add/delete button. */
 function quantityStep(locate: () => HTMLInputElement | undefined, amount: number) {
   const input = locate()
@@ -140,6 +153,15 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
       await act('close-product', '關閉商品視窗', 'draft', () => unique(current.querySelectorAll<HTMLButtonElement>('button.el-dialog__headerbtn')), target => target.click(), () => !current.getClientRects().length || !current.isConnected)
   }
   async function dismissAnnouncement() {
+    // Production PB can stack its coupon dialog above the store announcement.
+    // Use only the observed promotion's defer action; never claim a coupon,
+    // change its persistent preference or force-click through another dialog.
+    const couponLater = () => {
+      const coupon = unique(Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).filter(element => element.textContent?.includes('不再顯示此優惠') && Array.from(element.querySelectorAll('button')).some(button => button.textContent?.trim() === '立即領取')))
+      return coupon && unique(Array.from(coupon.querySelectorAll<HTMLButtonElement>('button')).filter(button => button.textContent?.trim() === '稍後再領'))
+    }
+    if (couponLater())
+      await act('notice', '暫時關閉領券提示', 'draft', couponLater, target => target.click(), () => !couponLater())
     const locate = () => unique(Array.from(document.querySelectorAll<HTMLButtonElement>('button')).filter(button => button.textContent?.trim() === '我知道了，開始點餐'))
     if (locate())
       await act('notice', '關閉營業公告', 'draft', locate, target => target.click(), () => !locate())
@@ -186,6 +208,10 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
     await dismissAnnouncement()
     if (location.pathname === path)
       return
+    // Product dialogs cover the cart link, including after a failed draft edit.
+    // Resolve them before locating the route control. A same-route lookup must
+    // preserve the open product draft for prepare() to continue configuring it.
+    await close()
     const locate = () => unique(Array.from(document.querySelectorAll<HTMLElement>('a, button, div.cursor-pointer')).filter((element) => {
       if (path === menuPath) {
         const cart = element.closest('.order-create')
@@ -234,7 +260,7 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
         if (control.matches(':disabled, [aria-disabled="true"], .is-disabled'))
           throw new Error('數量增減按鈕尚不可操作。')
         if (step.click)
-          control.click()
+          pressQuantity(control)
         else
           fill(control as HTMLInputElement, String(step.next))
       }, () => Number(locate()?.value) === step.next, target)
@@ -386,7 +412,7 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
           }
           expectedQuantity = step.next
           if (step.click)
-            control.click()
+            pressQuantity(control)
           else
             fill(control as HTMLInputElement, String(step.next))
         }, async () => {

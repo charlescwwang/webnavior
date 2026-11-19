@@ -77,35 +77,6 @@ it('does not mistake a stable offscreen rectangle for completed viewport movemen
   expect(await pending).toMatchObject({ cue: 'shown' })
 })
 
-// Report: this chat, Nov11; reception reset should be masked instead of slowly guided.
-it('keeps a loading cover across merchant navigation until the maintenance work settles', async () => {
-  const { presentation, target } = setup()
-  let finish = () => {}
-  const work = new Promise<void>(resolve => finish = resolve)
-  const pending = presentation.cover(async () => work)
-  const cover = document.querySelector<HTMLElement>('[data-webnavior-maintenance]')!
-  expect(cover).not.toBeNull()
-  expect(presentation.isCovered()).toBe(true)
-  expect(getComputedStyle(cover).backgroundColor).toBe('rgb(248, 250, 252)')
-  const rect = target.getBoundingClientRect()
-  expect(document.elementFromPoint(rect.left + 20, rect.top + 20)).toBe(target)
-  document.dispatchEvent(new Event('inertia:start'))
-  expect(cover.isConnected).toBe(true)
-  finish()
-  await pending
-  expect(presentation.isCovered()).toBe(false)
-  expect(document.querySelector('[data-webnavior-maintenance]')).toBeNull()
-})
-
-it('removes the maintenance cover after a failed reset without hiding its error', async () => {
-  const { presentation } = setup()
-  await expect(presentation.cover(async () => {
-    throw new Error('clear result unknown')
-  })).rejects.toThrow('clear result unknown')
-  expect(presentation.isCovered()).toBe(false)
-  expect(document.querySelector('[data-webnavior-maintenance]')).toBeNull()
-})
-
 describe('isolated PB visual cue', () => {
   // Report: this chat, Nov12; the item frame lingered after the native tap.
   it('retires the tap cue promptly while native verification is still pending', async () => {

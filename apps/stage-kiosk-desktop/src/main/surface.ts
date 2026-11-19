@@ -1,6 +1,8 @@
 import type { DesktopServiceRequest, DesktopSurfaceActivity, DesktopSurfaceNavigation, DesktopSurfaceRequest, DesktopSurfaceResult } from '@proj-airi/stage-shared/kiosk-desktop'
 import type { BrowserWindow, Event, WebContentsWillNavigateEventParams, WebContentsWillRedirectEventParams } from 'electron'
 
+import type { Diagnostics } from './diagnostics'
+
 import { createHash } from 'node:crypto'
 
 import { executionResultSchema } from '@proj-airi/stage-shared/interactive-service'
@@ -21,6 +23,9 @@ export class ServiceSurface {
   private hostGeneration = 0
   private active?: DesktopSurfaceActivity
   private loading?: Promise<void>
+  // Display readiness and automation readiness are separate: a parsed document
+  // can paint while images still prevent did-finish-load. Navigation revokes
+  // tools until the full load completes, without hiding that renderable page.
   private documentLoading = false
   private serviceReady?: Promise<void>
   private navigation = 0
@@ -30,7 +35,7 @@ export class ServiceSurface {
   private removeDownloadGuard?: () => void
   private maintenanceRenders = new Map<WebContentsView, { users: number, throttled: boolean }>()
 
-  constructor(private readonly window: BrowserWindow, private readonly onActivity: (activity: DesktopSurfaceActivity) => void, private readonly serviceScript: string, private readonly onNavigation: (navigation: DesktopSurfaceNavigation) => void) {}
+  constructor(private readonly window: BrowserWindow, private readonly onActivity: (activity: DesktopSurfaceActivity) => void, private readonly serviceScript: string, private readonly onNavigation: (navigation: DesktopSurfaceNavigation) => void, private readonly diagnostics: Diagnostics) {}
 
   /** Applies the latest host placement; superseded loads cannot restore an older visibility state. */
   async update(input: DesktopSurfaceRequest): Promise<DesktopSurfaceResult> {
@@ -64,6 +69,7 @@ export class ServiceSurface {
       this.view.webContents.on('will-navigate', guardNavigation)
       this.view.webContents.on('will-redirect', guardNavigation)
       const current = this.view
+      this.diagnostics.observe(current.webContents, 'pb')
       // NOTICE: Use event details, not deprecated positional arguments. Both
       // the installed type contract and the pilot runtime support these fields;
       // electron.d.ts:16445 and https://www.electronjs.org/docs/latest/api/web-contents#event-did-start-navigation
@@ -75,10 +81,15 @@ export class ServiceSurface {
           this.serviceReady = undefined
           this.documentLoading = true
           this.failed = false
-          current.setVisible(false)
+          current.setVisible(this.desiredVisible)
           if (this.view === current && this.active)
             this.onNavigation({ ...this.active, revision: this.navigation, state: 'loading' })
         }
+      })
+      current.webContents.on('dom-ready', () => {
+        if (this.view !== current || !this.active || this.failed)
+          return
+        current.setVisible(this.desiredVisible)
       })
       current.webContents.on('did-finish-load', () => {
         if (this.view !== current || !this.active || this.failed)
@@ -140,15 +151,16 @@ export class ServiceSurface {
       })
       this.loading = loading
     }
-    // Native content covers host DOM. Keep it hidden until the host loading screen can yield.
-    view.setVisible(visible && !this.failed && !this.documentLoading)
+    // Navigation readiness governs automation only. Keep Chromium's current
+    // website visible; Host refresh/reset must never replace it with a cover.
+    view.setVisible(visible && !this.failed)
     await this.loading
     if (hostGeneration !== this.hostGeneration || input.sequence !== this.sequence || this.view !== view)
       return { sequence: input.sequence, state: 'superseded' }
     // A website-initiated table navigation does not replace loadURL's already
-    // settled promise. A resize/overlay update must not expose the half-loaded
-    // document or announce readiness; its navigation event owns that boundary.
-    view.setVisible(visible && !this.failed && !this.documentLoading)
+    // settled promise. Placement may show a renderable document, but must not
+    // announce tool readiness; its navigation event still owns that boundary.
+    view.setVisible(visible && !this.failed)
     if (this.documentLoading)
       return { sequence: input.sequence, state: 'loading' }
     return { sequence: input.sequence, state: this.failed ? 'failed' : visible ? 'visible' : 'hidden' }
@@ -199,7 +211,7 @@ export class ServiceSurface {
     const entry = this.serviceEntry!
     const beforeUrl = new URL(view.webContents.getURL())
     const before = readPbJourney(beforeUrl.href)
-    const approved = () => this.view === view && !this.failed && !this.documentLoading && this.navigation === generation && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey && (isPbJourneyPage(entry, view.webContents.getURL()) || (isPbOrderResultUrl(entry, view.webContents.getURL()) && (input.command.kind !== 'execute' || input.command.request.name === 'browser_state_get')))
+    const approved = () => this.view === view && !this.failed && !this.documentLoading && this.navigation === generation && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey && (isPbJourneyPage(entry, view.webContents.getURL()) || (isPbOrderResultUrl(entry, view.webContents.getURL()) && (input.command.kind !== 'execute' || ['browser_state_get', 'browser_reception_reset'].includes(input.command.request.name))))
     if (!approved())
       throw new Error('Native automation is restricted to the approved PB menu/cart journey.')
     // All JavaScript is bundled application code. The untrusted renderer can
@@ -209,7 +221,12 @@ export class ServiceSurface {
     if (!approved())
       throw new Error('Native service navigated during initialization.')
     const { kind, request } = input.command
-    const result = await view.webContents.executeJavaScriptInIsolatedWorld(1001, [{ code: `globalThis.__webnaviorPbService[${JSON.stringify(kind)}](${JSON.stringify(request)})` }])
+    const finish = kind === 'execute' ? this.diagnostics.operation(request.name, request.operationId) : undefined
+    let result: unknown
+    try {
+      result = await view.webContents.executeJavaScriptInIsolatedWorld(1001, [{ code: `globalThis.__webnaviorPbService[${JSON.stringify(kind)}](${JSON.stringify(request)})` }])
+    }
+    finally { finish?.() }
     if (!approved()) {
       // Start intentionally replaces its table document. Acknowledge dispatch
       // once navigation to this exact menu has started; page readiness belongs
@@ -249,6 +266,24 @@ export class ServiceSurface {
         throw new Error(`Native menu entry has not reached an approved target (targetApproved=${Boolean(target)}, ownerCurrent=${this.view === view && this.hostGeneration === hostGeneration}, navigationStarted=${this.navigation > generation}, loadFailed=${this.failed}).`)
       }
       throw new Error('Native service navigated during execution; do not replay.')
+    }
+    if (kind === 'execute' && ['browser_invoice_select', 'browser_checkout_prepare'].includes(request.name)
+      && view.getVisible() && this.window.isFocused()) {
+      const receipt = safeParse(executionResultSchema, result)
+      const payload = receipt.success ? receipt.output.result : undefined
+      if (payload && typeof payload === 'object' && 'ok' in payload && payload.ok === true) {
+        // DOM focus inside an isolated WebContentsView does not transfer the
+        // native keyboard from the Host. Only an explicit checkout entry action
+        // may hand it to an editable merchant field; passive reads never do.
+        const editing = await view.webContents.executeJavaScriptInIsolatedWorld(1001, [{ code: `(() => {
+          const field = document.activeElement;
+          return location.pathname.endsWith('/orders/create') && field instanceof HTMLInputElement
+            && field.matches('.order-create input:not([type="radio"]):not([type="hidden"])')
+            && !field.disabled && !field.readOnly && field.getClientRects().length > 0;
+        })()` }])
+        if (editing && approved() && view.getVisible() && this.window.isFocused())
+          view.webContents.focus()
+      }
     }
     return result
   }

@@ -1,3 +1,4 @@
+import type { ServiceConnection } from '@proj-airi/stage-shared/interactive-service'
 import type { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
 
 import type { CatalogSnapshot } from '../../../order-menu-server/src/domain/contracts'
@@ -28,6 +29,41 @@ describe('useKioskCustomerSession', () => {
     interactiveServiceClient.activate(undefined)
     vi.clearAllMocks()
     vi.useRealTimers()
+  })
+
+  // Report: this chat, Nov19: an unknown PB order blocked local initialization.
+  it('initializes the Host on staff restart without reading or clearing an uncertain PB order', async () => {
+    const execute = vi.fn<ServiceConnection['execute']>(async () => {
+      throw new Error('訂單狀態無法確認')
+    })
+    const lifetime = new AbortController()
+    interactiveServiceClient.activateTransport('https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table', () => ({
+      signal: lifetime.signal,
+      dispose: reason => lifetime.abort(reason),
+      discover: async request => ({ ...request, documentId: 'unknown-order', toolsRevision: 1, tools: ['browser_state_get', 'browser_customer_reset', 'browser_reception_reset'].map(name => ({ name, description: '', inputSchema: { type: 'object' } })) }),
+      execute,
+      inspect: async request => ({ ...request, pendingCount: 1, operations: [] }),
+    }))
+    await interactiveServiceClient.waitUntilReady()
+    const chatSession = {
+      createSession: vi.fn().mockResolvedValueOnce('old-chat').mockResolvedValueOnce('standby-chat'),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      setActiveSession: vi.fn(),
+    } as unknown as ReturnType<typeof useChatSessionStore>
+    const endVisitorSession = vi.fn()
+    const resetConversation = vi.fn()
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession, endVisitorSession, resetConversation }))!
+    await session.recordActivity()
+    await expect(session.end('staff')).resolves.toBeUndefined()
+    expect(session.state.value).toBe('standby')
+    expect(session.customer.value).toBeUndefined()
+    expect(execute.mock.calls.map(([request]) => request.name)).toEqual(['browser_reception_reset'])
+    expect(endVisitorSession).toHaveBeenCalledOnce()
+    expect(resetConversation).toHaveBeenCalledOnce()
+    expect(reloadScenario).toHaveBeenCalledOnce()
   })
 
   // Report: this chat, Nov14; PB's successful in-document reset left the next customer on the menu.

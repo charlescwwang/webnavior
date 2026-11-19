@@ -254,12 +254,12 @@ try {
   await loadingRequested.promise
   try {
     const beforeLoad = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.map(view => view.getVisible()))
-    assert.deepEqual(beforeLoad, [false], 'Loading native view must not cover the host loading indicator.')
+    assert.deepEqual(beforeLoad, [true], 'Navigation must keep the native website visible without a Host loading cover.')
     await host.evaluate((input) => {
       window.pendingPageResize = window.airiKioskDesktop.updateSurface({ ...input, bounds: { ...input.bounds, width: 650 } })
     }, loadingPlacement)
     const duringResize = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.map(view => view.getVisible()))
-    assert.deepEqual(duringResize, [false], 'Resizing must not reveal an unfinished document.')
+    assert.deepEqual(duringResize, [true], 'Resize must preserve native visibility while loading.')
   }
   finally {
     releaseLoadingPage()
@@ -268,7 +268,7 @@ try {
   assert.equal(loadedPlacement.state, 'visible')
   await host.evaluate(() => window.pendingPageLoad)
   await host.evaluate(input => window.airiKioskDesktop.updateSurface(input), request)
-  console.info('PASS: a pending native document stays hidden through resize and appears only after page load.')
+  console.info('PASS: a pending native document remains visible through navigation and resize without a Host loading cover.')
   // Synthetic PB-origin document: exercise the production isolated-world bundle
   // and preload RPC without authenticating or contacting a merchant endpoint.
   const pbUrl = 'https://app.esgpb.com/order/store/1kgJeql/pick_up/menu'
@@ -758,11 +758,13 @@ try {
   const clearRequest = { kind: 'execute', request: { ...execute, operationId: 'fixture-end-clears-unfinished-cart', name: 'browser_customer_reset', input: {} } }
   const clearing = invoke(clearRequest)
   await nativePage.waitForFunction(() => typeof window.__fixtureFinishClear === 'function')
-  assert.equal(await nativePage.evaluate(() => window.__fixtureCoveredAtClear), true)
+  assert.equal(await nativePage.evaluate(() => window.__fixtureCoveredAtClear), false)
   assert.equal(await nativePage.evaluate(() => window.__fixtureHandAtClear), false)
-  // A real pointer click must be swallowed by the loading cover; the native
-  // programmatic click above is the only one permitted to clear the cart.
-  await nativePage.getByRole('button', { name: '清空', exact: true }).click()
+  // No maintenance overlay or input trap may hide PB's actual clear control.
+  assert.equal(await nativePage.getByRole('button', { name: '清空', exact: true }).evaluate((button) => {
+    const bounds = button.getBoundingClientRect()
+    return document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2) === button
+  }), true)
   assert.equal(await nativePage.evaluate(() => window.__fixtureClearClicks), 1)
   await nativePage.evaluate(() => window.__fixtureFinishClear())
   const cleared = await clearing
@@ -772,12 +774,12 @@ try {
   assert.equal(await app.evaluate(() => globalThis.__pbFixtureCartPresent), false)
   assert.equal(await app.evaluate(() => globalThis.__pbFixtureWrites), 2)
   assert.equal(await nativePage.locator('.order-create').count(), 0)
-  assert.equal(await nativePage.evaluate(() => window.__fixtureCoveredAtReturn), true)
+  assert.equal(await nativePage.evaluate(() => window.__fixtureCoveredAtReturn), false)
   assert.equal(await nativePage.locator('[data-webnavior-maintenance]').count(), 0)
   assert.equal(await nativePage.getByPlaceholder('搜尋品項，例如：拿鐵、雞腿、套餐').inputValue(), '')
   assert.deepEqual(await invoke(clearRequest), cleared)
   assert.equal(await nativePage.evaluate(() => window.__fixtureClearClicks), 1)
-  console.info('PASS: ending reception masks immediate native controls, blocks real input, clears once, verifies empty and returns to menu; replay is deduplicated and login/document retained.')
+  console.info('PASS: ending reception exposes native controls without a maintenance cover, clears once, verifies empty and returns to menu; replay is deduplicated and login/document retained.')
   assert.deepEqual(await invoke({ kind: 'execute', request: execute }), searched)
   const inspection = await invoke({ kind: 'inspect', request: { connectionId: discovery.connectionId, documentId: discovery.documentId, operationIds: ['fixture-search'] } })
   assert.equal(inspection.operations[0].status, 'settled')
@@ -786,6 +788,23 @@ try {
   const denied = await invoke({ kind: 'execute', request: { ...execute, operationId: 'arbitrary-code', name: 'evaluate', input: { code: 'document.title = "bad"' } } })
   assert.equal(denied.result.ok, false)
   console.info('PASS: native PB peer discovers bounded tools, performs visible search, deduplicates/inspects receipts, rejects stale ownership and arbitrary code; vendor main world has no host bridge or Node.')
+  // Report: this chat, Nov19 — a previous visitor's warning must not remain
+  // a store-wide lock after an explicit, verified reset of the editable cart.
+  const resetMarkerKey = 'webnavior:pb:cart-pending:/order/store/1kgJeql/pick_up/'
+  await nativePage.evaluate(key => localStorage.setItem(key, 'order:11111111-1111-4111-8111-111111111111'), resetMarkerKey)
+  const beforeRestart = await invoke({ kind: 'execute', request: { ...execute, operationId: 'fixture-previous-order-context', name: 'browser_recovery_context', input: {} } })
+  assert.equal(beforeRestart.result.canRetry, false)
+  assert.equal(beforeRestart.result.canReset, true)
+  const retired = await invoke({ kind: 'execute', request: { ...execute, operationId: 'fixture-retire-previous-order', name: 'browser_customer_reset', input: {} } })
+  assert.equal(retired.result.ok, true)
+  assert.equal(retired.result.retiredOperation, 'order', 'Host records this on the ending visitor, never as new visitor authority.')
+  assert.equal(retired.result.cartCleared, true)
+  assert.equal(await nativePage.evaluate(key => localStorage.getItem(key), resetMarkerKey), null)
+  assert.equal(await app.evaluate(() => globalThis.__pbFixtureWrites), 2, 'An already empty cart needs no further merchant write.')
+  const afterRestart = await invoke({ kind: 'execute', request: { ...execute, operationId: 'fixture-new-order-context', name: 'browser_recovery_context', input: {} } })
+  assert.equal(afterRestart.result.canRetry, true)
+  assert.equal(afterRestart.result.blockedBy, undefined)
+  console.info('PASS: explicit reset retires the previous order warning for audit, verifies the current draft empty, and admits the next visitor without replaying any merchant write.')
   await nativePage.goto('https://app.esgpb.com/outside-menu')
   await assert.rejects(invoke({ kind: 'execute', request: { ...execute, operationId: 'after-navigation' } }))
   console.info('PASS: native navigation outside the approved menu revokes operation admission.')
@@ -901,7 +920,7 @@ try {
   assert.equal(await app.evaluate(() => globalThis.__pbGuestMenuLoading), true)
   const loadingUpdate = await host.evaluate(input => window.airiKioskDesktop.updateSurface({ ...input, bounds: { ...input.bounds, width: 650 } }), guestPlacement)
   assert.equal(loadingUpdate.state, 'loading', 'Placement must not mark the navigating menu ready.')
-  assert.deepEqual(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.map(view => view.getVisible())), [false])
+  assert.deepEqual(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.map(view => view.getVisible())), [true])
 
   await guestPage.waitForURL(guestUrl.replace('/select-table', ''))
   await host.waitForFunction(() => window.__nativeNavigations.filter(value => value.serviceId === 'pb-guest-fixture' && value.state === 'ready').length >= 2)
@@ -919,6 +938,29 @@ try {
   console.info('PASS: guest counter/table selection uses the current document without HTTP re-fetch, rejects stale component/URL metadata, and Start reconnects after navigation with the selected table/cart and no login.')
 
   const invoiceRevision = await host.evaluate(() => Math.max(...window.__nativeNavigations.filter(value => value.serviceId === 'pb-guest-fixture').map(value => value.revision)))
+  // Report: this chat, Nov19 01:27 — an earlier submission marker blocked a
+  // fresh add before dispatch, but its receipt claimed this add was unknown.
+  // Only this isolated fixture owns this synthetic marker; production barriers
+  // must be reconciled against the original order, never deleted as a retry.
+  const markerKey = 'webnavior:pb:cart-pending:/order/store/1kgJeql/internal_use/'
+  const priorMarker = 'order:11111111-1111-4111-8111-111111111111'
+  await guestPage.evaluate(({ key, marker }) => localStorage.setItem(key, marker), { key: markerKey, marker: priorMarker })
+  try {
+    const { result: refused } = await guestExecute('browser_cart_add', {})
+    assert.equal(refused.ok, false)
+    assert.equal(refused.status, 'rejected')
+    assert.equal(refused.effect, 'none')
+    assert.equal(refused.code, 'previous-operation-unconfirmed')
+    assert.equal(refused.blockedBy, 'order')
+    assert.equal(refused.execution.steps.length, 0)
+    assert.equal(await guestPage.evaluate(key => localStorage.getItem(key), markerKey), priorMarker)
+    // This guest fixture intentionally omits full pickup/catalog metadata.
+    // The complete fixture above verifies recovery and explicit reset; here
+    // only the pre-dispatch refusal and retained marker are under test.
+    assert.equal(await app.evaluate(() => globalThis.__pbGuestFixtureWrites), 0)
+  }
+  finally { await guestPage.evaluate(key => localStorage.removeItem(key), markerKey) }
+  console.info('PASS: an earlier order barrier rejects a new add with no effect and remains blocked without any write or automatic marker removal.')
   await guestPage.goto(guestUrl.replace('/menu/select-table', '/orders/create'))
   await host.waitForFunction(revision => window.__nativeNavigations.some(value => value.serviceId === 'pb-guest-fixture' && value.revision > revision && value.state === 'ready'), invoiceRevision)
   guestDiscovery = await invoke({ kind: 'discover', request: { version: 1, connectionId: 'guest-invoice', challenge: 'guest-invoice' } }, guestPlacement)

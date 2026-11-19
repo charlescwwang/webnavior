@@ -6,7 +6,7 @@ import { effectScope, shallowRef } from 'vue'
 import { beginBrowserCartTask } from '../services/browserCartTask'
 import { createBrowserDialogue } from '../services/browserDialogue'
 import { createBrowserOrderingTools } from '../services/browserOrderingTools'
-import { createMenuReplyWindow, replyFromConversation } from '../services/questionPresentation'
+import { createMenuReplyWindow, operationReplyFrom, replyFromConversation } from '../services/questionPresentation'
 import { useKioskInteractionRecording } from './useKioskInteractionRecording'
 
 const kioskApi = vi.hoisted(() => ({
@@ -22,6 +22,38 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  // Report: this chat, Nov19 01:19 — reply_to_customer rejected extra model
+  // parameters before dispatch, but its no-effect receipt never reached Host.
+  it('preserves a rejected no-effect reply receipt without inventing an uncertain cart write', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'reply-rejected' } })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'reply', type: 'function', function: { name: 'reply_to_customer', arguments: '{}' } }] })
+    const payload = { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '這次引導尚未完成，請告訴我想點的餐點。' }
+    const tool = rawTool({ name: 'reply_to_customer', description: 'Reply', parameters: { type: 'object', properties: {} }, execute: async () => payload })
+    const window = createMenuReplyWindow()
+    let outcome: string | undefined
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const result = await recording.send('ordering', '我想點餐', [tool], {
+        onToolActivity: (name, state) => {
+          if (state === 'executing')
+            window.beginOperation(name)
+        },
+        onToolResult: (name, content) => {
+          window.record(name, content)
+          outcome = operationReplyFrom(content)
+        },
+      })
+      expect(result).toMatchObject({ status: 'incomplete', reason: 'tool-rejected' })
+      expect(window.effectState()).toBe('none')
+      const reply = replyFromConversation(result!, { menu: window, outcome, failureMessage: '失敗', browserRecovery: { operationAttempted: true, page: 'menu' } })
+      expect(reply.content).toBe(payload.customerMessage)
+      expect(reply.content).not.toContain('購物車')
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
+    }
+    finally { scope.stop() }
+  })
+
   // Report: this chat; a model's old tool name must be corrected before execution.
   it('returns an unavailable tool to Main for bounded correction instead of ending the customer request', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'repair-name', state: 'active' } })
@@ -1184,16 +1216,16 @@ it('does not clear the new reception when the previous session end returns late'
 })
 
 // Report: this chat, 2026-11-18 — public-domain replies wait behind diagnostic uploads.
-it('saves customer evidence without waiting for an unrelated diagnostic upload', async () => {
+it.each(['browser_tool_metrics', 'greeting_delivery'])('saves customer evidence without waiting for an unrelated %s upload', async (source) => {
   vi.resetAllMocks()
   kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'public-latency' } })
   let finishDiagnostic!: (value: { entry: { id: string } }) => void
-  kioskApi.appendKioskInteraction.mockImplementation(({ metadata }) => metadata?.source === 'browser_tool_metrics'
+  kioskApi.appendKioskInteraction.mockImplementation(({ metadata }) => metadata?.source === source
     ? new Promise(resolve => finishDiagnostic = resolve)
     : Promise.resolve({ entry: { id: 'customer-evidence' } }))
   const recording = useKioskInteractionRecording()
   await recording.start('ordering')
-  const diagnostic = recording.append('service_event', '{"kind":"browser_tool_metrics"}', { source: 'browser_tool_metrics' })
+  const diagnostic = recording.append('service_event', JSON.stringify({ kind: source }), { source })
   await vi.waitFor(() => expect(finishDiagnostic).toBeTypeOf('function'))
   const transcript = recording.recordTranscript({ id: 31, source: 'asr', text: '雞腿便當一份' })
   try {

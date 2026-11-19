@@ -51,7 +51,6 @@ onUnmounted(() => {
 
 <template>
   <section :class="['scenario-surface', { 'has-presentation': props.presentation?.products.length }]" aria-label="互動服務畫面">
-    <slot name="preparation" />
     <BrowserProductPresentation v-if="props.presentation?.products.length" :presentation="props.presentation" />
     <CustomerPhoneModal v-if="customerEntry.pending.value" :listening="props.listening" :busy="customerEntry.busy.value" :error="customerEntry.error.value" @submit="customerEntry.submit" @skip="customerEntry.submit()" @activity="emit('activity')" />
     <NativeServiceSurface
@@ -76,7 +75,7 @@ onUnmounted(() => {
       ref="scenarioFrame"
       :key="`${scenarioRegistry.activeScenario.value?.id ?? 'none'}:${scenarioRegistry.iframeRevision.value}`"
       :src="scenarioRegistry.activeScenario.value?.serviceUrl"
-      :inert="customerEntry.pending.value || interactiveServiceClient.availability.value === 'loading'"
+      :inert="customerEntry.pending.value"
       allow="geolocation; camera 'none'; microphone 'none'; display-capture 'none'"
       :title="scenarioRegistry.activeScenario.value?.title ?? '互動服務'"
       @load="attachFrame"

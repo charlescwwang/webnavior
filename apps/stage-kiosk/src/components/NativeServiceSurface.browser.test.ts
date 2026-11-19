@@ -36,11 +36,11 @@ it('revokes the old tools on native navigation and announces only the current co
   try {
     await expect.poll(() => ready.mock.calls.length).toBe(1)
     navigation({ serviceId: 'pb-test', documentKey: 'pb-test:1', revision: 2, state: 'loading' })
-    await expect.element(screen.getByRole('status')).toBeVisible()
+    await expect.element(screen.getByRole('status')).not.toBeInTheDocument()
     expect(navigating).toHaveBeenCalledOnce()
     expect(unavailable).not.toHaveBeenCalled()
     navigation({ serviceId: 'pb-test', documentKey: 'pb-test:1', revision: 1, state: 'ready' })
-    await expect.element(screen.getByRole('status')).toBeVisible()
+    await expect.element(screen.getByRole('status')).not.toBeInTheDocument()
     expect(ready).toHaveBeenCalledOnce()
     navigation({ serviceId: 'pb-test', documentKey: 'pb-test:1', revision: 2, state: 'ready' })
     await expect.element(screen.getByRole('status')).not.toBeInTheDocument()
@@ -57,7 +57,7 @@ it('revokes the old tools on native navigation and announces only the current co
 })
 
 // Report: PB ordering page stays blank while loading (user report, 2026-11-11).
-it('shows loading for the current native document and ignores stale completions', async () => {
+it('keeps readiness internal without a loading overlay and ignores stale completions', async () => {
   const first = Promise.withResolvers<void>()
   const second = Promise.withResolvers<void>()
   const third = Promise.withResolvers<void>()
@@ -85,21 +85,21 @@ it('shows loading for the current native document and ignores stale completions'
     h(NativeServiceSurface, { bridge, serviceId: 'ordering', documentKey: url.value, url: url.value, title: 'PB', occluded: false, onReady: ready, onUnavailable: unavailable }),
   ]) }), { global: { plugins: [i18n] } })
   try {
-    await expect.element(screen.getByRole('status')).toBeVisible()
+    await expect.element(screen.getByRole('status')).not.toBeInTheDocument()
     expect(screen.container.querySelector('[aria-busy]')?.getAttribute('aria-busy')).toBe('true')
     expect(ready).not.toHaveBeenCalled()
     url.value = 'https://second.example/menu'
     await nextTick()
     await expect.poll(() => screen.container.querySelector('[aria-busy]')?.getAttribute('aria-busy')).toBe('true')
     first.resolve()
-    await expect.element(screen.getByRole('status')).toBeVisible()
+    await expect.element(screen.getByRole('status')).not.toBeInTheDocument()
     expect(ready).not.toHaveBeenCalled()
     second.resolve()
     await expect.element(screen.getByRole('status')).not.toBeInTheDocument()
     await expect.poll(() => ready.mock.calls.length).toBe(1)
     expect(screen.container.querySelector('[aria-busy]')?.getAttribute('aria-busy')).toBe('false')
     url.value = 'https://third.example/menu'
-    await expect.element(screen.getByRole('status')).toBeVisible()
+    await expect.element(screen.getByRole('status')).not.toBeInTheDocument()
     third.reject(new Error('Fixture network failure'))
     await expect.element(screen.getByRole('alert')).toBeVisible()
     await expect.element(screen.getByRole('status')).not.toBeInTheDocument()
@@ -215,7 +215,7 @@ it('hides the native service while the actual administrator PIN prompt is open',
 })
 
 // Report: this chat, 2026-11-14 — a placement update falsely finished table→menu loading.
-it('keeps the product loading cover through placement updates until navigation really completes', async () => {
+it('keeps navigation readiness through placement updates without covering the vendor page', async () => {
   await page.viewport(1080, 1000)
   let navigation!: (value: DesktopSurfaceNavigation) => void
   const occluded = shallowRef(false)
@@ -241,10 +241,8 @@ it('keeps the product loading cover through placement updates until navigation r
     navigation({ serviceId: 'ordering', documentKey: 'ordering:1', revision: 2, state: 'loading' })
     occluded.value = true
     await expect.poll(() => vi.mocked(bridge.updateSurface).mock.calls.length).toBeGreaterThan(1)
-    await expect.element(screen.getByText('載入中…', { exact: true })).toBeVisible()
+    await expect.element(screen.getByText('載入中…', { exact: true })).not.toBeInTheDocument()
     expect(ready).toHaveBeenCalledOnce()
-    await expect.poll(() => getComputedStyle(screen.container.querySelector('[role="status"]')!).opacity).toBe('1')
-    await screen.getByRole('status').screenshot({ path: '__screenshots__/pb-menu-loading-20261114.png' })
     loading = false
     navigation({ serviceId: 'ordering', documentKey: 'ordering:1', revision: 2, state: 'ready' })
     await expect.element(screen.getByRole('status')).not.toBeInTheDocument()

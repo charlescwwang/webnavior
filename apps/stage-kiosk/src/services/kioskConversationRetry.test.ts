@@ -10,6 +10,56 @@ import { shallowRef } from 'vue'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { createRetryContext, isKioskConversationRetrySafeTool, readConversationRetryContext, recoverConversationService, resetConversationService, resumeConversationRetry, retryMatches } from './kioskConversationRetry'
 
+// Report: this chat, Nov19 02:19–02:23 — reset preflight tried dismissing PB's announcement under its own cover.
+it('resets a menu using read-only preflight even when an admission read would try a hidden announcement click', async () => {
+  const tools = ['browser_state_get', 'browser_cart_get', 'browser_recovery_context', 'browser_customer_reset'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
+  const execute = vi.fn(async (tool: ServiceTool, input: Record<string, unknown>) => {
+    if (tool.name === 'browser_recovery_context')
+      return { source: 'browser', documentId: 'menu', contextKey: 'old-cart', canRetry: false, canReset: true, blockedBy: 'order' }
+    if (tool.name === 'browser_customer_reset')
+      return { ok: true, source: 'browser', status: 'customer-reset', cartCleared: true, documentId: 'menu' }
+    if (input.forAdmission)
+      return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '公告按鈕被遮住。' }
+    return { ok: true, source: 'browser', page: 'menu', cart: { lines: [{}] } }
+  })
+  const client = { tools: shallowRef(tools), execute, refresh: vi.fn(), waitUntilReady: vi.fn(async () => {}), getDocumentId: () => 'menu' }
+  await expect(resetConversationService(client)).resolves.toBe('preserved')
+  expect(execute.mock.calls.some(([, input]) => input.forAdmission)).toBe(false)
+  expect(execute).toHaveBeenCalledWith(tools[3], {})
+})
+
+// Report: this chat, Nov19 01:21 — healthy PB reads remained blocked by an
+// earlier submission marker, while the customer saw a connection outage.
+it('distinguishes an unconfirmed order from a disconnected menu without clearing or replaying it', async () => {
+  const tool = { name: 'browser_recovery_context', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
+  const client = { tools: shallowRef([tool]), recover: vi.fn(async () => {}), execute: vi.fn(async () => ({ source: 'browser', documentId: 'live', contextKey: 'pending', canRetry: false, canReset: false, blockedBy: 'order' })) }
+  await expect(recoverConversationService(client, [])).rejects.toThrow('訂單紀錄')
+  expect(client.execute).toHaveBeenCalledExactlyOnceWith(tool, {})
+})
+
+// Report: this chat, Nov19 — the native table peer explicitly requires entry
+// before cart inspection; Restart previously parsed its absent cart and failed.
+it('enters the selected table once when Restart must reach the menu before inspecting the cart', async () => {
+  const tools = ['browser_cart_get', 'browser_recovery_context', 'browser_start_ordering', 'browser_customer_reset'].map(name => ({ name, description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
+  let started = false
+  const execute = vi.fn(async (tool: ServiceTool) => {
+    if (tool.name === 'browser_cart_get')
+      return started ? { ok: true, page: 'menu', cart: { lines: [], tableName: 'A3-1 桌' } } : { ok: true, page: 'table', selectedTable: 'A3-1 桌', cartAdmission: 'after-table-entry' }
+    if (tool.name === 'browser_recovery_context')
+      return { source: 'browser', documentId: 'current', contextKey: 'entry', canRetry: false, canReset: true, blockedBy: 'order' }
+    if (tool.name === 'browser_start_ordering') {
+      started = true
+      return { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: 'A3-1 桌', customerMessage: '正在準備菜單。' }
+    }
+    return { ok: true, status: 'customer-reset', cartCleared: true, documentId: 'current' }
+  })
+  const client = { tools: shallowRef(tools), execute, refresh: vi.fn(), waitUntilReady: vi.fn(async () => {}), getDocumentId: () => 'current' }
+  expect(await resetConversationService(client)).toBe('preserved')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')).toHaveLength(1)
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_customer_reset')).toHaveLength(1)
+  expect(execute).toHaveBeenCalledWith(tools[2], { name: 'A3-1 桌', forReset: true })
+})
+
 // Report: this chat, 2026-10-29; PB recovery/retry incorrectly required owned Menu tools.
 it('recovers a browser service and reads its own fresh retry context without Menu tools', async () => {
   const tool = { name: 'browser_recovery_context', description: 'Host context', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
@@ -339,7 +389,7 @@ it('never grants retry authority from an unsettled browser receipt', async () =>
   const execute = vi.fn(async () => ({ source: 'browser', documentId: 'document', contextKey: 'fresh', canRetry: false, canReset: false }))
   const context = createRetryContext({ tools: shallowRef([tool]), execute })
   await expect(context.capture()).resolves.toBeUndefined()
-  await expect(readConversationRetryContext({ tools: shallowRef([tool]), execute })).rejects.toThrow('not settled')
+  await expect(readConversationRetryContext({ tools: shallowRef([tool]), execute })).rejects.toThrow('先前操作仍在確認')
 })
 
 // Report: this chat, Nov17 cases 7/11 — result-only tools bypassed verified reception reset.

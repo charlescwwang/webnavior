@@ -120,24 +120,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="surface" :class="['relative h-full min-h-0 w-full']" :aria-label="props.title" :aria-busy="loading">
-    <div v-if="loading" role="status" aria-live="polite" :class="['menu-loading']">
-      <span aria-hidden="true" :class="['loading-spinner i-solar:refresh-circle-line-duotone']" />
-      <p :class="['m-0 text-sm text-slate-500 dark:text-slate-400']">
-        {{ t('stage.kiosk.native-view-loading') }}
-      </p>
-    </div>
-    <p v-else-if="failed" role="alert" :class="['m-0 p-4 text-center text-slate-600']">
+    <p v-if="failed" role="alert" :class="['m-0 p-4 text-center text-slate-600']">
       {{ t('stage.kiosk.native-view-failed') }}
     </p>
   </div>
 </template>
-
-<style scoped>
-/* Short merchant navigations need no interstitial. Reveal only a small neutral
-   status after 700ms; this visual delay never changes document readiness. */
-.menu-loading { position: absolute; inset: 0; min-height: 2rem; display: flex; align-items: center; justify-content: center; gap: .5rem; animation: loading-reveal 0s .7s both; }
-.loading-spinner { width: 1.25rem; height: 1.25rem; color: #64748b; animation: loading-spin 1.2s linear infinite; }
-@keyframes loading-reveal { from { opacity: 0; } to { opacity: 1; } }
-@keyframes loading-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .loading-spinner { animation: none; } }
-</style>
