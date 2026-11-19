@@ -13,6 +13,22 @@ unchanged for decisions and troubleshooting. Text typed into the simulation
 input is also submitted unchanged. This normalizes Chinese writing; it does
 not translate other languages or verify the truth of a model reply.
 
+## Loading and model timing
+
+The desktop 0.6.7 flight recorder keeps local PB/Host loading and performance
+records automatically; see `apps/stage-kiosk-desktop/README.md`. This frontend
+emits numeric timing envelopes for avatar, VAD and camera initialization. It adds
+no customer prompt, loading overlay, retry or forced refresh.
+
+PB Start does not directly initialize a local AI model. The avatar mounts with
+the Kiosk, VAD initializes with the audio pipeline, and camera tasks start after
+microphone permission settles (conditional Face may initialize later). Falcon
+ASR, ordinary ASR and Kiosk TTS use server APIs. Native GPU audio can compile its
+bundled model on its first status/start/open request; capture-only native LCMV
+does not load that model. Character mounting no longer initializes the unused
+DuckDB test database. These are source-level trigger facts, not attribution of
+an intermittent field stall; correlate actual recorder timestamps first.
+
 ## Run
 
 Start the menu service, then the kiosk:
@@ -165,11 +181,65 @@ arguments or unverified success claims are not customer-facing text.
 
 ## UMA-8 microphone processing
 
+### Windows Electron native capture (0.5.0 candidate)
+
+On the updated Windows EXE, UMA-8 RAW defaults to the existing processing path.
+Open **本機麥克風與喇叭 → UMA-8 收音處理 → UMA-8 處理管線** to select
+**既有收音方式（LCMV／Spatial Mask）** or explicitly opt into
+**線上 RTF／MVDR＋GPU（測試中）**, then press **套用收音方式**. The choice is local
+to the device. Selecting a draft alone does not initialize GPU audio. Existing
+gain, channel mapping and algorithm settings remain available when switching
+back. Switching retires the capture generation and unfinished recognition;
+adjust while silent. No automatic switch occurs during customer speech.
+
+The optional bundled native frontend uses:
+sounddevice/PortAudio 48 kHz eight-channel capture plus application browser playback reference → AEC3 → common gain → online
+RTF/MVDR → UL-UNAS/OpenVINO → AGC → spatial/WebRTC segmentation → existing ASR
+queue. It bypasses the desktop LCMV/Spatial Mask/Falcon split and a second Silero
+pass. Iris Xe accelerates UL-UNAS; spatial processing remains CPU work and ASR
+retains the Server's model configuration. Ordinary browser and mono input keep
+their existing paths described below.
+
+The 0.6.0 EXE and matching bridge v3 frontend start native listening without a
+manual recording, `target_rtf.npz`, or a five-second limit. A new generation
+immediately uses its reference microphone while reliable speech learns the RTF;
+tracking then adapts continuously, including a changed dominant position.
+Playback and weak/mixed evidence freeze learning. Without an installation anchor,
+there is no fixed service-area exclusion or customer-identity guarantee.
+
+Native settings own only the eight-channel input, channel mapping and common
+gain. Speakers use the normal independent speaker selector and **播放喇叭測試音**,
+including while native capture is active. There is no same-host or stereo-output
+prerequisite for opening the microphone. Browser getUserMedia is not used for
+native input. The browser plays application TTS/cues once and mirrors their PCM
+into AEC; this is not system loopback or hardware-DAC feedback. A bounded queue
+resamples independent clocks, with 100 ms capture delay to keep the delivered
+reference causal. Device/DSP failures retain their original message.
+
+GPU diagnostics show the runtime/device actually reported by the process. The
+previous DirectML pilot measured about 30.5 ms per 16 ms hop before AEC/RTF;
+OpenVINO needs its own physical Windows GPU and continuous-capture qualification.
+See [native audio setup](../stage-kiosk-desktop/audio/README.md) for build inputs
+and the outstanding hardware/acoustic validation.
+
+### Browser processing
+
 Open the Kiosk administrator panel (configured PIN `0000`) → **本機麥克風與喇叭**
 → **UMA-8 收音處理**. Select the actual UMA-8 microphone. **自動辨識 UMA-8**
 uses its device label; choose **UMA-8 多聲道** if the driver uses another name.
 **一般麥克風（瀏覽器處理）** retains the original browser AEC/noise processing.
 This hardware choice is independent of the Server's legacy ASR/Falcon mode.
+
+If capture has no live track, acquisition has failed before AEC/VAD/ASR. Device
+settings retain the browser error name, message and failed constraint even when
+Chromium supplies an empty message. `OverconstrainedError` may identify either
+`channelCount` or `deviceId` when the selected device cannot provide raw capture.
+An explicit **改用一般麥克風並重新連線** action selects standard browser processing
+and reconnects; it never upmixes mono/stereo as a physical array. Check the device
+and Windows channel configuration before re-enabling eight-channel array mode.
+Successful capture reuses its input consent for speaker enumeration, without a
+second microphone probe competing with the USB stream. Diagnostic snapshots
+include acquisition failure and requested constraints, never captured audio.
 
 UMA-8 requests eight raw channels with browser AEC/NS/AGC disabled. Its pipeline
 is **48 kHz multichannel → AEC3 → LCMV → 16 kHz gain/limiter → Silero VAD**.
@@ -317,7 +387,12 @@ acknowledgements cannot block or set the next reception's recording error.
 
 External PB does not expose the owned Menu's `kiosk_conversation_context`.
 The Server now selects one fixed workflow skill from the verified page and
-pending task. Selecting a table never fabricates an empty cart: meal tools stay
+pending task. Explicit Restart records a retired prior-operation warning as a
+`browser_previous_operation_retired` event in the ending visitor's backend
+interaction history. After the editable cart is verified empty, that historical
+event neither blocks the next visitor nor appears in their conversation. Healthy
+PB replies blocked by an unresolved operation are distinct from transport failure.
+Selecting a table never fabricates an empty cart: meal tools stay
 hidden until the native menu/cart can be checked. On the RD table page, customers
 can use large buttons or name an offered table. They can say「A1 桌，開始點餐」
 in one turn, or name the table first and then say「開始點餐」. After a valid
@@ -487,8 +562,14 @@ for continuing on screen or reviewing the cart, retaining the failure internally
 This guidance never marks an order successful or retries an uncertain write.
 
 
-For the approved eight-piece dumpling product, `piecesPerServing` supplies the
-total pieces in each serving; Host derives the extra option count and current
+For the approved eight-piece dumpling product, a piece-only order such as
+"10顆" means one ten-piece serving after the product has been established.
+"10顆2份" keeps two ten-piece servings; "一份十顆、一份正常" keeps separate
+ten-piece and basic eight-piece configurations. A live quantity question can
+accept the complete piece reply locally, with fresh product/cart validation.
+Names alone, relative extra requests and price questions do not gain purchase
+consent from this convention. `piecesPerServing` supplies the total pieces in
+each serving; Host derives the extra option count and current
 website price. `quantity` always counts meals. An explicit `copyFrom` preserves
 a uniquely identified cart meal's options and note. Same-product replacements
 patch only specified options (`quantity: 0` removes one), note or pieces; other
@@ -507,16 +588,26 @@ Declining cancel-and-search restores the previous question. Complex draft state
 remains Host-owned and is not public native `browser_order_draft` permission.
 
 Page/task/cart filtering is `availableOrderingTools`. Table selection exposes no
-cart tools; menu location does not prevent cart edits. Startup cart preparation
-runs on the table page through a Host-only fresh cart read, before exposing
-Start. An unowned cart or failed preparation shows an explicit preparation
-panel and Restart action instead of a blank native region. Same-reception
-ownership survives normal menu/cart navigation. Browser recovery reports purchase-retry admission separately from explicit cart-reset admission (`canRetry` / `canReset`). A prior document’s cart marker can be retired only by a customer-requested clear with a fresh empty-cart readback; current uncertain writes and order-submission and uncertain-clear (`reset:`) markers stay blocked across reloads. Reset failures display localized customer guidance, with internal details in diagnostics. Explicit Restart from table
-entry verifies settled work; an empty cart needs only an entry reload, while
-an occupied cart enters through PB's actual selected-table Start control under
-the maintenance cover and then clears/verifies its real cart before reloading.
+cart tools; menu location does not prevent cart edits. Cart ownership is checked
+at the actual Agent tool boundary, without a startup preparation cover or global
+voice/input pause. An unowned or unreadable cart never hides PB's manual controls.
+Explicit Restart uses read-only preflight; only the table route requests private
+cart admission. Menu reads cannot dismiss announcements as a preflight side effect.
+If table cart reads require Start, Restart uses the actual selected table, then
+verifies/clears the editable cart and reloads entry. All steps remain visible,
+without Host loading or PB maintenance overlays. Current uncertain commerce still
+settles through its operation coordinator; historical warnings are retired only
+after the existing empty-cart verification. Normal phone, invoice, payment and
+administrator dialogs retain their existing UI.
 Ordinary table context never exposes prior cart contents to the models.
-A3/A03 resolve to the one actual current table.
+A3/A03 resolve to the one actual current table. A compressed code such as A31
+may suggest A3-1 only when no actual A31 spelling exists. Host asks a bound
+`browser-table-confirmation` question first; assent selects the actual website
+table once, without pressing Start. Multiple split matches require a specific
+choice. Refusal selects nothing. Visitor/document changes, manual table changes,
+list changes, explicit Restart and expiry revoke the question. This is a hosted
+frontend flow using the existing 0.6.5 native exact-table tools; no EXE update is
+required. Exact `A3之一`/`A3之二` forms keep their normal selection behavior.
 Native dropdown clicks synchronize the large selector; a website default alone
 is not customer consent.
 
@@ -582,7 +673,13 @@ description field is empty; one serving keeps the verified eight-piece default.
 On the cart page, `continue_checkout`, `choose_invoice_method` and
 `set_invoice_notification_phone` expose the next actual checkout steps. Cart
 review reads the dishes/servings/website amount before asking for confirmation;
-its assent advances to invoice choices, never submission. Codes/email may be
+its assent advances to invoice choices, never submission. The spoken review asks
+only whether the meals, quantities and amount are correct. A live answer is
+resolved before a repeated open-cart tool, so assent does not restart review.
+The website's preselected invoice radio is not a customer choice: entering
+checkout from an already open cart also asks the invoice method before contact
+details. After choosing no carrier, the next step asks for notification contact;
+other methods first collect their required invoice fields. Codes/email may be
 entered on the website; phone drafts must match the current customer text.
 The final submission question includes meals/options/notes, website total,
 table, invoice and notification details. Its native token is private, expiring,
@@ -1177,7 +1274,7 @@ PB has two independent lifecycles: shared account login and the active vendor
 order. An explicit `order:null` with zero subtotal and no details is an empty cart;
 missing or contradictory evidence is an error. The first add may establish a new
 order identity, but pickup/manual generation and the entire effect must still match.
-Ending a reception uses Host-only `browser_customer_reset`: read the current
+Automatic idle/completion cleanup uses Host-only `browser_customer_reset`: read the current
 cart, click PB's native cart-header **清空** once when rows remain, and verify
 both empty rows and zero subtotal. It then closes the product draft, clears
 search, returns to the menu and renews the Host connection in the same PB
@@ -1185,8 +1282,13 @@ document to verify the result. The Host then reloads the configured entry URL
 (PB's select-table page), replacing the previous customer's document and tool
 handles while retaining the dedicated browser profile's login. A successful
 native reset alone does not prepare the next customer's entry screen.
-This applies to explicit new-order/reception actions and actual
-idle/completion end, not the continue-ordering dialog. Main cannot call this tool.
+Manual **重新開始** instead initializes Host reception state without requiring
+PB order/payment readback or cart clearing. Desktop 0.6.9 exposes Host-only
+`browser_reception_reset` even after submission: it retires our local marker,
+invalidates queued controls and confirmation, and preserves PB state for staff.
+It bypasses the commerce FIFO; it never replays or cancels already-dispatched
+merchant work. The ending visitor retains audit evidence. Neither lifecycle
+command is a Main tool.
 The customer restart button sits at the lower left of the avatar column, clear
 of conversation text and the native website on desktop and browser hosts.
 Checkout asks for invoice details before notification contact details. Each
@@ -1834,6 +1936,29 @@ unsaved edits across switches. Owner templates without a Site show both banks.
 Welcomes are permitted on `customer_entry` and `ordering`, with no unresolved
 question or active customer turn. The host rechecks the browser phase after
 cold synthesis; actual touch activity cancels a pending or spoken welcome.
+Only completed audio playback marks a welcome as delivered; blocked, failed and
+cancelled playback remain distinct. Before any customer activity, an interrupted
+welcome may retry twice within the same reception's 20-second window, with at
+least 1.5 seconds between attempts. Each attempt rechecks presence and the current
+browser phase. Active speech/recognition, pending questions and customer work take
+priority. Completion, customer activity or reception reset closes the budget;
+retries never clear a cart or create a replacement reception. Fixed-audio waits
+are cancellable without discarding reusable synthesis, and a cold attempt waits
+at most ten seconds for fixed audio.
+
+Camera startup waits for microphone preparation even when triggered by a reactive
+mode change. Unrelated device-setting changes do not restart vision or reset
+presence. With voice diagnostics enabled, `greeting_delivery` records the attempt,
+reception, result and cancellation reason; an old result cannot enter the next
+visitor's history.
+For an admitted welcome, fresh in-zone geometry with low confidence is treated as
+uncertain rather than confirmed departure. It does not renew new-welcome or ASR
+admission. Missing/out-of-zone evidence retains the existing 1.5-second grace;
+stopped cameras and stale uncertain frames still cancel. Pose/Face mode matches
+their nose landmarks, requiring one unique face and a current Pose. A reliable
+matched face can confirm presence when close framing hides the hips and lowers
+the five-anchor Pose score. Body position/scale stay owned by Pose; unrelated,
+ambiguous or stale matches cannot promote confidence.
 The spoken text is retained in the current visitor transcript. Neither welcome
 mode appends a recommendation invitation. The same VLM policy also controls
 whether contextual assistance reminders use images; reminders retain their
@@ -1955,12 +2080,14 @@ Completed VAD utterances use 16kHz mono PCM16 WAV. ASR uploads contain at most
 are included once. Each upload fits the dedicated 1MiB request limit, including
 multipart headroom. Transcripts are reassembled in sample order and enter the
 decision queue once, after every chunk succeeds. A failed/empty chunk, cancellation,
-expired capture reservation or visitor reset rejects the whole utterance; partial
-speech never becomes a separate order. Each successfully transcribed chunk
-renews a 15-second inactivity deadline; a stalled chunk aborts remaining uploads.
-The separate 15-second queue freshness window starts only after the complete
-transcript is ready, so successful long recognition does not expire merely from
-its total duration. Capture order and visitor-reset cancellation remain intact.
+explicit provider deadline or visitor reset rejects the whole utterance; partial
+speech never becomes a separate order. The queue adds no default 15-second ASR
+watchdog and never expires a complete transcript behind earlier ASR or Agent work.
+Accepted utterances retain capture order until processed or the reception resets;
+actual request failures still cancel their own reservation. Capacity remains
+bounded, with explicit overload feedback for a new utterance that cannot be accepted.
+Falcon retains its explicit provider-policy deadline. Every dequeued sentence is
+processed against fresh cart/question state; waiting does not extend order consent.
 The archival recording retains the complete original utterance. ASR413 is shown
 as an upload-size refusal, separately from incomplete recognition/provider failure.
 
@@ -2146,3 +2273,21 @@ it on screen. Unknown payment or an unresolved journal marker retains the same
 reception. A failed state read cannot fall back to an unchecked reload. These
 specific lifecycle refusals are displayed to the customer; transport details
 remain behind the generic failure message.
+
+## Desktop LCMV input (0.6.3)
+
+With UMA-8 and the existing LCMV algorithm selected, the EXE uses native physical
+eight-channel input through `airiKioskArrayInput` v1. Browser-only capture and
+Spatial Mask retain their original sources. Operators select the native microphone
+in array settings and speakers in the normal output selector; saved LCMV parameters
+and recognition policy are unchanged. Old EXEs require an update rather than a mono
+substitution. Auto mode needs a previously identifiable UMA-8 label; explicit UMA-8
+mode works without browser device enumeration.
+
+`capture.ts` initializes the same AEC3 WASM/LCMV worker, transfers the native port
+and the reference Worklet port into that worker, and leaves final PCM delivery in
+the original VAD/Falcon path. These ports bypass renderer scheduling. The raw native
+owner performs only capture/reference clock pairing, with the existing 100 ms input
+delay and bounded drift correction; it loads no denoising/RTF model. Source timestamps
+subtract the reported native input delay after the connection is ready. Physical
+Windows clocks, AEC quality, recognition and device switching remain acceptance tests.

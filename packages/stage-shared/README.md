@@ -60,7 +60,9 @@ an empty selected-options array is never evidence that the merchant has no optio
 native receipt-name mapping and page/task/cart filter. Public model projections
 omit native product/row/option IDs and versions, retaining names, configuration
 choices, quantities and website prices. `table-names` resolves A3/A03 to one
-actual offered table and refuses ambiguous equivalent choices. Native transport
+actual offered table and refuses ambiguous equivalent choices. Split tables such
+as A3-1 and A3-2 retain every numeric segment; they never resolve to A3 or A31.
+Native transport
 validation remains in the owning adapter. Model-only receipts use `outcome` and
 `cartEffect` with relevant repair facts; technical status envelopes and private
 question tickets remain internal.
@@ -127,9 +129,13 @@ The same module converts explicit dumpling `piecesPerServing` into extras from
 the confirmed eight-piece base; live option limits/prices remain executor-owned.
 Its closed literal parser is shared by Jev compilation and Server plan admission,
 so incomplete/mixed speech does not gain write coverage from a numeric match.
-The Host recognizes this exact spoken name only when it identifies one current
-product; collisions stay ambiguous. This does not supply a missing serving count
-or bypass required option and price validation.
+A complete total-piece request for this established product denotes one serving
+unless a serving count is given. The collection parser preserves separately spoken
+configurations and their original evidence spans; "normal" uses the basic eight.
+Only a live product quantity question may parse a name-free piece answer. The
+Host recognizes the spoken name only when it identifies one current product;
+collisions, relative extras and unrelated products stay with semantic planning.
+Required options, live option limits/prices and purchase authority remain separate.
 
 `@proj-airi/stage-shared/product-presentation` owns the validated ephemeral
 product cue contract and the original Menu cursor timing policy; PB uses shorter control-following steps.
@@ -239,3 +245,18 @@ service-clarification schema, domain-version/question correlation and shared tim
 ceilings. `SERVICE_RECOVERY_PROGRESS` start is only provider work notification;
 service admission must be established independently, and neither grants a Menu
 operation ticket. It carries no fabricated Jev confidence.
+
+## Kiosk native audio
+
+`kiosk-native-audio` owns the Eventa request/result contract, bounded Float32 PCM
+and capture-generation identifiers for the Electron-owned GPU frontend. Bridge
+version 2 covers native device enumeration, DSP preparation, duplex device open,
+stereo-render polling and stop. The matching 0.5.0 EXE is required; no browser
+microphone stream crosses this native hardware interface. It
+exposes no filesystem path, arbitrary model URL or credentials. The Desktop
+main process enforces trusted-main-frame admission; native processing and model
+lifetime belong to `apps/stage-kiosk-desktop/audio`, not this neutral package.
+
+`kiosk-array-input` owns the v1 native-input control/MessagePort contract for the
+original desktop LCMV path. Control RPC is trusted-main-frame only; each audio port
+belongs to one capture generation. It is separate from the native GPU DSP bridge.

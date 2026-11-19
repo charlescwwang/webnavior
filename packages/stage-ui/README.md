@@ -55,7 +55,7 @@ PB. `browser_table_select` selects only; `browser_start_ordering` selects the
 explicitly requested table and presses PB's Start button. A later voice turn may
 reuse the current rendered `selectedTable`, including PB's default, only after a customer Start request. This is context, not purchase consent. Menu entry
 does not establish cart ownership; the new page must read back table/cart.
-Host-only recovery distinguishes `canRetry` from `canReset`. Explicit reset may discard a retired document’s UUID cart marker only through native clear and fresh empty-cart verification. It never repeats the old purchase, unlocks a current uncertain write, or adopts an `order:` submission or `reset:` uncertain-clear marker, including after reload. A failed clear before dispatch retains retry eligibility; an uncertain dispatched clear retains the write barrier. Empty table-entry resets do not require menu navigation.
+Host-only recovery distinguishes `canRetry` from `canReset`. Explicit reset may retire a previous cart, `order:` submission, or `reset:` clear marker only after accepted calls settle and native clear/fresh empty-cart verification succeeds. It never repeats the old action or unlocks a current uncertain write. The Host records the retired kind in the ending reception, separately from the next visitor. A failed clear before dispatch retains retry eligibility; an uncertain dispatched clear retains the write barrier. Empty table-entry resets do not require menu navigation.
 
 Host-only `browser_cart_get forAdmission=true` also reads a versioned cart on
 the table page for reception preparation. Ordinary table reads omit that cart.
@@ -71,7 +71,14 @@ without a cart snapshot. It does not establish emptiness or ownership. The Host
 allows table entry only and retries admission before exposing menu operations.
 For an explicit reception reset with unfinished items, the Host may enter through
 the existing selected-table Start control with `forReset=true`, skipping the hand
-animation while customer controls remain covered; this grants no order submission.
+animation with the actual website visible; this grants no order submission.
+Reception reset adds no maintenance overlay or input trap. Manual input keeps its
+normal revision/cancellation checks; clearing still requires fresh readback.
+Production PB can place a coupon dialog above its store announcement. When an
+ordering/reset operation needs the underlying controls, the peer first presses
+the uniquely observed promotion's `稍後再領`, then acknowledges the announcement.
+It never claims the coupon, changes `不再顯示此優惠`, force-clicks through another
+dialog or treats an unrelated confirmation as this promotion.
 Failed enhancement leaves the original dropdown available.
 The common service client accepts a correlated `browser_start_ordering`
 menu-entry acknowledgement across a rebind to this same configured PB service.
@@ -108,12 +115,15 @@ must obtain new consent before a later submission.
 
 Native navigation calls `beginNavigation()` to revoke tools while retaining the
 entry acknowledgement's wait. "Entering" acknowledges the accepted click, not a
-loaded menu. Loading UI and fresh discovery continue until native readiness.
+loaded menu. Fresh discovery continues until native readiness, without covering
+the visible native website with a Host loading UI.
 `waitUntilReady(signal)` also waits across the gap between navigation and new
 transport discovery, with a 15-second bound and caller cancellation. It cannot
 reuse the retired document's resolved readiness promise.
 `pbInvoiceInput.ts` focuses the selected native carrier/citizen field,
-validates scanner text and consumes Enter without submitting. It also places a
+validates scanner text and consumes Enter without submitting. An explicit invoice
+radio change transfers focus from contact editing once its conditional field
+renders; unrelated updates do not steal it back. It also places a
 floating numeric touch keypad for the merchant's labeled notification-phone field.
 Focusing the field or pressing its small keypad trigger opens a closable native
 popover on the opposite half of the viewport; it adds no keyboard-sized block
@@ -133,8 +143,12 @@ authoritative and malformed data still rejects. A failed post-dispatch readback
 retains an expected-result verifier for a single add/edit. Fresh recovery reads
 can clear that document's cart-write marker only when the whole expected cart,
 amount, pickup/table and manual-interaction generation match. Multi-step writes,
-foreign/retired-document markers, submission and reset uncertainty stay blocked;
-recovery never replays their actions.
+foreign/retired-document markers, submission and reset uncertainty stay blocked
+for ordinary ordering and automatic recovery; recovery never replays their actions.
+An explicit customer Restart is separate authority: once accepted calls have
+settled, it may verify and clear the current editable draft, retire the previous
+warning, and return its kind for the ending reception's audit event. A result or
+payment page is not an editable draft. Failed clearing retains the active barrier.
 
 Checkout cart edits keep the current cart page; a quantity/removal operation
 must not detour through the menu and recreate invoice/contact fields. Passive
@@ -232,7 +246,12 @@ Configuration and selection contracts are owned by
 `services/pbControls` resolves the actual PB menu, product dialog, options,
 meal quantity, note, add button and unique cart row. `pbOperation` owns the same
 step's cursor, dispatch and readback. Cart writes now use those native controls;
-catalog/configuration/cart APIs remain read-only evidence. The menu-to-cart
+catalog/configuration/cart APIs remain read-only evidence. Navigation to the cart
+closes an open product dialog before locating the cart link. Quantity
+steps dispatch a synchronous mouse press/release and click so Element Plus's
+mousedown-based controls and native click-based buttons both receive their
+normal event sequence; every step still verifies the resulting quantity.
+The menu-to-cart
 journey is limited to this store's `menu` and `orders/create`, with no order-submit
 or payment operation. Full-document navigation revokes the old binding and never
 replays a pending effect.
@@ -430,6 +449,14 @@ why staff must verify merchant records. A timeout alone cannot authorize clearin
 Host menu admission closes the exact native store-announcement control after
 table entry, without touching product or order-confirmation dialogs.
 
+## Microphone acquisition failures
+
+`useSettingsAudioDevice().inputError` retains the last `AudioInputFailure` until a
+new capture request or `resetState()`. It includes the browser error name, a
+nonempty display message and, where supplied, the failed constraint. Stopping a
+failed capture does not erase this evidence. Permission revocation is also
+reported; an empty Chromium error message must not become an empty UI error.
+
 ## External microphone PCM
 
 `stores/ai/models/vad.useVAD` accepts `externalPCM: true` for a host-owned DSP
@@ -443,7 +470,11 @@ probabilities while `speech-ready.buffer` contains recording PCM and padding.
 retain `start(MediaStream)` and browser capture. The audio device store exposes
 `inputConstraints` for a surface-owned explicit channel layout; clear it when
 the owner leaves, and do not silently substitute another physical device when
-that layout cannot be acquired.
+that layout cannot be acquired. A surface with native hardware capture sets
+`browserCaptureEnabled=false`: the persisted enabled preference remains intact,
+but automatic/manual browser stream acquisition and browser permission revocation
+no longer control the native device. Restore browser ownership when leaving that
+surface or selecting the browser pipeline.
 
 
 `useVAD` also accepts `canStartSpeech(endTimeMs?)`, evaluated before model

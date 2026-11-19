@@ -91,6 +91,14 @@ PB_LAB_ORIGIN=http://192.168.8.52:5188 PB_LAB_HOST=0.0.0.0 ./test-sites/pb-order
   手動測試工具定位。商品 `h4`、外層按鈕、詳細對話框及 `.product-item` 選項結構
   對齊既有執行器。圖示使用 Iconify 的 `ep`（Element Plus）圖庫，存成本機檔案。
 - `.dialog-footer` 中的份數輸入與唯一加入按鈕、原站備註 `input` 的 placeholder。
+- 商品份數、加量與購物車加減使用 `.el-input-number` 與具名 span 控制項。
+  依 [Element Plus repeat-click](https://github.com/element-plus/element-plus/blob/dev/packages/directives/repeat-click/index.ts)
+  事件契約，由左鍵 `mousedown` 立即增減、`mouseup` 停止；長按先等600ms，
+  再每100ms增減。單獨 `.click()` 不改數量，Enter 可操作；最小／最大值以
+  `aria-disabled` 與 `is-disabled` 表示。視窗／路由移除、失焦或頁面隱藏會終止長按。
+  商品草稿的合計於microtask更新；購物車該行輸入與控制項則在真實模擬API寫入期間
+  禁用，回應後重新渲染，不以固定延遲冒充網路完成。這是事件與同步邊界模型，
+  尚未證明商家目前部署版本、完整載入遮罩或所有更新時序與本機完全一致。
 - 購物車 `.order-create .produce-item` 的名稱／單價／份數、選項／備註與
   編輯／刪除兩顆 `button.is-circle` 控制；原生移除使用份數 0，避免混淆兩顆按鈕。刪除最後一行仍保留 draft order context，避免原有
   核對器誤判為別人的購物車。
@@ -107,6 +115,22 @@ Inertia reads. Failed/uncertain payment attempts remain `unknown` when the PB-sh
 record does not prove a final result. Result-page cart writes are rejected. The
 browser bridge test also manually submits a TEST order and reads payment state
 through the parent Kiosk client. These tests do not contact merchant/payment APIs.
+
+`quantityControls.test.js` verifies that click-only automation cannot pass the
+fixture, a native press counts once, Enter and held presses respect release and
+dialog removal, and cart controls remain disabled while an intercepted real
+fixture write is pending. It also runs the production PB executor through bentos
+2/260 → 3/390 → 1/130 → 2/260 and closes an open product before cart review.
+Run against the local Vite fixture only:
+
+```bash
+PB_LAB_URL=http://127.0.0.1:5188 VITEST_BROWSER_CHANNEL=chrome pnpm -F @proj-airi/pb-order-lab exec vitest run quantityControls.test.js
+```
+
+`VITEST_BROWSER_CHANNEL=chrome` selects an installed Chrome; omit it to use
+Playwright's installed Chromium. The tests create independent browser sessions
+and do not submit orders. The public test site and native PB payload must be
+released together: an old click-only EXE will intentionally fail these controls.
 
 `nativeCheckout.test.js` also imports the production Kiosk dialogue/cart workflow
 in Chromium. It checks donation entry, invalid-code guidance, manual cart edits,

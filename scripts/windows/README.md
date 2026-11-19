@@ -1,16 +1,21 @@
 # Windows 遠端 Kiosk 建置與啟動
 
-目前區域網路連線使用 **`http://100.92.1.80:5169/kiosk/`**。5169 是 Kiosk 與 API
-的統一入口；5168 只供主機本機反向代理。新建立設定／可攜包已預設此網址。
-既有安裝需更新本次 Electron 編譯檔，並修改 `kiosk.settings.json` 的 `kioskUrl`；
-原始碼啟動則改 `kiosk.windows.local.json`。只有此指定 HTTP 入口獲准，其他非
-loopback 的 HTTP 網站仍拒絕。新版 Kiosk 網頁 API 隨入口 origin 連線。
-下方公開 HTTPS 與 SSH 流程仍可選用。
+0.4.1 基於 0.4.0 OpenVINO，可攜包啟動時提供現場區網
+`http://172.17.69.17:5169/kiosk/`、Tailscale
+`http://100.92.1.80:5169/kiosk/` 與既有公開 HTTPS 三入口。
+EXE 旁的 `kiosk.settings.json` 以 `connections` 設定選單名稱／網址；
+`kioskUrl` 必須對應其中一項，決定預選入口。地址改動只需更新設定並完整重開，
+不必重包。新版設定需要 `connections`，請勿直接覆蓋舊版 JSON。
 
+伺服器以 `KIOSK_TRUSTED_ORIGINS` 獨立設定精確 origin，預設為上述兩個 HTTP 入口。
+若換 IP，需同時調整 `/etc/webnavior/server.env` 並由服務管理員重啟 API。
+5169 是前端與 API 的統一入口，5168 保持 loopback；公開網域保留。
+EXE 的 HTTP 影音特例僅適用設定的 Kiosk 入口，普通瀏覽器仍須 HTTPS。
+完整網頁管理後台捷徑保留公開 HTTPS；現場 PIN 技術設定走所選入口。
 
 ## 想直接執行 EXE：使用可攜版 ZIP
 
-一般機台請使用本次提供的 `Webnavior-Kiosk-Windows-x64-*.zip`，將整包解壓縮，雙擊
+一般機台請使用本次提供的 `Webnavior-Kiosk-GPU-Windows-x64-*.zip`，將整包解壓縮，雙擊
 `Webnavior Kiosk.exe`。不需要安裝 Node、pnpm，也不必執行下方 Setup／Build。
 設定與簡單操作見包內「先看我.txt」及本目錄 [portableQuickStart.txt](portableQuickStart.txt)。
 這是 Intel x64、未簽章的可攜版；保留同一 Windows 使用者的
@@ -21,12 +26,75 @@ loopback 的 HTTP 網站仍拒絕。新版 Kiosk 網頁 API 隨入口 origin 連
 
 ```bash
 pnpm -F @proj-airi/stage-kiosk-desktop build
-python3 scripts/windows/packagePortable.py --runtime-zip /path/to/electron-v46.0.0-alpha.2-win32-x64.zip --output-dir /tmp
+python3 scripts/windows/packagePortable.py --runtime-zip /path/to/electron-v46.0.0-alpha.2-win32-x64.zip --audio-runtime-dir /path/to/prepared-audio --reference /path/to/openvinoReference.npz --output-dir /tmp
 ```
 
 腳本核對既有固定 SHA256、PE x64 標頭、必要檔案與成品 ZIP 內雜湊；產出 EXE 包及相鄰 `.zip.sha256`。
 只打包官方 Runtime、已編譯程式、預設設定與說明，不包含金鑰、登入、profile 或伺服器環境檔。
 Windows 實體硬體與完整點餐仍須在目標機器驗收。
+
+### 0.6.0 自動追蹤與獨立喇叭設定
+
+需同時更新 EXE 與 Kiosk 前端（Eventa audio bridge v3）。sounddevice 0.5.6／
+PortAudio 只開 RAW 八聲道輸入，不要求喇叭或相同 host API。喇叭走原本瀏覽器
+設定；TTS／提示音的應用 PCM 提供 AEC 參考。沿用既有官方固定 SHA 的依賴。
+
+不需手動錄五秒、不讀取或建立安裝基準檔；直接開始收音並自動學習／持續追蹤。
+包內 `Test Native Eight Channel.cmd` 是選用診斷：取五秒輸入樣本計算各聲道
+RMS／peak，不開 GPU 或喇叭、不保存錄音、不屬於使用前的必要校正。
+報告為 `Native-Capture-Test.json`，可用 `--input-device` 指定 host/name identity。
+GPU 即時速度、跨時鐘 AEC、真人品質仍須實機驗收。
+
+### 0.6.1 UL-UNAS 模型略過測試
+
+完整可攜包另含 `Start Without UL-UNAS.cmd`，使用程序環境旗標只在本次EXE略過模型。
+關閉所有Kiosk後再使用；正常雙擊EXE恢復FP32模型，其他音訊設定與流程不變。
+管理頁明確顯示Bypass；不自動切CPU、不放寬250ms界限。此為實際Kiosk／ASR測試入口，
+不是原0.6.0 source-pinned診斷小包的開關；舊小包僅接受原0.6.0來源。
+
+### 0.6.0 完整音訊管線診斷（選用小包）
+
+當原生八聲道檢測成功，但 EXE 回報 `Native playback delivery exceeded 250 ms`，
+可將 `probeNativePipeline.py` 與 `Test Native Audio Pipeline.cmd` 放到0.6.0 EXE旁。
+先退出EXE並停止喇叭播放，再執行CMD；GPU準備後自然說話15秒，回傳
+`Native-Pipeline-Test.json`。此為選用診斷，不是恢復五秒校正要求。
+
+工具核對已安裝0.6.0來源雜湊，沿用原Worker、八聲道Capture、AEC3、RTF／MVDR、
+OpenVINO GPU.0與AGC／VAD，量測各階段與完整poll耗時，保留失敗階段／錯誤。
+不替換程式或模型、不讀寫Kiosk profile、不保存錄音、不送ASR／點餐。
+狀態存於暫存目錄，子程序逾時會終止；CPU僅開發者明確選用，不自動重試。
+預設七聲道0–6／gain30，可用 `--channels`、`--gain-db`、`--input-device` 明確指定，
+不會讀取或更動瀏覽器的已存偏好。報告會列出本次實際使用設定。
+
+成功只表示獨立、靜音參考的整條管線完成，還須看 `timing`／`processingDutyRatio`；
+不等於通過即時速度、Chromium／IPC、播音回音或ASR。若獨立測試有餘裕而EXE失敗，
+再縮小到UI／IPC排程；若此處失敗，依stage、error與各階段timing追查。
+
+### OpenVINO GPU 驗證（0.4.0 候選）
+
+0.4.0 改用 Intel OpenVINO 直接執行原有 ONNX 模型，明確指定 `GPU.0`；
+模型權重、AEC3、線上 RTF/MVDR 與既有 ASR 佇列不變。包內不含 ONNX Runtime／DirectML，
+不使用 AUTO 或啟動失敗後轉 CPU。一般麥克風與既有 LCMV／Spatial Mask 備用仍保留。
+
+關閉 EXE，執行包內 `Test OpenVINO GPU.cmd`，提供 `OpenVINO-GPU-Test.json`。
+工具使用包內 Python／模型，分別測 FP32／FP16，不開麥克風、不改登入／校正，
+不自動套用較快結果。每項先確認實際 GPU 執行與獨立 ONNX 參考的 raw enhancement／
+降噪頻譜一致，再量測 1024 段音訊的模型耗時。平均和 p95 都須低於每段16ms預算，
+而且另需 AEC／RTF 與實體收音的效能餘裕；模型啟動成功不等於可以全天候上線。
+正式候選管線維持 FP32；FP16 僅做比較。
+
+可直接診斷單一 FP32 設定：
+
+```bat
+resources\audio\python\python.exe -B -u diagnoseAudio.py --audio-root resources\audio --report OpenVINO-Diagnostic.json
+```
+
+報告明確寫入 UTF-8。`error`／`traceback` 保留失敗階段；原生錯誤若出現編碼問題，
+仍保存 bytes hex、Windows ANSI 文字及 chainedErrors。暫存清理錯誤獨立記錄，
+不覆蓋模型結果。`--provider cpu` 只供開發者明確測試，不會作為 GPU 結果。
+
+之前0.3.2 DirectML 非融合實測為30.47ms平均／31.10ms p95，未通過16ms預算。
+該舊測試包不適用 OpenVINO，請勿用其啟動結果宣稱新版已通過實機驗收。
 
 ## 原始碼部署（維護者適用）
 
@@ -221,3 +289,32 @@ Smoke 使用獨立暫存 profile 和 loopback 合成頁面，結束後清理，�
 目前在 Linux 的官方 PowerShell 可攜版執行語法、URL／SSH參數驗證與 SHA256 邊界測試；未聲稱已在乾淨 Windows 實機跑過 Setup／Build／Start。實機結果待上述步驟補登。
 
 固定版本與校驗來源：[Electron 發布資料](https://releases.electronjs.org/release/v46.0.0-alpha.2)、[Electron 官方校驗清單](https://github.com/electron/electron/releases/download/v46.0.0-alpha.2/SHASUMS256.txt)、[Node 官方下載與簽章](https://nodejs.org/en/download/archive/v24.22.1)、[pnpm install](https://pnpm.io/cli/install)、[Windows OpenSSH](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse)。
+
+## GPU 音訊版 0.3.0
+
+Windows x64 包內含獨立 Python、OpenVINO、AEC3 及 UL-UNAS，EXE 自動管理程序，
+沒有另外啟動的本機服務。先依 [音訊建置說明](../../apps/stage-kiosk-desktop/audio/README.md)
+使用固定清單組裝 `prepared-audio`，再執行上方封裝命令。必須配套發布 Kiosk 前端；
+普通瀏覽器與舊 EXE 不會取得新原生音訊能力。首次校正五秒、聲道排列及真實
+Iris Xe 即時運行驗收均在目標機器完成。SHA／PE／Linux 測試不代表 GPU 實測通過。
+
+## 0.6.2 reference queue correction
+
+Native callback delivery and browser reference delivery are paired in the worker,
+not consumed synchronously in the input callback. Unpaired microphone samples
+wait for real reference PCM within the unchanged 250 ms bounds. The existing v3
+frontend, device settings, FP32 model and optional process-local model bypass
+launcher remain unchanged. Retest the bypass path first, then separately measure
+the model-enabled path. This does not fix GPU throughput or a renderer stall
+longer than the delivery guard. The source-pinned 0.6.0 pipeline diagnostic remains
+inapplicable to this modified package.
+
+## 0.6.3 LCMV native input
+
+The portable EXE and matching frontend route explicit desktop UMA-8 LCMV through
+native input and the existing browser AEC3/LCMV worker. `--capture-only` loads no
+GPU model; the standard EXE launcher is sufficient. The input selector is independent
+of GPU preferences and normal speaker selection. Browser-only/Spatial Mask capture
+and the native GPU candidate retain their existing routes. Test the administrator
+microphone/recognition/playback panel, then normal reception. No manual installation
+recording or extra dependency is required.

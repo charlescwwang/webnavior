@@ -1,41 +1,96 @@
 # Webnavior Kiosk Desktop
 
+## 0.6.3 original LCMV with native input
+
+On the Windows EXE, explicit UMA-8 mode with the existing LCMV algorithm now uses
+physical PortAudio eight-channel input instead of Chromium `getUserMedia` exact-eight
+constraints. Automatic mode recognizes an already identified UMA-8; select UMA-8
+explicitly if browser enumeration has no device label. A native input selector is
+independent of the normal browser speaker selector. Existing seven-channel mapping,
+AEC3 WASM, LCMV tuning, gain, VAD/Falcon and ASR behavior are retained. Spatial Mask
+and ordinary browser clients retain their existing acquisition paths.
+
+The input-only Python owner does not load OpenVINO, UL-UNAS or native RTF/MVDR.
+Generation-bound MessagePorts carry render and paired native PCM directly between
+the AudioWorklet, Electron and the original DSP Worker after a one-time preload
+handoff. The renderer UI handles final PCM/recognition, not reference delivery.
+Enumeration uses a separate short-lived owner; navigation/close retires all owners.
+No pending/queue time limits are enlarged. This requires the matching EXE/frontend
+and physical Windows acceptance; no manual five-second calibration is required.
+
+
+## 0.6.2 reference delivery correction
+
+Short native callback/browser reference bursts retain all unpaired input until
+real reference PCM arrives, within the existing 250 ms bounds. This replaces the
+callback's immediate reference-underrun failure. No device, model, precision,
+AEC/RTF/VAD, ASR or playback settings change. The existing Eventa v3 frontend works
+with this EXE; no new frontend publication is required. The model bypass launcher
+below remains available to isolate GPU throughput during on-device testing.
+
+## 0.6.1 model bypass trial
+
+Use **Start Without UL-UNAS.cmd** only after closing all Kiosk windows to test the
+same native RTF/MVDR path without UL-UNAS loading/inference. The audio status
+explicitly identifies bypass. Closing it and launching the ordinary EXE restores
+FP32 model inference; no preference is saved. All other processing and controls
+remain as in 0.6.0. See [the trial instructions](audio/README.md#explicit-ul-unas-bypass-trial-061).
+
+## Bundled UMA-8 native audio (0.6.0 OpenVINO candidate)
+
+Windows UMA-8 RAW capture uses sounddevice/PortAudio directly in an Electron-owned Python process, with
+UL-UNAS on OpenVINO for Intel Iris Xe. It starts on demand and stops with the
+Host; operators start no service or Python environment. The matching Kiosk UI
+offers existing LCMV/Spatial Mask capture by default, with an explicit experimental
+GPU pipeline choice under microphone settings. The GPU path uses online RTF/MVDR
+output directly for ASR and automatically learns/tracks reliable speech, without
+a manual five-second recording or a calibration file. The v3 bridge requires
+this EXE and matching frontend. Native input is independent of browser speaker
+selection: PortAudio opens only the microphone; Chromium plays TTS/cues and
+mirrors their PCM into AEC. No same-host speaker is required. Switching back
+preserves existing tuning and stops the previous capture generation; it does not
+silently substitute CPU inference. The previous DirectML pilot exceeded its 16 ms model frame budget. This
+OpenVINO candidate must be measured on the target Windows GPU before continuous
+capture is qualified.
+See [native audio setup, build and validation](audio/README.md). This requires a
+coordinated frontend/EXE update and physical Windows acceptance. Ordinary browser
+and mono-microphone paths are separate.
+
+
 Windows-oriented Electron host for the existing `apps/stage-kiosk` web UI and
 its configured interactive website. This is a local pilot, not a signed Windows
 release. It does not include the pet desktop's windows, widgets or game engine.
 
-## Current LAN connection
+## Connection settings (0.4.1, based on 0.4.0 OpenVINO)
 
-Portable version 0.2.0 asks for **Tailscale** or the **Webnavior public domain**
-before loading Kiosk on every launch. `kioskUrl` selects the initial highlighted
-choice; a custom configured deployment remains a third choice. Cancel exits
-without opening a customer page. Connections never switch automatically during
-an order. Origins retain separate device enrollments and Host storage; merchant
-partitions keep their existing service/origin ownership.
+Every portable launch offers the entries from the operator-owned
+`kiosk.settings.json` beside the EXE. The shipped default is on-site LAN
+`http://172.17.69.17:5169/kiosk/`, alongside Tailscale
+`http://100.92.1.80:5169/kiosk/` and the existing public HTTPS domain.
+`kioskUrl` must match one entry and selects the highlighted choice; cancel exits.
+There is no automatic failover during a customer order. Each origin retains its
+own device enrollment; the existing Windows user-data directory is preserved.
 
-Both EXE entries use the public HTTPS PB simulator configured in the Site
-release, rather than a Windows loopback test server. Browser backup uses the
-public HTTPS Kiosk and that owned simulator only. Merchant PB still requires
-the EXE's isolated native adapter; the ordinary browser cannot inherit its
-HTTP secure-context exception or inject the adapter into the merchant site.
+Change `connections[].label` / `connections[].url` and the default `kioskUrl`,
+then fully restart the EXE. No rebuild is required for a changed address. Use the
+new sample configuration instead of copying a pre-0.4.1 settings file. Startup
+rejects missing/duplicate entries, credentials, non-Kiosk paths and invalid URLs.
+The source of package defaults is [kiosk.settings.example.json](kiosk.settings.example.json).
 
-The selected service host is `http://100.92.1.80:5169/kiosk/`. Port 5169 serves
-Kiosk and proxies `/api/` to the private API on `127.0.0.1:5168`; clients must use
-5169. Built Kiosk pages use their entry origin for API calls and character assets.
-The default development launch, Ubuntu shared launcher, and newly packaged Windows
-settings use this LAN entry. Existing portable installations must replace their
-compiled host and set `kiosk.settings.json` to this URL.
+HTTP exceptions are exact origins from that local launch list, installed
+synchronously before Electron's ready event so media and AudioWorklet APIs are
+available. They do not grant native capabilities or media to merchant pages.
+The server independently reads `KIOSK_TRUSTED_ORIGINS` for Kiosk CORS, PIN, POS
+and HTTP device/PIN cookies. It defaults to the two shipped HTTP origins.
+Changing the EXE file cannot change the server allowlist; update the server
+configuration and restart its API when changing deployment addresses.
 
-Only this exact HTTP origin and `/kiosk/` path are additionally allowed. Its host
-process marks that origin as secure for Chromium media/AudioWorklet APIs before
-startup, synchronously before reading portable settings. Asynchronous disk reads
-can finish after Electron is ready, when this Chromium switch is already too late.
-The existing host-only permission checks and OS consent still apply.
-Other remote origins continue to require HTTPS. This exception does not encrypt
-HTTP traffic. The API explicitly accepts this origin for PIN/POS operations and
-sets host-only HTTP device/admin cookies for it; public HTTPS retains Secure cookies.
-Changing origins creates a separate browser device enrollment;
-existing merchant login partitions are retained.
+Port 5169 serves Kiosk and proxies `/api/` to loopback 5168; the built Kiosk
+uses its selected entry origin for API calls and character assets. The public
+HTTPS management shortcut is retained. An ordinary browser does not inherit
+the EXE's HTTP secure-context grant; browser audio/video backup uses HTTPS.
+Both PB entries still use the Site's public HTTPS simulator; merchant PB uses
+the EXE's native adapter. This release does not make PB or model services offline.
 
 ## What works
 
@@ -57,14 +112,11 @@ existing merchant login partitions are retained.
   device to fetch the new release. Do not reload an unresolved transaction.
 - Tracks the real DOM region's bounds, hides the native View for host settings
   and modal overlays, and forwards document-scoped input activity to Kiosk.
-- Shows a host loading indicator while a new native document loads, keeping the
-  native View hidden through resize/visibility updates until the current document
-  finishes loading. Website-initiated navigation returns `loading` from placement
-  updates even when an earlier `loadURL` promise has already settled.
-  Navigation/load-failure events own that state; a late aborted `loadURL`
-  promise cannot mark a newer successful page failed or hide it again.
-  Failed loads show the existing staff-facing error. This initial-document state
-  does not claim that PB's later asynchronous menu requests have finished.
+- Keeps the native website visible during table Start, refresh, initial loading
+  and resize. There is no Host loading indicator or renderability visibility
+  gate. Navigation readiness still revokes tools until `did-finish-load`; it
+  does not hide the website or replay actions. Explicit settings/modal ownership
+  and actual load/crash failures retain their existing handling.
 - Emits owned navigation revisions for later full-page loads as well, including
   table Start and reload. Kiosk revokes old tool handles during loading and
   rediscovers the new document without replaying operations. Update native
@@ -76,8 +128,13 @@ existing merchant login partitions are retained.
 - Private reception cleanup keeps the hidden website rendering during its Start
   and reset calls, so PB's outgoing loading mask can finish before target checks.
   It restores the prior background-throttling setting on success or failure,
-  including overlapping maintenance calls. The native view remains hidden;
-  ordinary customer calls do not change rendering policy or bypass hit tests.
+  including overlapping maintenance calls. Reception cleanup normally remains
+  visible without a maintenance overlay; explicit settings can still hide it.
+  Ordinary customer calls do not change rendering policy or bypass hit tests.
+- Version 0.6.8 handles PB's stacked coupon/announcement prompts through their
+  real controls: defer the observed coupon before acknowledging the covered
+  announcement. This was reproduced against production PB in actual Electron;
+  coupon claiming and persistent promotion preferences are untouched.
 - Keeps host/device cookies separate from vendor service login partitions.
   Service identity plus origin select the vendor store inside this installation.
   Vendor account-based carts may still be shared upstream; test that separately.
@@ -123,6 +180,19 @@ can normalize an identical single-row, same-price replacement to its equivalent
 quantity change; it does not add then delete duplicate meals. Ambiguous groups
 and changed prices remain blocked.
 
+Successful invoice selection and checkout field guidance also transfer native
+keyboard focus to the visible merchant input. DOM focus alone cannot receive
+a scanner while the Host WebContents owns the keyboard. Passive reads, hidden
+views and an unfocused Kiosk window do not take native focus.
+
+Manual **重新開始** in 0.6.9 initializes the Host even when the previous
+PB order or payment result is unknown. It retires our local warning, dialogue,
+confirmation and visitor state, then renews the configured entry. It neither
+checks nor clears/cancels/submits the merchant cart/order/payment; staff handle
+PB's remaining state in its native UI. The ending visitor's operation history
+retains the unresolved result and the local retirement event. Automatic idle
+and confirmed-completion cleanup retain their existing verified behavior.
+
 ## Windows remote build and launch
 
 For a clean Windows 10/11 machine, use [the Windows bootstrap and remote connection guide](../../scripts/windows/README.md).
@@ -134,6 +204,38 @@ Windows device enrollment and vendor login belong to its new local profile.
 The SSH default preserves the current loopback origin and forwards the owned test
 site too. Linux clean-dependency build and PowerShell boundary tests are verified;
 Windows installation, hardware and full customer acceptance remain to be run there.
+
+## Automatic load diagnostics
+
+Version 0.6.7 records Host and PB loading in
+`%LOCALAPPDATA%\Webnavior\Kiosk-Pilot\diagnostics` automatically. Preserve
+`current.jsonl`, `previous.jsonl` and `older.jsonl` after a slow incident, together
+with its local time. Each file is limited to 4 MiB. This recorder is independent
+of visitor reset, Host reload and the server connection; it adds no loading UI,
+refresh or merchant action. It does not upload these files automatically.
+
+Records include navigation/DOM/full-load phases, request start/first response/
+completion/failure, outstanding requests, cache status, declared tool timing,
+renderer long tasks, app process CPU/working set, system free memory and Main
+timer lag. Domain and resource kind replace URL paths and query strings. Headers,
+bodies, console text, customer fields and camera/audio content are excluded.
+Model records accept only a fixed numeric envelope: avatar, VAD, camera initialization
+and slow camera inference. Native audio status/start/open and array connection
+timings distinguish model-enabled GPU startup from capture-only LCMV.
+
+The first-response interval includes connection, network and server wait; it
+does not separately measure DNS/TLS. Worker requests without a frame identity
+are explicitly attributed to the private session. A pending renderer probe can
+mean an unfinished page load or a busy renderer, and alone proves neither a
+network failure nor a freeze. Electron process statistics exclude external
+Python/provider processes; GPU-process CPU is not GPU utilization. Bounded
+queues drop diagnostic records on overload or disk failure without stopping
+ordering. The latest unflushed second may be lost on a crash.
+
+`scripts/verifyKioskDiagnostics.mjs` tests held local responses, network failure,
+real renderer long tasks, model events, privacy and retained native visibility.
+It never contacts PB. `diagnostics.test.ts` checks rotation, queue bounds,
+shutdown and disk-error containment.
 
 ## Run locally
 
@@ -274,8 +376,8 @@ by its runtime; it does not add removed Electron APIs to an application mock.
 
 Use this host for the existing Kiosk plus a native website and the PB-only finite
 control pilot. Owned Menu native protocol, generic sites, order submission/payment,
-formal Companion authorization and native microphone-array capture are outside
-this implementation. Native display or retained login alone is not proof of an
+formal Companion authorization are outside this implementation. Native
+microphone-array capture is covered by the bundled audio frontend above. Native display or retained login alone is not proof of an
 accepted Agent order.
 
 The Mac Electron test intercepts the approved PB URL with a synthetic document;
@@ -309,15 +411,17 @@ It also withholds a passive cue's catalog response and verifies that a required
 cart read completes within 1.5 seconds before that response is released. The cue
 settles as cancelled, with no vendor writes; existing movement/reset and accepted
 cart-effect checks then run on a restored fixture state. Reception-end coverage
-also holds a synthetic clear response while a real pointer click targets the
-covered native button: it must be blocked, no hand may appear, the loading cover
-must remain through return navigation and disappear only after settlement.
+also holds a synthetic clear response and checks that the native clear button
+remains exposed to pointer input, without a maintenance cover or hand animation.
+The single clear is verified empty before return navigation; replay remains
+deduplicated.
 
 Browser+Companion and Electron are retained as separate hosts sharing ordering
 logic; this native relay does not ship a production browser Companion. Windows
 installer/signing/update, upstream shared-cart isolation and persistent crash
 reconciliation remain separate gates. Audio source selection remains independent;
-no native audio SDK or microphone assumption is introduced here.
+Windows UMA-8 RAW offers the existing path and the experimental bundled frontend
+described above.
 
 The plan, remaining confirmation/account policies and Windows acceptance are in
 [`docs/plans/2026-10-28-windows-kiosk-electron.md`](../../docs/plans/2026-10-28-windows-kiosk-electron.md).

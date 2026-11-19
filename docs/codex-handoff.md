@@ -1,5 +1,371 @@
 # Codex Handoff
 
+## 2026-11-19 09:57 手動初始化不再依賴 PB（0.6.9 已交付／前端已啟用）
+
+- 使用者最新明確要求：訂單未確認也必須能初始化我們網頁，PB 不確定狀態由現場人工處理。本輪僅改手動 `staff` 初始化；自動 idle／confirmed completion 的既有核對清理保留。shared lifecycle 將 reason 傳入 resetInteractiveSurface；Kiosk staff/PB 分支不讀訂單、不等 clear、不呼叫 browser_customer_reset。清接待與對話、結束舊 visitor、撤銷連線後 renew entry；PB transport 失敗不能 veto 本機初始化。
+- EXE 新 Host-only `browser_reception_reset` 即使 editorRetired／結果頁仍可用，繞過 commerce FIFO，只解除本機 cart-pending 標記、使舊 queued control／confirmation 失效並移除我們的視覺。已派送商家工作不重試、不取消、不當成功；PB cart／order／payment 不動，staff 人工處理。結束前 visitor 的 `browser_previous_operation_retired` 記 `resolution=host-only-initialization`、`editableCartCleared=false`；舊操作結果仍在原接待歷史。下一客的非空 cart ownership 核對仍在，不能宣稱所有購物車檢查都已移除。
+- 實際正常 Linux Electron46＋正式 PB，獨立 partition，三種 order/reset/cart 虛構本機標記均解除、原 PB 欄位與 URL 不變、商家寫入0。另只在 isolated adapter 的 fetch 邊界 hold 一筆只讀請求，local reset 0ms 完成；不是現場長 loading 重現。證據 `pb-test.local/kiosk-host-initialize-20261119-r1/native-verification.json`／harness。Host regression 先 red（未知訂單 veto）再 green；165 Kiosk、22 transport、41 Desktop（1 opt-in skip）、4 publisher；三 scoped types、lint、兩 build、diff check 通過，未 root types／commit。
+- 完整0.6.9 ZIP `pb-test.local/kiosk-host-initialize-20261119-r1/windows/Webnavior-Kiosk-GPU-Windows-x64-20261119-095520.zip`，314464786 bytes，SHA `de2391cfe50590b6e01336dd7a47a2e5a2713b946d3737b93373df5f5f0f9263`。3708 payload SHA／CRC、1263 source freeze 過；對0.6.8只 main／PB bundle／package version／quickstart 4 payload 變更，設定、preload、音訊及模型 runtime 不變。必須完全退出舊 EXE、整包解壓新目錄，沿用既有 profile／自訂 settings；Windows實機驗收未做。
+- 前端 09:57:17 已啟用573檔／98變更，四入口 index/version＋公開 JS 共9 HTTP bytes 過；保留舊 hashed assets／備份、不強制 reload／不重啟 API（PID1435071）。sudo -n 最初要求密碼而未執行，後確認 static 屬 aimax，直接既有使用者權限發布成功；不是要求使用者 sudo。禁止重跑已啟用 publish.py。
+- **未營業偵測尚未交付**：使用者解釋未收到單因未營業，但只指開頭公告，沒有當次送單拒絕原文。唯讀現行官方 Create-BWGQ0ONq.js 確認 order/diningTime Inertia error 會原頁 toast。Chrome 回歸可過，但真 Electron isolated world 的 inertia:start detail 因 visit 含不可跨世界資料而為 null，故撤回整組未驗證 refusal production／test 修改，未打包。初始公告不是這次訂單拒絕證據。後續若實作需有效跨 world 的限縮觀測／商家回應關聯；不能宣稱偵測已修。發票 radio 焦點、Main 結帳上下文等前節問題亦未在本包修復。
+
+## 2026-11-19 09:17–09:35 現場最新結帳紀錄（僅唯讀檢查）
+
+- 使用者正在測試，要求查看尤其發票被遮擋。唯讀近2小時999事件，DEV-908979兩段主要接待 `DFZcOd0ch8tnlG_2258B3`、`s3XiRWnzG-PwTgOesI6v_`。遮蔽通知資料的對話及操作證據留 `pb-test.local/checkout-review-20261119-am/evidence.json`，完整原始僅 `/tmp/nov19-checkout-recent-private.json`。未操作／重置／重送現場訂單，未改產品或發布。
+- 09:22:21、09:22:29、09:23:25、09:23:51、09:32:10，`browser_checkout_prepare`「前往發票方式」step failed、無dispatch，約3.5秒；與前輪已正式PB重現的checked radio被同label裝飾span命中誤判一致。當前來源仍未修該input定位。兩次正確（09:22／09:32）各自同utteranceId，fast-path失敗再交Main而重記user_text，不應當成使用者說兩次。09:22 Main重試相同焦點失敗；09:32 Main改list_cart_items，結帳流程倒退成詢問查看／修改購物車。
+- 09:23:46辨識原文「我選擇武仔劇」，Main未澄清，仍continue_checkout重試相同失敗。09:24:39「統一發票」直接choose_invoice_method tax；09:25:04donation原生選擇與欄位focus成功，09:26:30完成表單後產生最後摘要。09:33:12「我要捐贈發票」卻ask_customer_question option且無商品名，回要確認哪餐哪組選項；09:34:29同句才正確選donation。
+- **09:27實際送出，不可宣稱沒有送單**：09:27:14 browser_order_submit開始，原生確認框completed，submit step dispatchMs1848，等location.pathname改變30秒未成立，09:27:45 state/effect unknown（總31.87秒）。現碼以path改變作等待條件，尚未證明商家成功／拒絕／同頁驗證；不可直接重送或以timeout當未送出。需取得該次PB結果頁／同頁validation或對應請求結果來確診。這是現有送單結果觀測缺口的新具體證據。
+
+## 2026-11-19 全晚點餐紀錄／現行0.6.8逐項驗證（尚未實施新修正）
+
+- 使用者要求11/18台北18:00起全部點餐紀錄，明確強調模擬測試也有價值；已唯讀匯出5760事件／60接待／25段有user_text，保留simulation來源及對話重複列。手機／載具等遮蔽後的HTML、435列對話CSV、5760列事件CSV在 `pb-test.local/ordering-records-20261118-19`；原完整資料只留 `/tmp/nov18-19-ordering-all-private.json`。最新原始事件03:08，本輪新驗證另存，不混入舊報告。
+- 最新指示是「驗證是否已解，未解預計如何」，授權真Jev/Main；本輪無產品修改／build／部署／重包。`pb-test.local/ordering-verification-20261119-r1/verification.html`及JSON有16項狀態、證據、修法與交付邊界。正常Linux Electron0.6.8、LAN正式Host、正式PB、沿用自建DEV-722025獨立profile，僅此測試設備切純文字。14個真Main tasks及Jev trace留real-model-events/turns；未送正式訂單，結束已reset清空草稿、回選桌、關本輪Electron。
+- 已實際通過：A3-1、A31→問→對、A3之二；直接水餃12顆=1份96元；手機載具自動focus後不重新定位直接keyboard `/ab12345`+Enter→`/AB12345`且不送單（非實體scanner）；虛構 `order:00000000-0000-4000-8000-000000000001` 明確reset清草稿／移標記／retired audit，下一位能進菜單加餐。35真Electron lifecycle、held-resource loading、405相關Kiosk unit、44Chrome checkout/controls、4共享桌名過；其他回歸有重疊不累加。
+- **未解且重現**：`幫我推薦`仍選櫃台（Jev路徑過度信任選桌）；`A3的第二桌`被先截成A3判不存在；`洲式水餃`查不到；pending cart-target時open_cart被舊問題攔住；invoice數字仍可被Main導向推薦（本輪捐贈發票也錯到價格範圍）。水餃短答：`我想點周氏水餃`→問幾份→`來12顆`先回effect:none未完成且無native add；下一句`炸排骨便當一份`，Main實際先補加12顆水餃再加便當，cart226元，處理時序／失敗回覆不一致，不能只看直接12顆通過就稱全解。
+- **已確診發票卡點**：正式PB checked radio input opacity0，上方同一label內的 `span.el-radio__inner` 擋住input中心；`pbCheckout.focus('invoice')`直接以input當命中目標誤判「前往發票方式被其他畫面遮住」。不是我們整區loading遮罩。需以可見同選項label做movement/hit-test再focus對應input，不能關閉hit-test或force click；此native PB bundle改動需新EXE。
+- 用既有私有setup暫時附加歷史case，5個unit與1個Chrome最小重現均fail；測後逐byte恢復三個原測試檔，patch/log留stage，未留下紅測試於產品來源。推薦一份後補12顆也未帶完整顆數配置。下一步若授權實作，先把這些audit patch轉正式回歸，再修顆數／草稿生命周期、舊問題導航、發票焦點與結帳上下文；不要只調prompt。
+- 證據不足：18:35舊送單click completed但結果未知，未有原結果頁受控payload，本輪不送真單，不能宣告根治；舊失敗後idle提醒宣稱已加入，現行reminder仍依歷史生成，grounded回覆單測不等於此整段已驗。完整修法及限制留verification報告。Windows物理語音／scanner／現場偶發白屏仍非本輪驗收。
+
+## 2026-11-19 使用者要求真 Electron＋正式 PB，找到原生雙提示重置失敗（0.6.8 已整包）
+
+- 使用者質疑只用自建測試頁。已實際啟動正常 Linux Electron46.0.0-alpha.2／Node24.22.1 的已建置0.6.7→0.6.8 app，DISPLAY=:1，LAN `http://172.17.69.17:5169/kiosk/`，不加no-sandbox／fake media／software GPU，不用Playwright launcher、不攔截商家請求。獨立profile `pb-test.local/pb-real-electron-20261119-r1/profile` 自己註冊DEV-722025；真正式PB `https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table`。不複製現場登入，不加餐/送單/付款。
+- 正式PB實際A3-1、A3-2、櫃台Start三輪 menu完整load458/434/412ms，HTTP369/381/344ms；初始選桌cold1171ms。未重現現場長loading，因此不能聲稱已修該偶發卡頓。角色本輪啟動165ms，無物理Windows/音訊硬體驗收；其他模型不能據此歸因。
+- **正式網站確實抓到fixture未涵蓋的失敗**：0.6.7無餐點新設備在「領券」＋「營業公告」同時存在時，Host reset先點下層公告，native hit-test拒絕；本機UI仍顯示operation-unconfirmed。唯讀只查DEV-722025，`/tmp/nov19-real-pb-native-private.json`，03:04 native步驟notice failed「關閉營業公告被其他畫面遮住」。手動只按「稍後再領」後，原0.6.7同一reset於03:06成功，證實是PB提示層級，非舊訂單/網路。
+- `pbControls.dismissAnnouncement` 現先辨識唯一可見role=dialog（含「不再顯示此優惠」及「立即領取」），只按該dialog唯一的「稍後再領」，驗消失後再點公告。仍走operation真實可見性/單次dispatch/readback；不領券、不改checkbox偏好、不force click、不自動處理其他確認。正常PB提示仍呈現，只有工具操作/明確reset需要時處理。順帶修forReset工具描述仍說behind cover的過時字串。
+- 先以正式網站重現，再新增對應Chrome最小回歸red（下層公告hit-test），修後30個controls browser tests過、scoped UI types、3檔lint、Desktop build過；未root types/commit。重開**實際0.6.8 app，同一獨立profile、真PB**，保留兩層提示，直接按Host reset；03:08 native completed依序「暫時關閉領券提示」→「關閉營業公告」→空搜尋，1343ms後回選桌（新頁236ms）。正式before/manual-control/after evidence及截圖、JSON報告留 `pb-real-electron-20261119-r1`；測完window.close關閉自建測試Electron/CDP9347。
+- agent-browser安裝版較舊不支援skills get（已依skill嘗試，改讀--help）；tab list實際輸出numeric IDs，重開後Host/PB順序會換，必須重新識別URL。一次get attr參數順序錯誤和一次async dropdown snapshot stale是CLI操作失敗，未算成PB failure；其後實際[pressed]與Start均確認。
+- 新Stage `pb-test.local/kiosk-pb-coupon-20261119-r1`。完整0.6.8 `windows/Webnavior-Kiosk-GPU-Windows-x64-20261119-030956.zip`，314464382B，SHA `e817f89f66b1127d8812f33976d90fb4673d045e0c1be6d3564fcb3f22dbede5`；3708 payload SHA/CRC及1263 source過，對0.6.7只有PB bundle/app version/guide三檔變；main/preload/settings/audio/models/runtime逐byte不變。修正需整包換EXE，改伺服器不能取得native PB peer。
+- 網頁程式沿用load-diagnostics0.6.7，不重build/reload；僅已發布version.json.desktopVersion=0.6.8，metadata的frontend release仍0.6.7是正確的。stage publisher 4filesystem測及9 HTTP bytes過；API PID1435071不變、不restart；activation/backup/validation/READY留stage，勿重跑publish.py --activate。現單完成後退出舊EXE、整包解壓並沿用自訂settings/profile，無需sudo。往後fixture測試需搭配實際Electron/正式PB驗收，不能把兩者或Windows實體驗收混稱。
+
+## 2026-11-19 PB 偶發慢載入／其他大型模型診斷（0.6.7 整包及配套已發布）
+
+- 使用者要求程式自動記錄 PB Start 偶發長 loading，也查前端大型模型。已澄清重點不是 MediaPipe；正常相機在 Kiosk mount、初始麥克風權限 gate 後啟動，不等 PB 菜單；conditional Face 可稍後首次需要才載。PB Start 沒有直接模型初始化呼叫，尚未確診現場卡頓根因。
+- 新 `apps/stage-kiosk-desktop/src/main/diagnostics.ts` 是 installation-local recorder，預設啟用，不需 diagnosticPort。Windows `%LOCALAPPDATA%\Webnavior\Kiosk-Pilot\diagnostics` 的 current/previous/older.jsonl 三個4MiB輪替檔，1s async bounded512-record flush、5s samples、256 pending requests。Host/PB navigation/DOM/full-load、network first-response/完成/失敗/未完成/cache、工具hashed correlation、renderer long tasks及probe pending、app CPU/RSS/system free RAM/Main timer lag共用runId與時間線；reset/reload不清檔，未自動上傳。
+- 只存domain/受控resource kind，不存path/query/fragment/header/body/customer fields/audio/video/任意console。console僅接受固定numeric model envelope；private Session唯一觀測頁的無frame worker請求標為session attribution，不能假冒document歸屬。probe pending亦可能是未完成load，不能單獨判freeze；firstByte包含connection/network/server而非DNS/TLS細分；Electron metrics不含external Python/provider，GPU process CPU不是GPU利用率。磁碟錯誤或過載drop紀錄，不阻塞點餐；crash最多遺失最近未flush約1秒。
+- KioskScene記avatar pending/loading/mounted及VAD init；既有vision composable記相機初始化和>=100ms inference（每model5s限一次）。Index記native GPU status/start/open及array connect耗時，不逐poll記音訊。Falcon/ASR/TTS/ordering走server/provider，不在瀏覽器載大模型。UL-UNAS/OpenVINO是native GPU首次非devices request（含status）載入/compile；capture-only LCMV不載這個模型。角色/模型/音訊設定變動可重建，非每次Start。來源審查與限制留stage/model-audit.json。
+- 找到確實多餘的大項：shared Stage mount無條件getDb()只為future stub，之後無使用。移除此import/use/onMounted call；DuckDB公共模組及其原tests保留，未更換library或其他資料庫用途。舊build有31–36MiB各DuckDB WASM variant，新build已無DuckDB WASM（不是聲稱全部variant每次都下載，亦非已證明PB field freeze原因）。
+- Stage `pb-test.local/kiosk-load-diagnostics-20261119-r1`：先真Electron red重現無常駐紀錄；new fixture用held HTTP＋real timer longtask驗pending/error/completed/model/process/privacy/仍可見。最初以CDP evaluate busy不產生可用longtask，改真正setTimeout task後過，是fixture修正。8 unit（diagnostic3/protocol2/DuckDB3）＋1 opt-in native integration skip；3真Chrome vision；35真Electron lifecycle＋diagnostic fixture；4publisher；Kiosk/Desktop/UI scoped types、8檔lint及build過。僅修randomUUID default的TS推斷，無runtime workaround。未root types/commit/正式商家寫入/Windows實體驗收。
+- 完整0.6.7 ZIP `windows/Webnavior-Kiosk-GPU-Windows-x64-20261119-025649.zip`，314464226B，SHA `374af8a1eaa266896449f75245d21ba34287ba869029ed63f5c3bf6b0ebffb86`。3708 payload SHA/CRC；對0.6.6只有main/version/guide三檔變，PB service/preload/settings/audio/models/native runtime逐byte不變。1263 source freeze；Stage import僅LF whitespace修正發生build後，編譯行為不變且postverify source已核對。舊未交付draft ZIP已移除，勿使用較早025508包。
+- 配套UTC2026-11-18T18:57:41（台北11/19 02:57）已發布491 changed/573 static；14 invariants、1263 sources、9 HTTP bytes過，API PID1435071及DB/Redis ready，不restart、不force reload；舊hashed assets保留。activation/backup/validation/postverify/READY及logs留stage，勿重跑publish.py --activate。現場完成現單、退出舊程式、完整解壓0.6.7並沿用自訂settings；無需sudo或刪profile。下次incident記時間並保留diagnostics資料夾，不能再只憑Host/PB混在一起的redacted timeout判原因。
+
+## 2026-11-19 解除換頁／重置整區遮罩（0.6.6 整包完成、配套網頁已發布）
+
+- 最新範圍由使用者澄清：「重新整理／重置也把整個菜單蓋住」才是要移除的卡死情況。移除 Host 自動準備／舊購物車整區遮罩、換頁 spinner／native visibility gate，以及 PB reset maintenance cover／input trap。正常點餐問答、電話／發票／付款、管理設定及 PB 原生提示維持；不要再擴張成介面重設計。工具仍守文件／cart ownership／uncertain-effect 邊界，沒有自動重播或取消正式訂單。
+- 使用者已確認現場0.6.5。唯讀紀錄顯示02:11曾成功 retired old order marker；02:19–02:23重置反覆 `Invalid type: Expected true but received false`，native cart_get 的 notice click 失敗。原因是 reset preflight 的 forAdmission 在 menu 會點 PB 公告，與我們遮住 native view 的可見性檢查衝突。resetConversationService 改純讀 menu preflight／post-Start；只在 table 做 admission 私有讀取，並保留已知失敗訊息。先有 unit／真Chrome／真Electron red 再改產品。
+- Surface 在 full navigation／resize／refresh／初始載入均依 desiredVisible 顯示，automation readiness 仍等完整 load。KioskScene 不再啟動會覆蓋菜單和全域停輸入的 cartPreparation；每次工具的 browserCartSession ownership 保留。NativeServiceSurface 不畫 loading spinner；ScenarioSurface 不因 transport loading inert。pbPresentation 移除 maintenance cover，保留正常 introduce 短暫鎖定；PB reset 仍驗空、去重，人工可見並可介入。
+- 現場暫存仍在 `%LOCALAPPDATA%\Webnavior\Kiosk-Pilot`，不要刪整個 profile（會動配對／登入／音訊設定）。Host owner key `webnavior:browser-cart-owner:${origin}${journey.menuPath}`；native pending key `webnavior:pb:cart-pending:${baseUrl.pathname}`。既有明確 Restart 在操作 settle、fresh cart empty 後清掉目標 pending marker；retired kind 留在結束前 visitor 的後台 interaction entries，不傳給下一位。
+- Stage `pb-test.local/kiosk-reception-reset-20261119-r1`：427 unit/7檔、真Chrome6 native-surface＋11 presentation、35真Electron＋held-image lifecycle、4 publisher、Kiosk/Desktop/UI scoped types、targeted lint及兩build通過。第一輪 Electron 唯一剩餘失敗是 guest Start 的舊「必須隱藏」測試預期，更新後全過；非新增產品故障。無 root types／commit／正式商家寫入／Windows實體或真人語音驗收。
+- 配套已於UTC2026-11-18T18:37:30（台北11/19 02:37）發布98 changed/591 static；1260 source、14 invariants、四入口index/version＋公開JS共9 HTTP bytes過，DB/Redis ready，API PID1435071不變、不restart、不force reload。activation／backup／validation／post-activation-verification 保留；不要重跑publish.py --activate，無需sudo。
+- 完整0.6.6 ZIP `windows/Webnavior-Kiosk-GPU-Windows-x64-20261119-023554.zip`，314459757B，SHA `1c557cd93c0d666cc795391ec6bb41eca1dc48011a5043413b16e2d3c7ae6e90`。3708 payload SHA／CRC過，對0.6.5只有 main/PB service/app version/guide四檔變；preload、設定、音訊、模型／native runtime逐byte不變。完整解除 native 換頁及 reset cover 需要換EXE；只更新網頁不夠。完成現單後完全退出舊程式、整包解壓新資料夾，保留自訂settings與既有profile。現場尚待實測。
+
+## 2026-11-19 A31/A32 近似分桌確認（網頁已發布，沿用0.6.5 EXE）
+
+- 使用者明確指示實施「近似候選→先問→確認後選桌」，不再換EXE。前端新 `services/tableSelection.ts` 僅把完整桌號需求缺分隔號（A31→A3-1）當候選；有實際A31（即使同義重複）優先原精確流程，不模糊取代。多候選問哪桌；拒絕不選；確認只select不Start，不繼承原句Start或購買。A3之一/之二精確比對保留；不是任意語音/拼字模糊匹配。
+- BrowserDialogue持有visitor/doc/table-list/current-selection/120s expiry綁定的一次性table ticket，reset/navigation/manual/table refresh撤銷。FastPath供只提問候選，下一句Jev選issued answer ID；Main公開選桌/開始工具保留Host question，prepareBrowserQuestionAnswer只在canonical錄入後經原Host選桌executor消費；傳給native仍完整現有桌名。KioskScene只擴既有question validator目的清單；Dialogue table projection/validate先於必需cart的menu parser，防table頁讀cart錯誤。未改shared/native桌號解析或EXE bridge。
+- Stage `pb-test.local/kiosk-table-confirmation-20261119-r1`：531 tests/6檔、4publisher、Kiosk scoped types、11檔lint/build過；red含原無確認、Main錯誤覆蓋問題與exact duplicate優先；Jev完整兩句模擬走實際Host task已驗（測試初次未await就release造成拒絕屬fixture，已改符合Scene生命週期）。1260 source freeze、591 static SHA、14 runtime/Admin/設定/既有修正不變量及9 HTTP bytes全部過。未root types/commit/正式商家寫入/Windows真人語音驗收。
+- 已於UTC2026-11-18T18:19:32（台北11/19 02:19）發布99 changed/591static，API PID1435071不變、不restart、不force reload。0.6.5舊ZIP的main/preload/PB service與現out逐byte相同，Desktop來源未改，沒有重包。activation/backup/validation/unchanged-native及各logs留stage，勿重跑publish.py --activate。現場完成訂單後重開現有0.6.5載入新網頁即可；需人工驗A31→詢問→對只選A3-1，再說開始點餐，及不是/改桌。
+
+
+## 2026-11-19 PB 舊警告跨客／錯誤購物車引導／A3-1 分桌（0.6.5 配套已啟用／驗證，待現場EXE確認）
+
+- **最新部署狀態取代本節下方準備狀態**：使用者回報activate成功，已postverify API PID1435071、DB/Redis ready、1 API檔／591 static／13 invariants及四入口index/version＋公開JS共9 bytes核對全過。Stage有post-activation-verification.json與http-verification.json，validation/READY已更新。不要重跑activate.py。尚未確認現場換完整0.6.5 EXE或Windows實際分桌/重置/點餐驗收。
+
+- 使用者授權查看最新紀錄；唯讀查DEV-908979最近接待，實際餐點需求已選對且Host允許，但native cart add在0.1–0.3ms、steps=[]被既存持久order/cart marker拒絕。頁面/購物車仍可讀，不能把這些案例說成PB掛掉。另實際Main `reply_to_customer`多出parameters被嚴格拒絕(effect:none)，Host漏接非cart拒絕而誤成未知操作；重置有after-table-entry缺cart的真失敗。未在近期原句找到「我想點餐」，勿宣稱新增語意規則或所有斷線已解。
+- 使用者明確要求舊訂單待核對不得影響後人重置／新單。0.6.5 普通ordering/autorecovery仍不重播；明確Restart待接受操作settle後可清理目前editable draft、完整驗空後移除舊UUID/order:/reset:標記，回傳retiredOperation。Host把 `browser_previous_operation_retired` 保存到重置前接待的後台 `kiosk_interaction_entries.visitor_session_id`，新接待不繼承事件或同意；不是PB完整訂單備份。舊標記只UUID、沒有原接待/訂單內容，不能據此還原原單。當前uncertain write及真payment/result流程保護保留。
+- known-none browser/host rejection現在進Host回覆窗；reply_to_customer參數在網站IO前safeParse，錯誤回INVALID_TOOL_ARGUMENTS/dataOnly，重用既有最多2批無副作用修正，未剝參數或做兼容。BrowserRecoveryBlocked把操作待核對與transport unavailable分開，不誤報菜單斷線。table admission支援after-table-entry，明確重置可用原選桌Start進菜單再清空。
+- shared tableNames保留數字段分隔（A3-1≠A3≠A31），支援全形/之及每段leadingzero；FastPath抓完整分桌，真原生table picker核對A3-1/A3-2。0.6.5合併上一節0.6.4早顯示；要換完整EXE，單發網頁無法取得native修正。0.6.3音訊/preload/模型/設定payload完全相同。
+- Stage `pb-test.local/kiosk-ordering-intent-20261119-r1` 有README/READY、release、activation dryrun、source freeze、validation、red/green/private查詢腳本及35PASS真Electron等logs。451 Kiosk unit、4 shared table、19真Chrome、35真Electron lifecycle＋早顯示、7publisher、Kiosk/UI/shared scoped types、targeted lint及兩build過。root types未跑、無commit、未正式商家寫入或Windows實體驗收。ZIP `windows/Webnavior-Kiosk-GPU-Windows-x64-20261119-015400.zip`，314459748B，SHA880109ac9934af81a7c736b18d140ffcc5fc8c621d00d3073c14892a1a2a27f4；3708 payload SHA/CRC、1258 frozen sources過，只4payload變(main/PB/version/guide)。
+- **尚未發布/重啟**：live仍LCMV0.6.3 frontend＋voice-dumplings r2 API PID1312458。新activate.py預設唯讀；13 deployed invariants保留含4 voice/dumpling檔，防覆蓋新release/PID、API先ready→assets→index、備份回復。需操作者無人點餐時 `sudo python3 /home/aimax/webnavior/pb-test.local/kiosk-ordering-intent-20261119-r1/activate.py --activate`（需root restart，非一般escalated即可），再完全退出/解壓0.6.5，驗分桌/重置/新客。verifyHttp.py準備9 HTTP bytes比對，尚不可聲稱新版本線上已驗。若新發布改live，保護會先停；不要改guard或重跑舊activate。
+
+
+## 2026-11-19 PB 選桌後白畫面／0.6.4 提前顯示（已整包，待現場換EXE）
+
+- 使用者再次回報選桌→開始點餐→白畫面，詢問能否不遮擋；是人員回報，無法確認有無載入／錯誤文字。因此尚不能斷言每次現場白畫面同一根因。0.6.3 Surface 的 full navigation 會 setVisible(false)，等 did-finish-load 才復原。已用隔離真Electron46及loopback頁面重現：DOM ready、菜單已有內容，僅一張held image未完成，整個view仍不可見。
+- 0.6.4 Surface 分開documentRenderable與documentLoading：dom-ready即可顯示商家頁，不必等load-blocking子資源；初始無DOM仍顯示Host載入提示。工具仍需完整load／原ownership與PB journey檢查，沒有宣布菜單業務資料已備妥；Host modal／settings occlusion、失敗與crash隱藏保留，未移除商家自己的遮罩或重播操作。這是EXE邏輯，僅更新後端／網頁不會取得。
+- 新 `scripts/verifyKioskNativeLoading.mjs` 先red重現，再真Electron確認早顯示／resize／loading仍拒工具／host hide恢復／完整ready與hidden reload。既有verifyKioskDesktop 33 PASS，Desktop scoped types、targeted ESLint、build／diff check過；沒有root types／新依賴／commit／正式商家或登入／訂單操作。
+- Stage `pb-test.local/kiosk-visible-navigation-20261119-r1`：完整ZIP `windows/Webnavior-Kiosk-GPU-Windows-x64-20261119-012548.zip`，314459139bytes，SHA e55af30a8c83357c420712084df2e57619d75839b87ed2b5da3238ba8a99022c。3708 payload SHA／ZIP CRC及1257 source freeze過。對0.6.3只有main JS、app version、quickstart三檔變；preload、PB service、設定、音訊、模型/native runtime逐byte不變。README／READY／validation及red/green等證據留stage。
+- 沒有發布網頁／restart API／force reload／改現場設定。沿用目前LCMV 0.6.3前端及voice-dumplings r2後端；不需任何sudo。現場完成訂單、完全退出舊EXE，完整解壓0.6.4到新資料夾；自訂EXE旁settings可複製沿用。重測LAN選桌→Start→菜單。尚未Windows實體驗收；若PB HTML/JS本身失敗，仍需在實際重現期間取得診斷，不能宣稱網路或所有白畫面已解。
+
+## 2026-11-19 0.6.3 原有 LCMV 原生八聲道修正（整包完成，配套已發布）
+
+- 使用者轉向「先將原有LCMV流程修正，先確定這個流程沒有問題」。沿用原生八聲道／只動音訊且保留其他參數的授權；無新依賴／commit。先前LCMV卡在browser getUserMedia exact8，根本還沒進DSP；現只將desktop既有LCMV（含Falcon原本LCMV）擷取改PortAudio，普通browser／standard／Spatial Mask及native GPU選項維持既有路徑。顯式UMA-8可不靠browser枚舉；auto仍需既有可識別UMA標籤，勿強制把一般mic當陣列。
+- 新shared `kiosk-array-input` v1 Eventa control＋generation-bound MessagePort；Main `ArrayInput`僅接受trusted Kiosk main frame，preload一次轉交port給browser DSP Worker。Worklet stereo384/8ms直達worker→Main→獨立capture-only Python→原worker AEC3 WASM／LCMV；UI只收最終PCM／telemetry，再走原gain／VAD/Falcon／ASR。沒有UI逐包轉發／GPU推論依賴；裝置枚舉獨立短命child，不能阻塞live input owner。navigation／close／replacement／stale generation、pending errors均清理。沒有放寬250ms／32pending或既有1s DSP/VAD界限。
+- Python `--capture-only`選InputWorker，不建Frontend／載OpenVINO／ULUNAS／RTF模型；重用Capture真8mic＋實際stereo ref配對，保留100ms mic delay／±0.5% drift，rawOffset／renderOffset檢查連續。原worker與raw共用playback packet驗證。新raw open報captureDelayFrames，連線ready後扣除其延遲設定來源時間，避免把Python啟動算入語音時鐘。原LCMV／LcmvStream／AEC3 WASM實作／tuning／SpatialMask／ASR來源SHA與0.6.2一致。新native-lcmv-input偏好與GPU的map/gain/input互相獨立；原七通道map及LCMV參數保留。
+- 重要接線驗證：Worklet在native LCMV等reference-port才開始offset0，避免port交接前丟開頭。Electron實際測試發現向MessagePortMain transfer ArrayBuffer附件會整包decode null（41實測）；只跨Main複製3KiB ref PCM、browser Worker/Worklet間仍transfer，46同版通過。NOTICE附官方port文件。原GPUWorklet預設啟動與250ms不變。暫時debug console已移除，不要恢復transfer到Main。
+- stage `pb-test.local/kiosk-lcmv-native-20261119-r1`：Python46過2 opt-in skip；Chrome7檔31個distinct tests（含新rawLCMV真AEC3／非零16kPCM／source clock／真正ref／UI忙350ms仍續、native selector及standard切換），Desktop pipe/protocol3、publisher4、Kiosk/Desktop scoped types與targeted ESLint、兩build／diff check過。測試先red InputWorker缺失；原exact8邊界已有先前Electron重現。未root types。
+- 真Linux Electron46.0.0-alpha.2＋正式preload／ArrayInput／NativeAudio／真Python Capture／AEC3 WASM／LCMV串接，只有外部PortAudio用合成8ch驅動。連續約28s、874 packets／447488@16k、非零且連續，browserCaptureCalls0、UI忙350ms與裝置枚舉350ms均不中斷；stop875 packets之後無late PCM。結果electron46-running/stopped/after-stop.json。此不是Windows實體8ch、聲學回音、真人VAD/ASR或完整接待驗收。audit harness／server全在stage；初次頂層await app.whenReady、middleware路由及Electron41資料transfer調查不代表產品缺陷。最後46同版整合過。
+- 完整ZIP `pb-test.local/kiosk-lcmv-native-20261119-r1/windows/Webnavior-Kiosk-GPU-Windows-x64-20261119-005348.zip`，314458971bytes，SHA `af820e0193de2384310baf68e4a9f303ed59c01601112b3b7ffd2784bfdcf872`。3708 payload SHA／CRC、1256 source freeze及包內Python一致。較0.6.2只7 payload檔變（main/preload/appversion、worker、audio README/manifest、quickstart）；PB service、settings、weights／native runtime不變，沒把測試假硬體打包。
+- 配套 `kiosk-lcmv-native-20261119-r1` 台北00:54:52啟用591檔／99變更，含0.6.3/nativeArrayInputVersion1/nativeGPUbridge3 metadata；4入口index/version＋public JS/Worklet10份bytes過。API PID338988未變，無API restart／Admin或PB發布／強制現場reload。publisher activation/backup保留勿重跑。validation／package-verification／source-hashes及logs在stage。
+- 現場：完全退出舊EXE、整包解壓新資料夾，開一般Webnavior Kiosk.exe；設定→本機麥克風與喇叭→輸入模式UMA-8、處理管線既有收音方式、LCMV並套用（Falcon維持原本模式即LCMV）；選原生8ch input或唯一UMA自動，喇叭正常獨立選。無須Start Without UL-UNAS或五秒校正。勾管理員音訊測試，驗收音／辨識／播音及插話，再關管理模式驗接待。GPU候選自身舊ack/UI等待鏈尚未修，本輪不可稱GPU問題已解。
+
+## 2026-11-19 語音15秒排隊丟棄／水餃總顆數與分份（r2後端已啟用，保留0.6.3前端）
+
+- 使用者澄清：已辨識語音因前面Agent操作或ASR太久，後面被取消；不是要求移除250ms即時音訊保護。queue 先red重現，現移除default15s ASR watchdog及完整text ready後15s expiry；已接受句子依capture FIFO留存，不因等待超時丟掉。保留4 pending明示overload、reset世代隔離、實際ASR錯誤／Falcon明確provider deadline。未改錄音、視覺admission、idle15秒確認或送單consent。測試覆蓋前面操作60s及前面ASR60s，後句照序處理。
+- 水餃沿shared pbMenuPresentation的既有8顆政策新增完整collection parser，bare10/12顆為一份、10顆2份／12顆3份保留份數；「一份十顆、一份12顆／一份正常」保留兩配置，正常=基本8。單一配置parser由Jev與Server共同使用；複合原句交Main，live quantity question可name-free完整承接並沿既有orders.collect／completeOrder執行。fresh question/cart/config仍核對、once消費；無品名綁定／別產品／詢價／否定／相對加顆不因數字自動購買。orderDrafts把總顆數換為每份extra，最新option/max/price仍executor核對。
+- 後端order/common指引及shared orderingTools描述同步明示這個品項的bare-piece例外及分items；不是用單一固定話術覆蓋全部點餐。4 API overlay檔需restart（兩SKILL.md＋shared pbMenuPresentation.ts/orderingTools.ts），Kiosk前端配套一起切換。379 unit、shared22、Server27、三scoped types、11檔lint/build、publisher暫存filesystem6過；finalqueue14為子集。無root types／commit／真ASR或實單驗收。
+- 不必重包EXE：隔離建置PB payload SHA669e8ef572e5be356bbcf474b39fa89722a3a2707ac34e5598e4e095d9860685，與現out及0.6.2 Windows ZIP內逐byte相同；未覆寫Desktop out／改任何音訊src／設定／模型。不要為本兩項發新Windows包，也不要把原250ms問題宣稱已修。
+- r1 因線上已發布0.6.3，使用者sudo啟用時於static-before檢查拒絕；已核對無activation.json／before-activation，沒有寫入或重啟。不要重跑r1／解除guard。
+- 改用 `pb-test.local/kiosk-voice-dumplings-20261119-r2`：逐SHA核對0.6.3 source manifest已含queue／dialogue／draft／shared parser與tools修正，591個live/artifact檔完全一致，因此沿用目前LCMV前端與metadata，所有static before=after、零預定靜態寫入；只補4 API overlay與restart。rebase-verification.json留來源證據；保留原PID／invariants／live-byte／reviewed source／備份與rollback防護。7 publisher測（新增API-only不寫static／不備份static）、dryrun及四入口加public JS共9 HTTP byte檢查過；既有379/22/27語義測試證據沿r1，未重跑root types。
+- 使用者已sudo成功啟用r2：activation.json status=activated／restored=false，API新PID1312458；啟用後4 API SHA／591靜態SHA／invariants、9 HTTP bytes與readyz（db/redis ok）通過。無靜態改寫／強制reload，禁止重跑已啟用腳本。現場退出重開目前0.6.3 EXE後驗收長等待語音FIFO與水餃分份。本點餐修正不另重包EXE；0.6.3 LCMV既有配套需求保持。未真人語音或實單驗收。
+
+## 2026-11-19 0.6.2仍250ms，整條錄音流程審視（僅調查／新增重現測試）
+
+- 使用者重測0.6.2仍250ms，要求重新審視整條流程；async已明確回覆完整錯誤 `Native playback delivery exceeded 250 ms`。此精確字串唯一來自browser nativePlayback Worklet，offset-ack>=12000frames；不是Python捕捉queue／speakerqueue的另外兩個250ms，也不是五秒NPZ校正。0.6.2只改Capture配對／短ref缺口，完全未改Worklet確認往返，故不能認為修過配對就應消除這個訊息。
+- 路徑：Worklet stereo384/8ms→renderer nativeCapture事件與bridge→preload Eventa→Electron Main NativeAudio binary stdin→Python main同步read_frame→Worker.poll入ref/read mic／48→16k／7AEC3／onlineRTF/MVDR／可選ULUNAS／AGC/VAD→stdout binary→Main解碼驗證→preload／renderer then→Worklet ack。ack表示整段DSP完成，不是ref已入列；傳輸與處理耦合。Worklet每8ms送塊，renderer或整段回覆停頓約256ms可積32塊觸發。模型略過只移除ULUNAS，此鏈其餘部分全在。
+- 控制工作亦阻塞音訊：NativeMicrophoneSettings onMounted(refresh)先devices再status；devices同一Python同步stdin loop並進PortAudio query_hostapis/query_devices。新增test_worker.py真child/pipe重現，僅外部device query延遲350ms，不載模型、不跑mic callbacks或DSP，後續poll仍等待>300ms。這證實結構上可以阻塞，不是已量到現場裝置枚舉真的350ms。Eventa現有依賴source確認正常清理invoke listeners，未找到足以斷言其洩漏的證據。
+- 真Chrome原有兩個repro再跑全過：純靜音ref＋外部native completion gate住會250；native快速立即回覆但renderer忙350ms也同訊息，均不需要GPU/AEC或硬體。worker檔9過（含新devices repro）。stage `pb-test.local/kiosk-recording-audit-20261119-r1`有worker-tests／browser-reproductions／validation。最初devices測試使用communicate與reader同讀stdout造成test race，已改單reader＋stdin write/close＋wait，修正後9過；不是產品缺陷。該初失敗log不當red產品證據。
+- 追加問參考音是否模型需求／沒做五秒造成，已回答AEC3用browser實際喇叭PCM（無播放也送真靜音）消echo；ULUNAS只吃AEC/beam後單聲道頻譜及recurrent caches，無speaker ref input；五秒是舊anchor，現自動RTF不要求。再問能否鎖定AEC，已澄清不能鎖定AEC3演算法；可鎖定目前參考音與DSP/控制/UI共用等待鏈有缺陷，現場究竟哪段耗滿250ms仍需端到端量測。
+- 下一個修復單元應處理獨立於renderer UI的參考音傳輸、分開入列確認與DSP完成、將devices等控制工作隔離／定義快照freshness，保留獨立DSP backlog上限與連續sample/generation；不能只把ack提前假稱處理完、放寬250ms、丟音、補假ref或默認CPU。尚未實施此架構變更／重包EXE／發布前端／重啟API／更動設定；本輪baseline1251來源只有test_worker.py改動。不要再把現場錯誤鎖成GPU或AEC單段。未root types／commit。
+
+## 2026-11-19 0.6.2 reference 分批配對修正（整包完成，沿用現有前端）
+
+- 現場用0.6.1略過UL-UNAS仍回報 `Browser playback reference underrun`，之後250ms；追問是否同步問題而非模型。已承認先前把GPU38ms/16ms說成現場主要原因過早。現證據支持兩個問題須分開驗：無模型也能觸發callback即時取ref缺口；原GPU報告仍確有超16ms，但僅3 hops不能當穩態／唯一根因。
+- test-only先red重現：2400真ref後短暫100ms IPC停頓，原Capture._callback直接消耗40–50ms reservoir，即使read及無模型仍underflow，收音資料不能續處理。PortAudio/sounddevice官方說明非零blocksize可有host額外buffer，故不能假定10ms callback與browser8ms消息均勻交錯；未量到現場WASAPI回呼批次，不宣稱已證明唯一現場排程來源。
+- 0.6.2 callback只copy借用的8ch mic buffer入有界queue；read在實際ref足夠時才依序配完整mic block，短暫缺ref保留未配mic／reference，不補假靜音／不丟sample。input累積與render各仍12000frames=250ms上限；原Worklet250ms／NativeAudio32pending限不動，真正UI長stall／模型持續過慢仍會停。保留100ms mic因果延遲、±0.5% clock resampling；drift控制減去待配mic frames，避免callback batch被當時鐘偏差。其餘device／gain／AEC／onlineRTF/MVDR／AGC/VAD／ASR／點餐、模型FP32及0.6.1process-local bypass均不變。
+- ZIP `pb-test.local/kiosk-reference-queue-20261118-r1/windows/Webnavior-Kiosk-GPU-Windows-x64-20261119-000156.zip`，314456474bytes，SHA `5227bd575f4793b7cc6de2bcbabf416cb13d08a87352462e4843d4146fdf2f46`。3708 payload SHA／ZIP CRC、1251 source freeze／包內Python一致過。與0.6.1只5檔不同（app version、native_device、audio README/manifest、quickstart）；main/preload/PB、模型/runtime、settings及bypasslauncher全不變。未發布前端／Admin／PB／重啟API。stage留red／green／build／package-verification／validation證據。
+- Python43過2 opt-in skip（GPU／stress），含100ms短ref暫停保留所有input、真Worker+bypass反覆100ms driver batch／8ms poll維持4秒PCM連續、±400ppm兩方向30秒drift、PortAudio借用buffer複用不改已存音、input超250ms確實fail、參考先於echo／無需喇叭等。外部PortAudio是假API，Windows實體／真ASR／長期雙講仍待現場。Desktop build與diff check過，無TypeScript／Vue／bridge變更，不需root types或新前端發布；沿用現行v3配套。0.6.0 source-pinnedpipeline probe仍不適用新來源。
+
+## 2026-11-18 0.6.1 UL-UNAS 暫時略過測試（整包完成、配套已發布）
+
+- 使用者要求先繞過小模型做測試；其餘流程設置不動。最新追問啟動無音是否模型太慢：依前節現場報告，GPU denoise 約38ms/16ms且獨立pipeline reference underrun，為當次主要瓶頸證據；僅3 hops不能判定GPU硬體故障或穩態效能，bypass實機結果仍待驗。
+- 新增整包內 `Start Without UL-UNAS.cmd`：先完全退出舊EXE，整包解壓到新資料夾後執行。只在該次程序環境設 `WEBNAVIOR_TEST_BYPASS_ULUNAS=1`；Worker不載入／推論模型，status明示Bypass、gpu_verified=false。原生八聲道、AEC3、自動RTF/MVDR、gain/AGC/VAD、既有ASR/TTS／點餐及參考音傳輸／250ms門檻全維持。沒有存偏好；完全退出後一般EXE仍走原本FP32。未加CPU推論fallback、未改FP16或模型權重。既有處理方式選項需沿用native RTF/MVDR；此flag不會強制切backend。
+- ZIP `pb-test.local/kiosk-denoise-bypass-20261118-r1/windows/Webnavior-Kiosk-GPU-Windows-x64-20261118-234632.zip`，314455657 bytes，SHA `b07a333af858544ef7a5a49d9725bdd68eece939166f0a7d11d0f01e0f393872`。3708 payload SHA／ZIP CRC、1251來源凍結與包內Python一致過。與0.6.0僅7個payload變更（新增launcher、app version、worker/denoise、audio README/manifest、quickstart）；main/preload/PB、連線設定、模型及native binaries全不變。
+- 配套 `kiosk-denoise-bypass-20261118-r1` UTC15:47:28（台北23:47:28）啟用591檔／96變更，含version.json 0.6.1/v3；僅UI新增模型略過狀態。四入口index/version及公開JS/worklet共10份HTTP bytes過；API PID338988未變，未重啟API／發布Admin或PB／強制現場reload。publisher含activation guard與備份，不要重跑activate。
+- Python39過2 opt-in skip、真Chrome3檔16過、Kiosk scoped types、2檔ESLint、publisher4、兩build、diff check過。red先重現Worker不接受bypass；新增測試驗missing model仍能bypass並輸出有限PCM、AEC/RTF/AGC保留、一般啟動仍fail closed、真child環境flag隔離／關閉後恢復、真Vue顯示Bypass而不冒稱GPU。不是Windows實體8ch／ASR驗收。stage留logs、validation、package-verification、source-hashes、activation及http-verification。未root types／commit。
+- 現場：開launcher後設定頁應見「已略過UL-UNAS」。沿用native處理選項及既有input/map/gain，啟用管理員音訊測試，測持續收音／辨識／播音，再退出管理測接待。若仍250ms／underflow不能宣稱模型是唯一原因，需續查同步poll/IPC/UI。0.6.0 source-pinned獨立pipeline小包不適用0.6.1；一般原始8ch工具仍保留。此為可還原診斷，GPU效能尚未修復；LCMV browser exact8的OverconstrainedError仍另案未改。
+
+## 2026-11-18 Windows管線JSON＋使用者追問RTD（推定RTF/MVDR；未改流程）
+
+- User附 `/home/aimax/Documents/Native-Pipeline-Test.json`，首個cat成功讀取，之後路徑消失，故summary按已觀察數值轉錄，不宣稱保存原檔。summary在pipeline-probe stage/windows-pipeline-result-summary.json。success=false／stage native-pipeline-capture／browserIpcTested=false；OV2026.4.1 Iris Xe GPU.0 f32 gpu_verified=true、471GPU nodes、0CPU，WASAPI miniDSP input成功開啟，初始化2154ms。
+- 0.2608秒就 reference underrun。processed/captured3840 @48k=80ms；output512@16k=32ms。AEC7次mean0.713ms/10ms；spatial3次mean0.665ms/16ms；GPU denoise3次mean38.044/p9538.802/max38.915ms/16ms（2.38倍預算）；frontend10ms mean17.518ms，poll max81.567ms，schedule max108.201ms，duty1.645。僅3 hops不能當穩態速度；但當次同步DSP停頓足以耗盡40–50ms ref queue，獨立無browserIPC亦失敗，不能把目前全歸UI。
+- 全8ch RMS/peak0不是mic壞的證據：native capture預填100ms microphone_delay，此處只讀80ms尚在padding；前述raw工具已能收到8ch。RTF no_speech/updates0與此相符，不能當RTF追蹤成功／壞掉的驗收。
+- 使用者打斷追問「那rtd的那條路線呢」。相關程式／CONTEXT無RTD命名，先明示按RTF/MVDR理解。這就是native-gpu管線：PortAudio8→AEC3→onlineRTF/MVDR(CPU)→ULUNAS/OpenVINO GPU→AGC/VAD→ASR；不是額外第三條獨立路線。RTF段確已執行，主要耗時在後段GPU，不能說RTF已完成真人追蹤。保留該路線，未切LCMV／停GPU／更改精度模型設定。
+- 本輪僅報告分析／summary／handoff，無產品修改／重包／部署。後續需處理GPU實測效能及ref傳輸與同步DSP耦合，不只擴250ms、不丟capture／假ref／自動CPUfallback；LCMV的browser exact8另案仍未改。使用者限制其餘流程設置不動持續有效。
+
+## 2026-11-18 現場LCMV亦OverconstrainedError，一般瀏覽器選項可收音（只核對，未改）
+
+- 使用者新回報舊LCMV亦OverconstrainedError／無音，一般瀏覽器選項可收。程式確認KioskScene array && !native設getUserMedia exact8、48k ideal／AEC NS AGC off；LCMV/Mask仍走該browser raw擷取，取得stream後才createArrayCapture進LCMV。只有native-gpu走PortAudio。0.6.0前述原生化沒有包含LCMV；不能把其OverconstrainedError當LCMV演算法或OpenVINO錯誤，也不能聲稱LCMV已修。raw8失敗與native250ms是兩個邊界。
+- 既有Linux合成Electron測試證據 pb-test.local/kiosk-deviceid-check-20261118-r1/electron-constraints.json：相同有效ID standard成功1ch、加exact8則deviceId constraint失敗、不指定ID exact8則channelCount失敗；非Windows實機能力量測。結合使用者原生8ch成功及browser standard成功，指向browser raw多聲道取得不相容，但現場完整constraint／實際caps仍無報告，勿斷言ID必有效或唯一硬體根因。
+- 本輪唯讀核對與handoff，未動產品碼／演算法／增益／參數／EXE／前端或設定。若擴及修復LCMV，應在擷取入口改用原生真八聲道，保留LCMV與既有參數，不能降成mono偽多聲道。仍要處理native250ms／完整pipeline實測；不要因raw檢測成功宣稱後端管線已過。
+
+## 2026-11-18 現場原生八聲道檢測可收音／完整管線診斷小包（未改EXE或前端）
+
+- 使用者新增證據：「Test Native Eight Channel 可以收到8通道音」。可縮小為原生PortAudio硬體擷取基本路徑可用；該工具不跑AEC／RTF／GPU／browser IPC，不能因此認定完整即時管線可用。現場250ms error、啟動沒語音仍未解決。此次無產品碼更動／設定修改／重包EXE／發布前端或API restart，維持僅處理前述音訊兩項的範圍。
+- 新增選用 `scripts/windows/probeNativePipeline.py`、`testNativePipeline.cmd` 與5項unittest，scripts/windows/README.md說明；小包 `pb-test.local/kiosk-pipeline-probe-20261118-r1/Webnavior-Native-Pipeline-Test-0.6.0.zip`，5893bytes，SHA `ac9af9e1c2de1b4620ea3d13f7d4c442079434243ed356d23427ace199794045`。3檔SHA／CRC／source一致過。解壓到0.6.0 EXE旁，先退出EXE／停止喇叭，再執行 Test Native Audio Pipeline.cmd；GPU準備後說15秒，回傳 Native-Pipeline-Test.json，非安裝校正。
+- 工具核對已驗0.6.0十個Python來源SHA，沿用已安裝Worker／Capture／AEC／RTF／GPU.0及AGC/VAD，使用temporary state、explicit silent application reference，不存PCM／讀寫Kiosk profile／呼叫ASR或點餐。原封方法加計時observer量AEC10ms／spatial16ms／denoise16ms／frontend10ms／poll8ms與pollSchedulingDelay，報processed/captured/output／RMSpeak／speechSamples／segments／tracker／processingDutyRatio／原錯誤stage。預設channel0–6／gain30（不讀browser已存偏好，可明確CLI指定），不自動CPUfallback；supervisor子程序185+duration秒上限。
+- 5測試過：真CPU Worker全DSP配合假外部PortAudio callback、真原生開啟錯誤stage、延遲真模型300ms會報reference underrun並保留timing、source mismatch阻擋、CLI parent保留child失敗。不是Windows實體GPU驗收。原apps／packages所有1250 snapshot對應來源核對無改；新增診斷與README不入目前0.6.0既有ZIP。無root types／commit；tools source-hashes及package-verification留stage。
+- 下一步看現場完整JSON（不只success）：若pipeline本身慢或queue失敗，依stage/error/timing分辨GPU、AEC/RTF及排程；若獨立靜音流程成功且有餘裕，再縮小browser/UI/IPC。這不測browser播音／AEC double-talk／ASR，不可僅因success宣稱即時或完整接待通過。
+
+## 2026-11-18 0.6.0 現場250ms delivery失敗（已重現觸發機制，未修／未發布新版本）
+
+- 使用者回報 `native playback dilvery exceeded 250ms`；async澄清「目前開啟後台時出現，並且啟動後也沒有語音被收到」。沿用僅修音訊兩項、不動其餘流程的限制。此錯誤是 Worklet `offset-ack>=12000`，384frame/8ms，最多32個pending；不是原生喇叭host錯誤或校正。nativeCapture要等整個Worker.poll（AEC3／RTF／GPU都同步完成）才ack給Worklet，UI/IPC／DSP都可能阻塞確認；沉默時仍送zero reference。發生後dispose、Scene onError清audioInputStarted並abort，因此沒有ASR輸入合理。
+- 新增 `apps/stage-kiosk/src/audio/nativeDelivery.browser.test.ts` 兩個真Chrome/Worklet測試均通過：外部native reply gate住，32個純靜音poll即可同訊息；native立即回覆先正常4次poll，再故意阻塞UI350ms，也同訊息。第二個不用GPU／實體mic，證明不能只因這錯就判定GPU太慢／mic壞。不是現場原因證明。管理面板v-if才顯示KioskVoiceDiagnostics，其error為持久audioStartupError；也可能只是顯示啟動早已失敗的訊息。devices/status和poll確實共用worker串行loop，但未量到現場枚舉慢或管理畫面實際耗時，不能斷言後台本身造成。
+- stage `pb-test.local/kiosk-delivery-check-20261118-r1` 有reproduction.log／lint.log／validation.json；只有新增測試與handoff，產品碼／250ms門檻未改、未build／重包／部署／重啟／改設定。先前0.6.0包與配套仍現行。Windows完整管線timing／IPC/UI阻塞點待量測；GPU compile success不等於可即時。後續修正需處理即時參考傳輸與DSP完成確認耦合、取得具體耗時，不能只放寬門檻假裝解決或丟capture／假ref／自動CPUfallback。
+
+## 2026-11-18 0.6.0 免五秒手動校正／正常獨立喇叭（整包完成、配套前端已發布）
+
+- 使用者明確要求兩項：取消5秒錄音限制（前文澄清包含首次也免手動校正、自動持續學習），恢復麥克風與喇叭正常獨立設定；第3點空白。追加限制「只根據這兩項，其餘流程設置不要改動」。無新套件／其他功能；之前 Native calibration cancelled 是立即或幾秒內發生，非15s timeout，原硬體錯誤仍未知。**下列0.5.0強制anchor／同host雙向串流已被本節取代，不再要求現場重做五秒。**
+- Worker Config automatic_rtf=True，start直接建Frontend，不讀寫target_rtf.npz；已移除native校正request／promise／UI／lease／preflight，bridge升v3、EXE0.6.0，舊EXE明確要求更新。NearFieldMvdr自動模式先用參考麥克風，短首句可直接出音；獨立VAD＋白化／優勢／連續候選品質檢查學RTF並持續更新，無anchor服務區限制，可重新學主要位置。播放／300ms尾音、混雜或弱證據凍結學習；不是顧客身份辨識。offline固定anchor對照預設仍保留，不影響其他DSP用法。每generation重新學，不保存錄音或方向。
+- PortAudio只InputStream八聲道；不查預設喇叭／不開output／不要求stereo或samehost。NativeSettings僅input/map/gain；KioskMedia恢復正常browser喇叭選單與測試音，native outputDevice舊值不再用。WebAudio原本來源仍正常audible，silent Worklet鏡像應用PCM作AEC參考，不再silent sink或native DAC。捕捉延遲100ms＋40–50ms參考queue／±0.5%校時保持因果；250ms界限／xrun／primed參考underflow均終止，不能假裝browser已播的聲音是靜音。這是pre-DAC應用參考，不是硬體DAC回饋／系統或外站loopback；跨裝置AEC與實機延遲仍待驗。
+- ZIP `pb-test.local/kiosk-auto-audio-20261118-r1/windows/Webnavior-Kiosk-GPU-Windows-x64-20261118-230254.zip`，314454064 bytes，SHA `65a14de695e85751b691f6c2d3bef1242ccb8ef3421f035c5241aab148171301`。3707 payload SHA／CRC、1250來源凍結／包內Python來源一致過；相較0.5.0只12 payload檔變更，PB service、連線settings、模型／200個native binaries均不變。scripts診斷取5s只是選用檢測，不是使用前校正；已改input-only。
+- 配套前端 `kiosk-auto-audio-20261118-r1` UTC15:04:19（台北23:04:19）啟用590檔／95變更；建置未自動產生version.json，初次HTTP驗證因此失敗，已以stage/publishVersion.py單獨備份／原SHA與8invariants檢查後補齊0.6.0/v3 metadata，version-activation.json留證；不要重跑兩個發布script或刪guard。之後四入口index/version、公開JS/worklet共10 bytes比對全過。API PID338988保持不變，無API restart／Admin／PB站發布／強制現場reload。僅更新Kiosk配套。
+- 驗證Python36過2 opt-in skip（stress／Intel GPU）；Chrome5檔26過（native3/settings8/media4/speech7/existingcapture4），真child/protocol3、Windows工具7過1skip、publisher4、Kiosk/Desktop scoped types、14檔lint、兩build／diff check過。red先重現無anchor／無output契約阻擋；自動追蹤、位置重學／播放及混雜凍結、真VAD樣本／segment、無output native實際worker、30s時鐘偏差、參考先於echo與underflow終止均過。外部PortAudio以假API測邊界，不能當Windows實機證據。未root types／commit；Windows／GPU即時／真UMA8／雙講／完整ASR仍待現場驗。
+- 現場需退出舊EXE，整包解壓到新資料夾並開0.6.0；不能僅重開0.5.0。選既有native GPU方式、原生input/map/gain套用，喇叭用上方正常選單或系統預設；沒有五秒按鈕。管理面板「麥克風、語音回音與插話測試」勾「啟用管理員音訊測試」，按「播放語音並測試插話」，關面板回接待。預設處理方式與原設定未主動改。
+
+## 2026-11-18 Native calibration cancelled 訊息遮蔽修正（網頁已發布，仍用0.5.0）
+
+- 使用者最新回報 `native callibration cancelled`，先前「只看到一個可以選」尚未確認指哪個欄位。已用真 Vue 設定元件 red 重現：native poll 的實際錯誤先觸發 dispose，calibrated promise 被通用 cancellation 拒絕，之後 catch 把 onError 設定的原始訊息蓋掉；不能據此認定使用者手動取消或已查明硬體根因。nativeCapture 現先以實際 error settle，再清理；保留 AbortSignal.reason，start catch 同樣先 settle。
+- 校正 UI 分開「正在準備 GPU 並開啟麥克風」與 capture ready 後「請在點餐位置自然說話」。ready 後15秒仍未完成，以明確逾時原因及 processedFrames/48000 秒數中止，不再蓋成取消。en／zh-Hant 與 Kiosk README 同步。未修改 Python／IPC／EXE；Windows 真正失敗原因仍待重試取得原始訊息。async 問立即／約5秒／15秒後失敗，尚無答案。
+- `kiosk-native-calibration-error-20261118-r1` 於 UTC14:44:14（台北22:44:14）啟用，591檔／96變更、1250來源凍結、8 runtime/admin invariants；API PID338988不變、無API restart。四入口 index/version 與公開 JS/worklet 共10份 HTTP bytes核對過。activation／release／validation及red/green logs在stage，勿重跑 activate。沿用原0.5.0 ZIP，完整退出 EXE 再開取得新前端。
+- Chrome3檔19過（settings10／native5／media4），涵蓋原錯誤保留、準備與說話階段、顯式 timeout reason；Kiosk scoped types、4檔lint、build、publisher4與diff check過。無root types／commit；未驗Windows實體／GPU即時／聲學品質，不能宣稱校正或收音已在現場通過。
+
+## 2026-11-18 原生校正／喇叭 host 選單修正（網頁已發布，仍用0.5.0 EXE）
+
+- 使用者先稱按5秒校正缺target_rtf.npz，後續async澄清完整錯誤其實是 `Select a stereo output using the same host API as the UMA-8 input`。目前已知現場問題為原生 input/output 配對不成立，**不能將前述缺檔當成已確診的校正失敗原因**。已明確向使用者說明兩者需同host（例如皆Windows WASAPI）。
+- NativeMicrophoneSettings 原本列出所有host的喇叭，且套用未驗host。先red重現舊MME output搭WASAPI input仍被套用；現先選明確原生8ch input，speaker只列同host且>=2ch，apply／calibrate共用配對驗證與中文指引。自動input僅搭其host default output，要指定speaker需先明選input；改mic時不相容的speaker draft重設為明示default，仍須按套用才存。
+- 另查證：實際calibrate:true指令原本就存在；孤立首次校正測試在無anchor時會成功，未誤修成補回不存在的旗標。正常start確會讀缺檔NPZ；已red重現該background listening路徑。nativeCapture現先status預檢，未校正回CalibrationRequiredError，由Scene顯示中文先5秒校正，而不進anchor-dependent DSP。校正用useKioskMicrophone共享runtime lease隔離普通監聽；保留enabled使用者偏好，finally／panel unmount釋放，Scene停舊generation、lease釋放後按偏好恢復。未修改Python／IPC／EXE，不必下載新ZIP。
+- 使用者另問如何選管理員測試；已回答正確UI字串：「麥克風、語音回音與插話測試」→勾「啟用管理員音訊測試」→說話看辨識；「播放語音並測試插話」測TTS，關閉管理面板回接待。先完成安裝校正。
+- 新前端 `kiosk-native-calibration-20261118-r1` 於UTC14:27:13（台北22:27:13）啟用；591 SHA／97變更、1250來源凍結、8 runtime/admin invariants、API PID338988不變；不重啟API／重包EXE／強制現場reload／發布Admin或PB站。Stage有activation／release／validation／publish-plan／source-hashes、兩個red及綠測試logs，勿重跑activate。
+- 最新3檔Chrome17全過（native4／settings9／media4），先前未再改動capture4與speech7通過；真Python native boundary5（含無NPZ→5s真AEC校正→CPU Frontend）、Kiosk scoped types、6檔lint、publisher4與build／diff check過。無root types／commit。配套HTTP核對見stage/http-verification.json；Windows實體host可用性／GPU即時／聲學品質仍待現場，不保證每台都提供相容stereo host；若無同host輸出需取得實際native device清單，不可mono偽8ch或無參考假AEC。
+
+## 2026-11-18 原生八聲道收音 0.5.0 候選（EXE＋配套前端已就緒；待 Windows 實測）
+
+- 使用者已明確選擇沿用原始 sounddevice／PortAudio 原生八聲道。先前把原始原生擷取改為 renderer getUserMedia exact8，是額外相容性邊界；目前現場錯誤為 OverconstrainedError(deviceId/channelCount)。已向使用者承認未先驗證這個整合假設。使用者原先只要ZIP，後續在得知配套網頁必要性後明確要求「幫我修改正確，我要在kiosk上直接完整測試」，已授權並完成配套前端啟用。
+- 0.5.0 source 改成 sounddevice0.5.6／PortAudio 48k float32 duplex(8 input,2 output)，原生 host/name 裝置身分、唯一 UMA-8 自動選取（優先 WASAPI）與同 host stereo output；拒絕少聲道／不明裝置，無 upmix 或 CPU 自動重試。Eventa audio v2；舊 EXE 明確要求更新。Renderer native 模式不再取得 browser mic，enabled 偏好由 native 監聽使用；切回既有管線恢復 browser ownership。start/calibrate 準備 DSP、open 開裝置、poll 傳 stereo render／取最終語音，世代隔離及 EOF／stop／校正完成清理。
+- 應用 TTS／cue 走 Chromium silent sink，再由 PortAudio 真正播放；約40–50ms bounded buffer＋clock drift resampling，AEC 收到實際 clipped DAC output（含 underrun silence），不含系統／外站 loopback。混音 fullscale 限制作用於真播放與參考一起，解決 native 多來源1.5超界。Browser media lifecycle 通知可早於 DAC 尾音一個緩衝。捕捉／播放250ms backlog及 PortAudio status 錯誤會停止，不丟 capture 補速度。初次模型編譯180s／preload182s；失敗 owner 仍需整頁重載，未做自動復原。校正綁原生 input identity，舊 browser anchor 必須重做。
+- ZIP：`pb-test.local/kiosk-native-device-20261118-r1/windows/Webnavior-Kiosk-GPU-Windows-x64-20261118-215921.zip`，314455575 bytes，SHA `281077c3015044a2a8ea94bdee3e3d4eebf80771a2cd468409cf1490a2ebc573`。3707 payload SHA／CRC、1250 source freeze、200 x64 native binaries過；sounddevice/CFFI2.1.1/pycparser3.12 官方 wheel hashes 固定，移除 wheel 中 x86／ARM／macOS binaries，保留 x64／ASIO 與 licenses。OpenVINO 第二版 denoise19aa4693及原 ONNX不變。
+- 包內新增 `Test Native Eight Channel.cmd`／`probeNativeCapture.py`，用實際 Capture 邊界測5s native duplex、喇叭靜音、輸出每ch RMS／peak與 Native-Capture-Test.json，不開GPU、不存錄音／改基準；success只代表取樣成功。原 Test OpenVINO GPU.cmd 分開驗模型。可先跑ZIP內獨立原生檢測；**配套前端現已上線，完整退出舊程式並使用0.5.0 EXE即可測新管理頁流程**。完整解壓，不能直接ZIP內執行。
+- 驗證：Python30過／2 opt-in skip（含 native callback5s真AEC／RTF校正後真CPU Frontend、世代stop、30s browser clock drift）；Chrome26（含真 constraint 失敗／native calibration UI／不呼叫gUM／切回browser／silent output混音）、real child/protocol3、shared store4、Windows tools7／1 skip、publisher4；Kiosk/Desktop scoped types、16檔lint、兩build及diff check過。Linux host缺PortAudio shared library，實際sounddevice載入只能回報OSError；PortAudio邊界使用假外部API，不能當Windows實機證據。Windows／Iris Xe timing／真UMA8／double talk／ASR未驗，仍無完整新GPU JSON，不能因success:true宣稱即時合格。
+- 前端 stage591files／98差異、8 runtime/admin invariants與API PID338988 dry-run過。先前自動核准審核因缺少明確站台發布授權拒絕 activate；向使用者解釋後，使用者本輪要求可在Kiosk完整測試，已重新核對並獲准執行。`activation.json=activated`，UTC14:04:36（台北22:04:36），API PID338988不變；無API restart／強制現場reload／Admin或PB站台發布。四入口index+version與公開module／nativePlayback Worklet共10份HTTP bytes核對過。舊hashed assets保留，Windows現場先完成當前操作、退出舊EXE，再完整解壓0.5.0新資料夾使用。
+- 「管理頁」指EXE載入的Kiosk頁面左上角設定，2秒內連點5下→輸入現場管理PIN→本機麥克風與喇叭；不是另外的完整網頁Admin後台，也不是需要重新打包EXE。選UMA-8多聲道／native GPU並套用、同host原生input/output、重新5秒校正；可開「啟用管理員語音測試」測ASR／TTS，再退出管理模式測真人接待。stage release已更新為frontend-activated-awaiting-physical-windows-capture-test；原ZIP SHA與來源不變，無須重包。實機Windows／GPU／8ch聲學驗收仍待使用者，無root types／commit／production latest更動。
+
+## 2026-11-18 OpenVINO GPU 第二版修正（0.4.4 候選已包；目前卡八聲道取得）
+
+- 最新使用者再次確認「一般瀏覽器沒有問題，轉8聲道就不行」。已核對原始v0.2包：`src/uma8_frontend/web.py:172-174`明確不用browser mic API，採sounddevice／PortAudio InputStream八聲道；`live.py`亦原生capture／duplex，`cli.py`在import前設SD_ENABLE_ASIO。目前EXE卻由renderer getUserMedia exact8先擷取再送Python，是新增的相容性邊界。原包`docs/LOCAL_WINDOWS.md`有舊v0.1的WASAPI48k／8ch成功紀錄，但不是目前Windows實機證據，不能據此斷言目前硬體或Chromium哪端必壞。
+- 已查sounddevice官方InputStream／WASAPI設定文件；建議原生八聲道擷取先獨立驗證，再整合capture／真實播放參考的時鐘與生命週期，不能只把mono複製成8ch，也不能只換擷取而忽略renderer播放參考的時基。async已請使用者依AGENTS套件選擇規則選「沿用原檔sounddevice／PortAudio原生八聲道（建議）」或「保留瀏覽器先查八聲道」。此為先前狀態；使用者後續已選原生方案，0.5.0 source／ZIP已完成，見上節；舊0.4.x硬體收音仍經Chromium。先前所問mic名稱／Windows進階聲道格式也尚未回答。
+
+- 使用者提供`/home/aimax/Downloads/OpenVINO-GPU-Test.json`：正確0.4.3 candidate SHA `609b6649…`，FP32／FP16皆在`ReduceFCDimensions`失敗，0 verified／0 budget passed，沒有開mic。`MatMul_22_rank3`再次接回4D `VariadicSplit` output1，證實rank-only workaround被GPU後續最佳化撤銷；0.4.3不是已修好的GPU包，不要再交付它當修復版。摘要已去除現場路徑，見r2/windows-r1-result-summary.json。
+- 官方`releases/2026/4`的`reduce_fc_dimensions.cpp:27,39`遺失Output index；GPU pipeline在此之前執行`MoveFCReshapeToWeights`。原始碼在`/tmp/openvino-{reduce_fc_dimensions,transformations_pipeline,convert_matmul_to_fc}.cpp`。不能再只檢查compile_model之前沒有rank4，也不能改用錯誤output0或CPU自動fallback。
+- 現在`denoise.py`移除rank-only方案，ConstantFolding先解析固定權重轉置，再將兩個末軸連續Slice＋MatMul改成完整來源tensor＋零列擴展權重：`x[...,start:stop] @ W == x @ pad_rows(W)`。原trained coefficients、輸出shape／tensor names、三組MakeStateful、ONNX SHA／OpenVINO2026.4.1／FP32／GPU.0均保留。GPU FC不再依賴該Slice被合成的多輸出Split。仍待Windows確認GPU optimizer與真執行，不能因CPU數值過就宣稱實機修好。
+- 先red在0.4.3圖結構重現切片依賴；新版真compiler邊界確認兩投影讀257／129完整特徵。Python25過／2 opt-in skip，native真child/protocol3過；原始ONNX64+8段raw enhancement／postmask及reset過，另外包內候選真CPU64段fixture過，最大postmask誤差2.384e-6。無root types／commit／API restart／前端發布。
+- 先交付小包`pb-test.local/kiosk-openvino-fc-fix-20261118-r2/Webnavior-OpenVINO-Slice-Fix-Test.zip`，8682 bytes，SHA `0278c815da10779c6c6099be5b44fb723160898e1e657f901cfb7b2eb36de341`；candidate SHA `19aa4693db577cafe41c174f57f986aac187299740e21cafb19973cd739e999d`。四檔CRC／source match過，7份來源凍結。關EXE、四檔解壓到完整0.4.3的EXE旁，跑`Test OpenVINO Slice Fix.cmd`，回傳`OpenVINO-Slice-Fix-Test.json`。只在獨立process載入候選，不覆蓋resources/audio/src、不改登入／設定／校正、不開mic。stage有validation／package-verification／packaged-cpu-probe／source-hashes。
+- 使用者回覆小包看到`success:true`，但五秒校正仍失敗；async已明確確認當前錯誤為`OverconstrainedError（deviceId／channelCount）`，不是已確認GPU pass再失敗。新JSON／f32 timing／verified與budget尚未提供，不能只依success宣稱GPU可即時收音。小包本來不會升級舊EXE；0.4.3管理頁仍讀舊resources/audio/src。已另async詢問Kiosk選定mic名稱及Windows錄音裝置進階預設格式幾聲道，等待回覆。官方miniDSP手冊區分DSP2ch與RAW8ch；不得只依deviceId判定ID錯誤、擅自降成mono冒充陣列或改硬體韌體。
+- 已準備完整0.4.4候選：`pb-test.local/kiosk-openvino-fc-fix-20261118-r3/windows/Webnavior-Kiosk-GPU-Windows-x64-20261118-213907.zip`，313816139bytes，SHA `d624f72788acace04fa7609e7134bac320305d6f031b54876d8ffcf6ff6271e4`。3647 payload SHA／CRC、30份source freeze過；與0.4.3只6檔不同（denoise、audioREADME、audio manifest、app version、quickstart、package manifest），候選denoise SHA與r2小包完全相同。main/preload/PB／三入口／模型／runtime binaries／reference不變，不需重發前端／重啟API。只把第二版GPU修正真正裝進完整EXE；**不修OverconstrainedError**。完整包可用於後續測試，尚無完整新Windows JSON及實體收音驗收，不改production latest。
+- 功能source未再變動，沿用r2 Python25／native3／獨立原始ONNX+包內候選CPU數值與reset證據；未新增重複測試、root types或commit。stage有release／validation／source-hashes。後續先核對f32 GPU／parity／16ms mean+p95，再確認Windows到Chromium的真8ch路徑；五秒校正／持續收音／30s慢啟動恢復／播放混音超限均仍有未驗或未修項目。
+
+## 2026-11-18 OpenVINO 收音相容性／流程排查（已重現兩項風險，未修／未發布）
+
+- 使用者尚無現場錯誤／版本／GPU test JSON，要求先查相容性和流程。不可將本輪重現當成已確診 Windows 根因。Intel 官方列 Windows 11／Iris Xe／Python 3.13 為支援範圍，GPU 驅動仍為外部前提。
+- 真 child 模擬慢啟動：`NativeAudio.request` 非 block 僅30s；超時殺 child 並保留 failure，後續 status／calibrate 立即失敗，同文件重新連線不會重建 owner；只有整頁導航／重開會重建。preload32s、獨立GPU probe180s，首次編譯時間預算不一致。沒有量到 Windows 真編譯耗時。
+- 真 Chromium／Worklet＋實際 preload schema 重現：兩個合法0.75 playback source在 reference GainNode相加成1.5，`nativeAudioRequestSchema` 對包含render的PCM要求abs<=1.001，導致capture fail／dispose。未修改限制或繞過驗證；正式修正須處理實際播放與AEC參考的音量一致性。
+- 真 OpenVINO CPU合成端到端：完成5s校正，再5s capture產生310個output hop／189個spatial speech hop／1個final segment；非實體mic／Windows GPU品質或效能驗收。另重現缺`target_rtf.npz`即start失敗、換channel map須重校，皆為既有必要前提。exact8ch取得亦先於OpenVINO；不能單憑deviceId錯誤認定ID失效。
+- 既有native child/protocol3、nativeCapture Chrome2、上述兩項調查repro各1，共7 Vitest過。test-only檔已移出正式來源，重現source快照與結果在`pb-test.local/kiosk-openvino-flow-audit-20261118-r1/`；完整CPU流程另真跑過。無產品程式修改、EXE重包／部署／root typecheck／commit。
+- 唯讀45筆限欄audio lifecycle（無對話／原始event內容）：近期DEV-945884（使用者未確認設備碼）最新台北19:40:34 enabled/listening=false、要求exact8ch、沒有保留此次error，不能當OpenVINO已啟動或故障原因。投影`/tmp/openvino-audio-lifecycle-private.json`為600，不提交。
+
+## 2026-11-18 購物車簡短確認／發票選擇與掃碼焦點（0.4.2＋前端已完成）
+
+- 使用者說 PB 已恢復正常；先前90秒診斷沒有操作，只有 Google Storage Fetch timeout，不能當 PB 空白根因或已修證據。本輪改處理購物車確認及發票／掃碼。
+- 先 red 重現 Main 在「正確」後呼叫 open_cart 會重發 cart-review；現在先消費有效問題回答再執行 review，與 continue_checkout／誤選 invoice none 三路回歸通過。確認句集中 orderingMessages，僅「餐點、份數和金額正確嗎？」；仍先問真實發票方式、資料完成後獨立最終送單同意。既有未知寫入／送單復原保護未放寬，不能宣稱已確診每次現場 recovery。
+- 先 red Chrome 重現從 contact 切換發票時焦點保留原欄位；pbInvoiceInput 保留所選 radio 至 Vue 真正渲染該欄位，僅一次轉移焦點，其他 mutation 不搶回；reset／leave／dispose 撤銷待聚焦，dispose 後 microtask 不復活。
+- 真 Electron red：載具 DOM activeElement 正確，但 Host isFocused=true／native=false。Surface 現僅成功 invoice_select／checkout_prepare、有可編輯 PB input、同文件仍 approved、view 可見且 Kiosk window focused 時交接 native keyboard；普通 cart_get 不搶。最終實體 Electron（CDP focus emulation 關閉）兩種載具及 Enter 正規化過，fixture 0 submission／0 order；非 Windows HID 實機驗收。
+- 前端 pb-checkout-focus-20261118-r1 台北18:41:41已啟用，589檔／96變更；另 sibling metadata stage 補 version.json，1檔變更。舊hashed assets保留、無強reload；API PID338988不變，8份runtime／admin invariants核對。四入口與真正 module HTTP9份比對通過。勿重跑兩份 activation；紀錄見 stage release／HTTP／metadata activation。
+- 完整0.4.2 ZIP：pb-test.local/pb-checkout-focus-20261118-r1/windows/Webnavior-Kiosk-GPU-Windows-x64-20261118-183923.zip，313814201 bytes，SHA fc844df23b36b9861bb6d0caa8c78860c63b3ef4f496334866fcf501ae15f25e。3647 payload hash＋CRC過，與0.4.1僅 main／PB service／package version／quickstart 4檔不同；音訊／模型／preload／三入口設定相同。配套前端已發布，現場完成訂單後退出舊EXE、解壓新包測實體掃碼；勿宣稱0.4.1只重開即可取得native修正。
+- 驗證376 unit、Chrome22（最終invoice8為子集）、Desktop38／1 opt-in skip、publisher4、Kiosk/UI/Desktop scoped types、6檔lint、兩build過。Stage verifyFocus.mjs 為隔離profile＋loopback PB lab 測試，不使用現場儲存／商家。無root typecheck／commit。
+
+## 2026-11-18 PB 開始點餐後空白／載入失敗（仍待 Windows 錯誤碼）
+
+- 使用者回報0.4.1現場172入口，澄清PB區域變空白或載入失敗，不是菜單可見但Agent讀不到。不能將本次症狀逕歸因於三入口變更或下面另一個彈窗問題。
+- 唯讀固定診斷欄位：最近僅DEV-945884活躍（使用者未明確確認設備碼）；台北17:16:48、17:23:23有Start called未保留completed，後續17:35普通cart讀取resolved。這不證明Start未成功，換頁會清理diagnostic owner。未讀對話／訂單資料。已核對該session正式發布URL為app.esgpb.com/1kgJeql/internal_use/menu/select-table。browser_cart_preparation來源近2h無紀錄，不能當沒有失敗。
+- 全新agent-browser及兩輪隔離真Electron／正式native payload都能選櫃台→Start→菜單，無did-fail-load／renderer crash、無加餐／送單／付款。另重現forAdmission讀取會因優惠「稍後再領／立即領取」窗蓋住營業公告而拒絕，錯誤「關閉營業公告被其他畫面遮住」；plain cart_get後續成功、13cards。此為另一已重現缺陷，**本輪未修／部署**，不能當已解使用者空白頁。
+- Stage `pb-test.local/pb-entry-failure-20261118-r1` 有投影查詢、merchant-entry.json（600、QR遮蔽）、兩個重現腳本與investigation.json。CLI舊版不支援skills get，已依本機help使用agent-browser。相關runtime網頁根本載入錯誤碼現有事件只保留failed，需原Windows擷取。
+- 已提供小包 `PB-Connection-Diagnostics.zip`，僅diagnosePb.cjs／Collect PB diagnostics.cmd／說明，不含EXE或設定。放EXE旁、diagnosticPort改9222重開，執行CMD後90秒內重現，再提供PB-Diagnostics.json，收集後改回0。工具用既有Electron_RUN_AS_NODE的內建WebSocket，只讀CDP網路／導航／crash事件，無Cookie／body／欄位／對話影音，QR／orderID／query遮蔽。真Electron Node＋CDP本機HTTP500及網路失敗回歸通過，識別碼均未入報告。Windows CMD實機仍待執行。
+- 本輪沒有產品程式修改、EXE重包、前端/API部署、設備設定或登入更動。下一步先看現場JSON錯誤碼，勿猜DNS／TLS／GPU或重試商家寫入；若之後處理彈窗，僅可用原生「稍後再領」，不點領取或持久化不再顯示。
+
+## 2026-11-18 OverconstrainedError(deviceId) 唯讀追查（8ch 條件已重現，Windows 原因未定）
+
+- 使用者說 EXE 麥克風皆報 deviceId、Firefox 其他網頁可用，要求先自行確認。隔離既有0.4.1 Linux packaged Electron（相同main／權限政策、172入口攔截fixture、獨立/tmp profile、合成media）真 getUserMedia 比較：system standard成功、指定有效實體ID standard成功；同一有效ID加 exact8ch即 OverconstrainedError/constraint=deviceId；不存在ID也是deviceId；不指定ID要求8ch則channelCount。合成裝置caps1–2ch。證據 `pb-test.local/kiosk-deviceid-check-20261118-r1/electron-constraints.json`。不能把此Linux合成重現當已量到Windows UMA8能力；只證實deviceId文字不能單獨判定ID失效。
+- 程式依useKioskMicrophone.inputMode=uma8（或auto辨識UMA8標籤）在Scene設定exact8ch／48k ideal／關AEC/NS/AGC；指定deviceId為exact，這是取得音軌前的限制，尚未進OpenVINO／RTF／VAD。manual uma8模式套用所有被選取麥克風，因此若換其他mono仍留此模式，也會全部失敗。現場目前是否已試「一般＋系統預設」未回覆，入口／版本亦未確認，勿斷言8ch就是唯一根因。Firefox普通收音成功不等同Chromium能提供8ch RAW。
+- 唯讀DEV-757106僅固定欄位投影：最後audio_runtime是UTC07:07:12（台北15:07），browser-vad／listening true／permission granted，沒有這次失敗。原始e.content查詢被auto-review拒絕，已安全改為SQL內只取error name／constraint／enabled／listening／processing／permission／channelCount，不取訊息或顧客文字，通過後30筆投影保存在 `/tmp/kiosk-deviceid-runtime-private.json` 600。腳本stage/readRuntime.py；原先另一個查詢呼叫審核逾時，未執行、沒有資料修改。
+- 本輪無產品原始碼修改、EXE重包、前端發布、設定寫入或API重啟；測試Electron已關閉。後續需Windows實際channelCount capabilities／一般vsRAW取得結果或新的失敗診斷，才可判定驅動／裝置ID／模式何者所致。不要只因Firefox成功就放寬8ch或將mono當陣列。
+
+## 2026-11-18 0.4.1 三入口 EXE（成品完成，API 已啟用）
+
+- 使用者要求基於最新 0.4.0 調整：新增現場 `172.17.69.17:5169`，保留 Tailscale `100.92.1.80:5169` 與公開 HTTPS。新版0.4.1的 `connections`（label/url）與預選 `kioskUrl` 均可由EXE旁JSON修改；預設現場入口。新格式要求 connections，不直接搬舊JSON。HTTP來源於ready前同步讀檔後精確授權；商家網站不繼承。不同origin仍須各自配對、點餐不自動切線。
+- Server新增 `KIOSK_TRUSTED_ORIGINS`，預設上述兩HTTP origin；串接Kiosk CORS、PIN／POS與設備／PIN Cookie政策，公開HTTPS仍Secure。換IP需改EXE與Server清單、重啟API。完整網頁管理捷徑仍公開HTTPS，未宣稱一般HTTP管理登入／瀏覽器影音已支援。
+- 新包：`pb-test.local/kiosk-connections-20261118-r1/windows/Webnavior-Kiosk-GPU-Windows-x64-20261118-155552.zip`；SHA `2fb0f66e25b54748433569445837727d098481980f37018949db997d68d0f69c`，313813554 bytes、3647 payload hash及ZIP CRC通過。與0.4.0僅6檔不同（main、version、2設定、說明、後台捷徑）；OpenVINO／模型／reference／preload／PB程式皆不變。Windows／Iris Xe實機驗收狀態沿用0.4.0待驗，不冒稱GPU已合格。未改 latest production。
+- 先red重現新來源PIN 403與settings拒絕；Desktop38過／1 opt-in skip，Server4檔187過、最新origin/env27過，兩套件types、14檔lint、Desktop build／diff check通過。Linux真packaged Electron三入口及修改IP共4輪、合成影音／secureContext／AudioWorklet／bridge通過；未授權origin仍不安全。此為自動化Linux fixture（Playwright預設launch flags），非Windows實體硬體或sandbox獨立驗收。
+- Stage `pb-test.local/kiosk-connections-20261118-r1` 含ZIP、verification、logs、5檔runtime overlay、deployment-plan及activate.py；已核對patch可套用現有runtime，dry-run成功。API仍PID4435，**尚未寫入／重啟／發布前端／改server.env**。sudo -n要求密碼，不是自動approval review拒絕。使用者需在無未決訂單時執行 `sudo python3 /home/aimax/webnavior/pb-test.local/kiosk-connections-20261118-r1/activate.py --activate`。其備份、鎖、PID／來源／設定hash檢查、ready與無憑證POS401／錯來源403驗證及失敗回復已備妥。
+- 後續先看activation.json；若尚未啟用，不得宣稱172入口PIN／POS可用。172入口首頁及ready曾從伺服器本機200，其他機器路由／防火牆仍待現場確認。無root typecheck／commit。
+
+- **啟用完成**：使用者台北16:23執行sudo；activation.json=activated、previous4435→PID338988。已核對5檔部署SHA及兩前端invariants；loopback／172／Tailscale的readyz與Kiosk皆200；公開curl兩者200、DB/Redis ready。Python UA在Cloudflare回1010，不能誤判API壞掉。三來源無憑證POS401、非信任172.17.69.18為403是預期。不要重跑activate.py；其他機器／Windows實體驗收仍待使用者。
+
+## 2026-11-18 使用者指定 OpenVINO（0.4.0 候選已包，待 Windows Iris Xe 驗證）
+
+- 使用者明確更正「我是要用 OpenVINO」。已將 Electron 原生降噪從 ORT/DirectML 換成直接 OpenVINO 2026.4.1，固定 GPU.0／LATENCY／單 stream／FP32；保留原 ONNX SHA c01acec2…、AEC3／online RTF/MVDR／AGC／VAD／ASR queue。MakeStateful 將三組 cache input/output 交給 InferRequest，逐段同步執行、capture reset 清三組 state。無 DirectML runtime／AUTO／HETERO／自動 CPU retry；CPU 僅開發者明確測試。啟動真 infer＋EXECUTION_DEVICES 僅 GPU.0＋executed profiling 才報 gpu_verified，operation count 不可直接和舊 ORT node count 比較。
+- 完整可攜包：`pb-test.local/kiosk-openvino-20261118-r1/windows/Webnavior-Kiosk-GPU-Windows-x64-20261118-144058.zip`，313812335 bytes，SHA `5f5d68cf4adcfc77499874733d9f0ddf1f305fcd9c6d4d0b9254a2abb571a21d`，版本0.4.0。官方 Windows cp313 wheel／Python／VC／Electron SHA、197 x64 native binaries、3647 payload SHA／source／ZIP CRC皆過；模型不變、登入／校正不入包。不是已驗收的實機版本，勿改 latest production 或自動切選單。正式候選用 f32，f16 僅診斷比較，尚未有這台 Windows 的 OpenVINO 速度。
+- 下一步：Windows 關 EXE，解壓到新資料夾，先雙擊 `Test OpenVINO GPU.cmd`，回傳 `OpenVINO-GPU-Test.json`；不先拿來全天候收音。兩種精度各獨立 child／180s timeout，64段獨立 ORT CPU raw enhancement＋postmask fixture 比較，再1024段變化音訊測速；GPU＋數值＋mean/p95<16ms 才可進實體capture，完整AEC／RTF負載／RAW8ch／回音仍另驗。工具不開mic／不改profile／不自動套用f16。根目錄含 diagnoseAudio.py／reference／CMD，可直接跑，不再使用舊DML六case小包。
+- Python24過、2 opt-in skip（長stress／實體Intel GPU）；與未修改ONNX ORT reference 64+8段及reset一致，另fixture64段raw/postmask真CPU過（AMD開發機，不能當Iris Xe證據）。fake compile故障無CPU重試、實際CPU compiled冒充GPU先red後拒絕。Desktop真child／protocol3、Chrome設定／Worklet8、Windows工具8、publisher4過；Desktop／Kiosk scoped types、lint、兩端build／diff check過；未root types／commit。stage source1244凍結、release／validation／package-verification留證據。
+- 配套前端 `kiosk-openvino-20261118-r1` UTC06:42:53（台北14:42:53）已啟用，590SHA／97差異；只補實際runtime／GPU名稱、改中性GPU標籤與diagnostic key，原招呼r2及一般／既有收音流程保留。本機選項未改、未強reload／Admin／PB publish。API先前於台北12:43:21由外部重啟，已唯讀核對ready／原3檔invariants並固定當前PID4435；本輪沒有重啟。publication-boundary-check記錄，勿沿用舊PID2308012。activation已存在，不可重跑 --activate／刪guard。
+- 先前招呼r2現場是否完整播完仍未回覆；若續查請讓機器取得目前新前端再看 greeting_delivery，別把引擎顯示發布誤當已修GPU速度或已驗實機招呼。一般麥克風已由使用者確認可用，仍作目前日常選項。
+
+## 2026-11-18 招呼 presence-expired 誤取消（r2 已發布，待現場驗收）
+
+- 使用者回覆 r1 招呼仍抖一下就停。新版11:48:41.948（台北）terminal為 cancelled／presence-expired、presenceState=ENGAGED、interruption=idle，當時一般mic live/unmuted/listening且permission granted。因此確認該次為存在分支取消，不是已證實本地VAD打斷或mic斷線；未取得現場逐幀landmarks，勿把下述重現說成已量到該人的髖部／臉座標。私密時序 `/tmp/kiosk-greeting-r1-terminal-private.json` 600；同接待後續正常回覆有完整speech completed，另一次較早一般回覆TTS failed不是本輪已解根因。
+- 真Chrome＋可控外部MediaPipe結果重現：近距離無髖部時Pose五anchor score<.5；原 Face forehead→Pose torso centre 距離比對失敗，清楚同人臉不能補足presence。改用既有 nose→nose association，要求一張唯一匹配且Pose座標在1.5s內；matchedFace可提升存在可信度，保留Pose位置／scale。不相關／多張模糊匹配／stalePose皆不提升；Falcon原嘴部crop條件保留，freshness只用在新presence提升。
+- VoicePresence保留兩個時間：lastSeen（>=.5）控制原新語音／新招呼資格，lastLocated（in-zone有限弱geometry亦可）僅保留已成立proactive turn。shouldCancelProactive使用原1.5s grace、要求曾有可信presence；missing／out-of-zone不刷新lastLocated，弱影格後單次missing不立即切音，frozen／stopped camera／reset仍撤銷。Scene另以allowsObservedVoice(false)保留operator／service／reception限制，沒有放寬顧客活動／結帳取消，r1的3次／20s retry未增加。greeting_delivery另記匿名presenceCandidate，僅voice diagnostics開啟時。
+- **kiosk-audio-greeting-20261118-r2** 於UTC04:00:50（台北12:00:50）已啟用；stage同名，1239來源凍結前後一致、590SHA／97差異、7HTTP通過。API PID2308012未變，不重包EXE／restart／Admin／PB publish／強reload／改設定。使用者需訂單結束完整退出重開、確認r2，再測招呼；async問題已提出，回覆待接續。一般mic可用狀態沿用。
+- 先red近身face不能續presence；另red弱frame後single miss即cancel。最終25 unit（voicePresence/fixedGreetings/turn）、Chrome10（vision3＋真播音7）、publisher4，Kiosk scoped types、5檔lint、build／diff check過；未root types／commit。stage validation／activation／HTTP／READY留證據。實機招呼未確認成功；若仍中斷先看r2 greeting_delivery reason／presenceCandidate／interruption／attemptId，別再只加retry或逕改ASR／RTF。
+
+## 2026-11-18 DEV-757106 無音軌／招呼短暫播放中斷（r1 已發布，現場仍中斷後接續r2）
+
+- 使用者回報收不到音、招呼有時抖一下就停。唯讀查該設備：11:16–11:24（台北）多次 enabled=true 後迅速 false、tracks=[]、VAD未載入，舊錯誤欄位空白；不是已證實 ASR／RTF 處理後丟音。使用者先說一般模式也失敗，隨後**更正一般麥克風可以收音**；後查11:41:00 audio_runtime確為browser-vad、enabled/listening=true、live且unmuted音軌，後續亦有recognition timing。先保留其一般模式；未直接寫設備／本機設定。UMA-8 8ch 取得失敗的現場 constraint 仍待新版錯誤文字，勿宣稱硬體已修好或全域麥克風權限故障。
+- Shared settings audio store 新增 inputError（name/message/constraint），Chromium 空 message 仍保留名稱／限制，停止不清除、重試／reset清除；權限 denied/prompt 亦保留原因。管理頁顯示並提供明確「改用一般麥克風並重新連線」；不偷偷把少聲道當陣列。活 input 不再額外開 speaker enumeration 的 mic probe。audio_runtime 記 inputFailure／constraints／permission，不含 PCM。
+- 招呼實際播放 completed 才算送達；取消／failed／blocked 分開。fixedGreetings 新增 reception delivery budget：同接待20s內最多3次、間隔至少1.5s，顧客活動／reset永久關閉該次 budget，舊 attempt 不影響新 attempt。每次再查 presence／browser phase；speech candidate／ASR／queue／Agent 顧客工作優先；不清 cart／不建替代接待。固定歡迎音訊 wait 可隨 turn 取消，單次10s timeout，cache synthesis仍可重用。voice diagnostics 開啟時 greeting_delivery 存 attempt/reception/result/reason/interruption；只記原 visitor。
+- 相機所有 reactive 啟動也等 mic preparation gate；相機重啟依實際 camera/model/capture settings，無關 device settings 不重啟，proactive settings／greeting phrases 依內容判定，減少錯切招呼。未證實現場每次抖動的單一根因，需看新版 terminal reason；未放寬 presence 或取消顧客／結帳保護。
+- 前端 **kiosk-audio-greeting-20261118-r1** UTC03:44:23（台北11:44:23）已啟用；stage同名。1239來源凍結、590成品SHA、97變更、7HTTP（loopback/LAN/public entry+version及public JS）過。CF僅已知analytics+newline注入。API PID2308012未變；不重包EXE／重啟API／發布Admin或PB／強reload。使用者回覆仍抖停，已依新terminal接續上節r2，勿將本節當實機修好。
+- 先red重現空 constraint message UI消失；Chrome真假的 media input 拒絕及一般模式重連過。Kiosk6檔114 unit＋新增greeting diagnostic lane case1、shared store4、Chrome5檔21、publisher4過；Kiosk／Stage UI scoped types、13檔lint＋最終Scene lint、Vite、diff check過，未root types／commit。隔離真Electron46＋合成mic/camera，現有permission policy保持granted／owned track live，不能當Windows或RAW驗收。stage validation／activation／HTTP有證據；查詢原始資料 `/tmp/kiosk-757106-audio-private.json` 600不提交。
+
+## 2026-11-18 UMA-8 既有收音備用選項（已發布）
+
+- 使用者要求 GPU 不足時保留舊方式。新增本機 `kiosk/audio/array-backend`：預設 `existing`，另選 `native-gpu` 需按套用；Desktop 管理頁「本機麥克風與喇叭 → UMA-8 收音處理 → UMA-8 處理管線」。既有 legacy ASR 可選 LCMV／Spatial Mask，Falcon 維持原 AEC／LCMV＋獨立輸入增益；各管線設定保留。既有模式不掛載 GPU 設定頁、不呼叫 native status。
+- Scene 的 nativeArrayMicrophone 另需 nativeSelected；切換同步停止舊 generation、abort 未完成辨識，若正在講話則丟至下一個靜音邊界。非 GPU inference 自動 CPU fallback；GPU 啟動失敗仍可由 selector 切回。GPU 的 30.5ms／16ms hop 實機結果仍未符合連續收音要求，未推進安裝候選 EXE。
+- 前端 `kiosk-audio-backup-20261118-r1` 於 UTC03:11:55 啟用，stage `pb-test.local/kiosk-audio-backup-20261118-r1`。1239 來源凍結、590 成品 SHA、97 差異；API PID2308012 未變，舊 assets 保留；未發布 Admin／PB、未重包 EXE／改設備設定／強 reload。已裝 0.3.0／0.3.1 可沿用；等訂單結束完整退出重開取得新頁。勿重跑該 stage 的 --activate 或刪 activation.json。
+- 先 red 重現 Desktop 無 selector；最後 Chrome 11 項（GPU 失敗切回／設定保留／重開、LCMV／Mask／native 真 Worklet 清理）、Kiosk scoped types、6 檔 lint、Vite build、4 項發布隔離測試通過。7 個 HTTP 檢查覆蓋 loopback／LAN／公開 entry+version 與公開主 JS；Cloudflare 僅額外注入 analytics script/newline，精確移除該注入後 entry bytes 相同。證據在 stage validation／http-verification.json／activation.json。未 root types／commit；Windows 實體麥克風切換仍待現場驗收。後續效能六 case 小包不受影響。
+
+## 2026-11-18 主動招呼間歇未完成（唯讀調查，未修改產品／部署）
+
+- 使用者確認人站到機器前未自動招呼，尚未提供設備碼。最新活躍DEV-757106台北09:56–10:12共7筆`proactive_greeting`，僅09:56:46有`fixed_greeting`文字；09:59:20、10:02:23／36、10:09:46、10:11:59、10:12:27無固定招呼文字。文字存在不等於Windows播音；此比例不是相機召回率，設備亦未由使用者確認。
+- 相鄰`browser_cart_get`有resolved紀錄，但metrics不含回傳page／phase，不能當招呼資格通過。同時段UTC01:55–02:14 API共35次speech response均200，僅服務整體可用證據，未逐筆關聯設備／招呼，不能保證本機播音。
+- 程式先`customerSession.begin()`改active，再記觸發與準備招呼；`sendAssistantAction`重讀phase及presence／turn資格，取消／失敗只complete turn，無未送達retry；後續招呼仍限standby。因此撤銷可留下active但未招呼的接待，尚未證明現場各次的確切return／取消分支。Presence gate寬限1500ms，不是mouth／target的250ms；勿沿用ASR分析斷言單幀漏偵測即取消。另delivered只看turn.signal，未採speechPlayer的failed結果；blocksPlayback直接return亦可能被視為delivered。
+- 線上`kiosk-gpu-20261118-r1`manifest的Scene、fixedGreetings、voicePresence、kioskSpeech、customer-session五檔均與本機一致；聚焦四檔26項測試過，未新增repro／root types。下一步先補招呼terminal stage/reason與真實playback outcome，再設計同接待且無顧客操作的有限retry，保留checkout／顧客操作優先，勿直接放寬相機或重設訂單。
+- 私密原始資料僅`/tmp/kiosk-greeting-analysis{,-detail}-private.json`（600），不提交；未改設備／服務／部署。
+
+## 2026-11-18 Kiosk GPU 效能調校（非融合實機GPU成功／速度未過）
+
+- 使用者已回傳0.3.2非融合試跑：candidate SHA4b05324…吻合、原模型SHA吻合；Iris Xe真GPU709 nodes／CPU0，mean30.47099ms、p95 31.0971ms、max31.3187ms，超過16ms hop且未含AEC／RTF。**啟動已解、速度未解，勿安裝0.3.2作連續收音／勿聲稱完成**。r3/windows-model-result.json記原數據，release及 `/tmp/latest-windows-gpu-candidate.json`改rejected-for-realtime-throughput，標準latest仍0.3.1。未發布／安裝／切設定。
+- 已交付下一步一次六種GPU設定小包：`pb-test.local/kiosk-gpu-tuning-20261118-r1/Webnavior-Kiosk-GPU-Performance-Test.zip`，103243bytes，SHA `bc25b8d73b03d6191cd3d6baa16431f7fc4f2a39eb8388894d11921b5e618c46`。關EXE、五檔解壓至原EXE旁，跑 `Test GPU Performance.cmd`，回貼 `GPU-Performance-Test.json`。各case獨立child／60s timeout，原始錯誤與native log在同目錄gpu-tuning-*；不覆蓋已安裝程式／manifest／登入／校正、不開mic、不CPU retry／自動套用。
+- 六種：nonfused-host、nonfused-device、fused-portable、fused-portable-device、fused-basic-device、fused-basic-portable-device；調整DML fusion／metacommands／ORT basic及GPU resident caches。UlUnas新增明確qualification kwargs，既有worker預設未改。IObinding雙套互不alias的cache交替、固定device mix每hop update_inplace、CPU enh讀前synchronize；reset清兩套。ORT IOBinding::BindInput可在bind時copyCPU輸入，所以不能只改已綁CPU ndarray；已依原始碼避免stale GPU input。
+- 新增真CPU bound/host 48幀等價＋reset回歸、native初始化options回歸先red後green；Python25過1opt-in skip、Desktop32真child過、diagnostic/archive8過。包內24幀harmonic合成CPU參考與原模型SHA綁定（2447/6168 bins高於floor+.02，避免純雜訊floor遮住差異），各case先比postmask頻譜rtol2e-3/atol1e-4再測64幀模型時間。這不是語音品質驗證。6case打包後CPU數值過且不推薦CPU為GPU，6case缺DML拒絕過；Win/DML buffer與新效能均待實機，未root types／stress／重包EXE／commit。manifest／source-hashes／validation有證據。
+- 下一步看Windows六case結果，僅GPU真通過、數值一致且mean及p95皆<16ms者可建議實體capture trial；這仍沒含AEC／RTF負載，需有餘裕並另驗full pipeline。沒有case通過時，繼續評估GPU執行策略／模型或不同Intel GPU runtime，勿偷偷轉CPU／丟幀／放寬時間預算。
+
+## 2026-11-18 Kiosk GPU 0.3.2 非融合候選（GPU已試跑／效能未過）
+
+- 使用者已回傳原始bytes：`DmlGraphFusionHelper.cpp(588)`／`0x80070057 參數錯誤`，發生於ORT `initialize_session`，UTF8問題是CP950 native exception文字轉換的遮蔽。尚未知道特定op／driver原因。截圖確認Iris Xe、driver32.0.101.7088、DirectX12 FL12.1；Task Manager 0%不代表模型可用或不支援。
+- 依ORT v1.24.4 `core/providers/dml/dml_session_options_config_keys.h`，候選在DirectML SessionOptions設 `ep.dml.disable_graph_fusion=1`，避開融合路徑，仍GPU個別kernels／真warmup placement／禁止自動CPU retry，未改模型或RTF。Windows是否能初始化及是否夠快仍待實測，不可把Linux測試當修好。
+- **先交付小包** `pb-test.local/kiosk-gpu-20261118-r3/Webnavior-Kiosk-GPU-Fusion-Test.zip`（6403bytes；SHA `f33f4af5c5ec4b4d803e50c26642285d679d2e79e478570905def84f832a0855`）。關EXE、四檔解壓至目前0.3.1 EXE旁，跑 `Test GPU Fusion Fix.cmd`，回傳 `GPU-Fusion-Test.json`，看success／diagnostics.gpu_verified／timing／error。腳本`--candidate-denoiser`只在自己的process載入相同候選denoise.py，不覆蓋已安裝source／manifest／登入／校正，不開mic。64幀timing對16ms hop只計模型，非完整pipeline效能。候選SHA `4b05324ed743e0a8b884536879fd9a5e60aa339b43ac6e12feae6a25c70c530a`。
+- 完整候選0.3.2同時備妥：r3/windows/`Webnavior-Kiosk-GPU-Windows-x64-20261118-104544.zip`，260696223bytes／4730檔，SHA `f8c89edf65aa55681f1267f54e589786290bd17ea793d1218b08042b25dc33ae`。173PE／CRC／全payloadSHA／33凍結檔前後通過，與0.3.1只5檔不同（denoise、audioREADME、version、兩manifest），main/preload/PB未變，full與小包候選逐byte同源。標準latest仍0.3.1，另 `/tmp/latest-windows-gpu-candidate.json`記候選；未部署／force reload／API restart／前端發布。不需跑publish.py。
+- focused設定測試先red；Python23過1opt-in skip、Desktop32真CPU child過、diagnostic/archive8過。封包後candidate真CPU ONNX及缺DirectML拒絕檢查過，不是實機GPU證據。未重跑stress／root types／commit。r3/{release,qualification,verification,source-hashes}.json／validation／READY完整證據。下一步等待Windows試跑；若GPU真過且模型耗時有餘裕，再裝完整0.3.2測校正／實體capture／連續點餐。
+
+## 2026-11-18 Kiosk GPU 0.3.1 封包修正（已重包／Windows 待更換驗收）
+
+- **最新現場已取得stack、根因仍待原bytes**：按「重新偵測並建立連線」出現UTF8 byte0xb0/position285；使用者回報Windows11 build26100／CPython3.13.17／ORT1.24.4／cp950，Dml與CPU provider可列舉。stack確認`denoise.py:39 → ort.InferenceSession → sess.initialize_session`先UnicodeDecodeError；非profile.read_text／mic。r1診斷TempDirectory清理又WinError32鎖profiling JSON，覆蓋頂層error，造成未保存原UnicodeDecodeError.object；列出provider不代表GPU kernel通過，不能斷言驅動或模型特定op。
+- 新診斷r2：`pb-test.local/kiosk-gpu-diagnostics-20261118-r2/Webnavior-Kiosk-GPU-Diagnostic-r2.zip`（3248bytes，SHA `07d95c2c44eb4c9bc952d3bed85df417c9251a1a5ac1d266b4f7ecc387cbebfb`）。同EXE資料夾覆蓋舊診斷檔、關EXE再跑CMD，回貼JSON的`error.decodeFailure.windowsAnsiText`，缺欄位看error／traceback。初始化先catch存原bytes，再釋放model／cleanup；cleanupError獨立，describe_error遍歷chainedErrors。先red3錯誤，5項測試全過，含真CPU成功／缺DirectML失敗兩種結果在鎖檔fault下不變；ZIP CRC/source match。未改production／重包EXE／部署，Windows新診斷仍待執行。**不要再交付舊r1診斷包**。
+- 已交付 `pb-test.local/kiosk-gpu-diagnostics-20261118-r1/Webnavior-Kiosk-GPU-Diagnostic.zip`（2822bytes；SHA `495938c2146467fc91a0c432bccf3f4089cb91a84083c2a359f30c16e53c4ba0`）。關EXE，解壓到EXE同目錄，雙擊 `Diagnose GPU Audio.cmd`；回貼 `GPU-Audio-Diagnostic.json` 的error／traceback，若無JSON看GPU-Audio-Native.log。腳本`scripts/windows/diagnoseAudio.py`用包內模型／DirectML，保留UnicodeDecodeError原bytes hex及Windows mbcs文字，明確UTF8寫報告；不改model/profile JSON、不繞過GPU驗證、不開mic／改登入／校正。3unit過（重現同byte／position及cp950文字），真CPU ONNX probe過、無DirectML時失敗並完整報告、ZIP CRC/source match過；這些不代表Windows GPU成功。README已補用法；未發布／commit。
+- 使用者現場回報「尚未取得麥克風串流」，按重新連接後為 `Invalid native audio envelope size`。尚未取得現場原始provider錯誤，不可直接斷言驅動或麥克風故障。三項測試先red：真child在ORT import時注入Python／fd1診斷可重現封包毀損、ORT真constructor會先retry CPU（事後disable太晚）、初始化失敗無correlated response。
+- entry.py在任何模型／native import前保留binary response pipe，Python／CRT stdout轉stderr，Windows另SetStdHandle；worker延後至首個request初始化，失敗回原始錯誤並終止；ORT constructor enable_fallback=0。無跳過壞封包／自動CPU。Python22過1 opt-in skip、Desktop32真CPU child過、archive3過；未重跑stress／root types，Win32 handle分支與Iris Xe實機未驗收。
+- 新包0.3.1在 `pb-test.local/kiosk-gpu-20261118-r2/windows/Webnavior-Kiosk-GPU-Windows-x64-20261118-101205.zip`，260695658 bytes／4730檔，SHA256 `2787f2696e0882c26ed7dc3ec4156fd0bb6bc30f305aecfccd1c5f391cad7cbc`。173 PE／CRC／全檔SHA通過，31份來源封存前後一致；與r1僅7檔不同（三Python、audioREADME、兩manifest、app package version）。main/preload/PB bytes及Desktop/IPC source均與r1一致，未重建或混入其他chat修改。
+- `/tmp/latest-windows-portable.json`已指0.3.1，desktop deployed=false，Kiosk仍已發布r1。**這次不需前端發布／API restart，也不要再跑r1 publish.py --activate**。請現場完整退出EXE、整包解壓新版、同Windows帳號開啟，保留LOCALAPPDATA profile／校正。若仍失敗，取新版較具體原始錯誤；不可把Linux回歸當Windows GPU成功。證據r2/{release,verification,source-hashes}.json、validation及READY.md；未commit。
+
+## 2026-11-18 Kiosk GPU 音訊 0.3.0（Kiosk 前端已發布／Windows 待驗收）
+
+- **使用者已明確確認 Windows 更換0.3.0 EXE；已發布配套Kiosk前端**。沿stage/publish.py --activate，590檔SHA／97份變更成功、保留backup／舊hashed assets、index最後切換；API PID2308012保持不變，沒有API restart／force reload／DB或商家改動。僅 `/var/www/airi/kiosk`，Admin Web與公開PB未發布。stage/activation.json與post-activation-verification.json為準；`/tmp/latest-windows-portable.json`標記Kiosk已發布、PB未發布，physical仍false。
+- 發布後LAN/public版本、public entry、真正module、新GPU設定chunk、capture Worklet共6項通過。HTML初始檢查誤把CF beacon type=module視為第二個app module；逐字diff只多既有CF script及newline，最終扣除該次觀察到的完整精確block後其餘byte一致；JS/version/Worklet均raw byte一致。證據stage/http與verification-note；沒有放寬產品來源政策。發布工具4個隔離FS check-only／成功／回復／變動拒絕測試過；未root types／commit。
+- 目前請現場訂單完成後完整退出／重開新版EXE，進管理模式→本機麥克風與喇叭→UMA-8收音處理→選UMA-8多聲道；應見「本機GPU音訊處理」。開頁自動初始化、確認「GPU模型節點執行已確認」、核對聲道與gain後套用，再「建立5秒安裝位置基準」。Iris Xe真實GPU／聲道／回音／真人連續點餐仍待使用者實機驗收，不能用此HTTP發布成功當GPU通過。暫不進行普通瀏覽器WebGPU移植。
+- 使用者確認 Intel Iris Xe，要求內建 Electron 並開始 GPU 打包。本輪已實作新管線，不再只是下節獨立 Python ZIP：`apps/stage-kiosk-desktop/audio` 擁有 AEC3→共同增益→online RTF/MVDR→UL-UNAS/DirectML→AGC→空間/WebRTC 分段；`apps/stage-kiosk/src/audio/nativeCapture.ts` 供48k八聲道＋真實雙聲道播放參考，最後mono片段走既有ASR queue。Desktop UMA不再走舊LCMV/Mask/Falcon分流／第二次Silero；普通browser及mono保留原路徑。
+- Eventa中立契約 `packages/stage-shared/src/kioskNativeAudio.ts`；main僅授權可信Host main frame，`NativeAudio` supervises binary pipes並限制pending32。capture UUID隔離；重載／關閉殺子程序、丟棄未完成語句。真child回歸先red發現stale block可清掉新generation，已改只清除同owner失敗block，green。沒有額外HTTP服務或機台pip/system Python安裝。GPU僅UL-UNAS；RTF/MVDR/AEC/VAD為CPU，ASR/TTS/LLM仍Server。正式包指定DirectML，無自動CPU inference fallback；啟動真warmup+ORT profiling見GPU kernel才報gpu_verified。
+- 麥克風設定新增native聲道、gain與五秒安裝校正。正常點餐位置單人持續說話、喇叭須靜音；userData/audio/target_rtf.npz為固定anchor。持續追蹤仍有服務區限制，不是身分辨認。搬陣列或改聲道重校。校正不持久化錄音。新EXE必須配套新前端；舊EXE讀新UMA前端會提示更新，不能先全域切前端後才換EXE。
+- 正式建置來源凍結1239檔前後一致；stage `pb-test.local/kiosk-gpu-20261118-r1` 含Kiosk590檔、公開PB14檔、Desktop與目前另一chat數量事件／modal／發票修正同版編譯、source-hashes/release/READY及驗證logs。Windows ZIP `windows/Webnavior-Kiosk-GPU-Windows-x64-20261118-023855.zip`，260694604 bytes，SHA256 `058de22907b702d38f959ee15769738d1343acfb117875c5d928daf0ad3cc9f6`，4730檔。`/tmp/latest-windows-portable.json`已指向此包，明記requiresFrontendRelease；後續已更新Kiosk deployed=true／PB=false，physical=false。
+- `scripts/windows/prepareAudio.py`＋audio/windowsRuntime.json固定CPython3.13.17 embedded、ORT DirectML1.24.4 cp313、NumPy/SciPy/AEC/VAD及官方VC redist14.44.35211 SHA。官方PyPI wheel SHA逐一核對；bsdtar抽必要x64 CRT DLL與license，無系統安裝。173個PE native binaries／DLL imports核對只餘Windows系統DLL；packagePortable.py必須傳--audio-runtime-dir，驗manifest及現行Python source再封。內含license/model SHA、排除env、校正及錄音。
+- 驗證：Python19過1 opt-in skip，另120秒真AEC3/ONNX合成stress1過；Desktop32、Chrome收音／設定6、ordering255、archive邊界3過；Desktop/Kiosk/Shared scoped types、changed-file lint、diff check過，未root types／commit。獨立虛擬螢幕Electron46.0.0-alpha.2＋CPU dev真preload/IPC/Python：校正627blocks、48k input→15360 output samples、Float32保留、stale拒絕；reload舊PID退出／校正仍在、normal close新PID退出，全過。agent-browser版本無skills子命令，實際讀help再操作專用session並關閉；臨時server/profile已清。沒有商家／正式資料操作。
+- Kiosk配套前端已發布，公開PB artifact仍未發布；沒有重啟現場設備。下一步是現場重開新版EXE並實測校正；勿強reload進行中訂單，勿重啟公開PB記憶體server清掉session。Iris Xe實際kernel、效能、UMA實體聲道／回音／真人移動及完整語音點餐都未驗收。正式設計 `docs/plans/2026-11-18-kiosk-native-gpu-audio.md` 與audio/README.md。
+
+## 2026-11-18 UMA-8 獨立 Python 線上 RTF v0.2.0（已交付套件，未接入 Kiosk）
+
+- 使用者提供 `/home/aimax/Downloads/uma8_frontend.zip`，要求更新版本並詢問重包。新版來源在 `pb-test.local/uma8-online-rtf-v0.2/uma8_frontend/`；這是獨立 Python 工具，不是已部署的 Kiosk／EXE 新音訊管線。舊 LCMV／Spatial Mask／Falcon 分流未在本輪修改或移除；未改正式服務／設備設定／其他 thread 的點餐程式。
+- v0.2.0 加入噪音白化候選 RTF、獨立前置 VAD、兩次候選一致／品質檢查、平滑更新、播放及尾端300ms凍結學習、未知服務區語音不進噪音統計、最多2秒重新取得緩衝。仍需一次安裝位置校正作不可漂移基準；只追蹤其聲學範圍，不能保證顧客身分或任意多人分離。網頁可比較固定／線上 RTF；CLI live沿用同一Frontend，預設不存整場RAW，完整診斷需 `--save-continuous-audio`；timing保留最近10000blocks。網頁仍最長60秒測試台，不是全天營運介面。
+- 隔離 Linux/Python3.13.9：原套件＋新增測試59過、stress預設skip1；另明確啟用120秒合成串流（真AEC3／ONNX）1過，樣本數守恆／更新／受測狀態容量通過。Windows／實體UMA／真人移動混音／ASR正確率未驗收。PortAudio/JACK只下載解至/tmp供測試，沒有改系統；沒有全倉typecheck／commit。
+- 成品 `pb-test.local/uma8-online-rtf-v0.2/uma8_frontend/dist/uma8_frontend_windows_v0.2.0.zip`，789383bytes，SHA256 `e939df836230aecf05c99369cf6a3d38d00825a32651b864c236674df739dacc`。61檔CRC／payload manifest／模型SHA、乾淨解壓CLI自檢及15項RTF測試（stress另跑）過；包含啟動cmd／TTS素材，不含環境、錄音或校正NPZ。`bundle-verification.json`在stage根目錄；新版README／docs/validation.json詳述範圍。原Windows鎖檔保留，未新增Python依賴。
+- 若下一步要讓Windows點餐EXE內建這個Python服務，仍需設計原生串流／播放參考／程序生命週期與前端接線，並重新打包含依賴的EXE；不能只把本ZIP放旁邊或更新遠端網頁就宣稱替換成功。
+
+## 2026-11-18 自建PB加減互動對齊（已實作／建置，未發布）
+
+- 使用者要求調整自建站，避免click型假按鈕讓商家事件問題漏測。沿既有JS與Playwright，不新增套件。`test-sites/pb-order-lab/quantityControls.js`擁有單一長按lifecycle：左鍵mousedown即時增減、600ms後每100ms重複、document mouseup／blur／hidden／dialog或route更換停止；Enter可操作，單獨click不變更。span加上Element Plus增加／減少class及aria-disabled／is-disabled，商品／加量草稿microtask更新合計。
+- cart quantity共用`changeCartQuantity`：每line一個pending，真實模擬PUT期間禁用input及本行控制項，回應後替換DOM；舊row已離頁不重新渲染新頁。事件／同步邊界依Element Plus官方repeat-click及本機真API，不假造網路耗時，不宣稱完整複製商家目前版本。README已記錄範圍及命令。
+- 先red兩項：原站單click仍加量／cart等待回應時input未disabled。最終新Chromium4項通過（含長按release/removal、Enter、min、pending不重送、正式executor排骨2/260→3/390→1/130→2/260及modal close→navigate）；既有domain26＋啟用server5通過。初次domain server未配env的5skip未計通過；初次browser module序列化SSR helper錯誤改既有nativeCheckout的browser-owned import方式，有NOTICE，未mock import。整合首次另一次手勢失效留原報告，停止來源編輯後完整4項通過，未確診該瞬態根因。
+- 真agent-browser新session再次A/B：HEAD原版controls在**更新後**lab重現「兩份逾時仍1份」，同一dialog新版press/release成功2份。其後正式createPbService＋Host完整10checks通過（含上述兩個A/B、cart加減、商品close、先發票再手機、orders0）。`/tmp/pb-lab-fidelity-report.json`全回執、`/tmp/pb-lab-fidelity-cart.png`、`/tmp/pb-lab-fidelity-{red,green-final,domain,server,lint-final,build}.log`。只loopback自建站、沒有Jev/Main/ASR或商家操作；新增browser session已關閉，既有5188服務未重啟。
+- 公開參數建置產物 `/tmp/pb-lab-fidelity-public-dist` 成功；尚未修改公開5198/static／重啟／部署，也未重包EXE、commit或root types。使用者已問是否需更新EXE，已說明native PB payload封裝在EXE，必須與自建站事件更新配套發布；舊EXE只有click會刻意失敗，不可單獨切公開站。既有公開service仍讀`pb-test.local/public-pb-20261117-142344/dist`。本輪未授權或實作重包／發布。
+
+## 2026-11-18 PB 數量事件／商品視窗導頁／發票預設修正（已實作，未部署）
+
+- 現場 DEV-647276 台北01:06與01:13–01:14「炸排骨便當兩份」的 intent／Main quantity=2 正確；browser journal 在 quantity dispatch 後讀回等待5秒失敗，沒有走到加購物車。01:15–01:16結帳則直接navigate，被仍開著的商品dialog遮住。唯讀原始事件 `/tmp/kiosk-silent-investigation-events-private.json` 為600私密資料，不提交。非已證明網路故障。
+- `pbControls`數量操作原只`.click()`，Element Plus `v-repeat-click`官方實作監聽mousedown；新增共用press/release/click於商品／選項與cart quantity，每步仍核對值，立即mouseup終止長按，移除節點時釋放至document。官方事件契約與測試已重現差異，尚未核對現場PB實際bundle版本或Windows實機成功，不可宣稱所有讀取失敗均同根因。
+- `navigate`跨route先關商品dialog再找cart link；同route仍保留配置中的draft。`executeBrowserCheckout`從已開cart直接continue亦先問發票方式，不把原站預選none當顧客選擇；沿既有checkoutStep續填，不重選已進入資料填寫的發票。選none後問通知手機，其他方法先補專用欄位，最終送單同意仍獨立。三個原final-summary測試改先明確選none，保留reject/unknown/expiry驗證。
+- 先red：invoice default跳步1項、Chrome數量mousedown與modal導頁2項；browser初次EPERM／缺預設Chromium不是功能red，改正常escalation＋已裝Chrome無頭後才真正重現。修正中完整回歸抓到same-route誤關draft，已修且最後通過。最終Kiosk ordering/dialogue255、Chrome controls/operation/checkout52項通過；兩package scoped types、4檔lint及diff check通過。log `/tmp/pb-nov18-{invoice-red,controls-red,checkout-green,controls-final,kiosk-types,ui-types,lint}.log`。
+- 兩份README已更新。未commit、root types、正式站／設備設定／商家購物車改動，未build／重包／部署；現場仍需協調發佈Kiosk frontend與嵌入PB payload/EXE後驗收，不能只更新前端就說數量事件已生效。
+- 同chat追加真瀏覽器操作：agent-browser獨立`pb-nov18` session載入5188既有Vite站與當前正式`createPbService`／Host checkout模組，無mock executor；A1空cart→炸排骨2份260→cart3份390→1份130→2份260，全步驟readback成功並錄下mousedown/mouseup/click。開商品後review journal確為close-product再navigate；原預選none仍列五種發票、明確none後問手機，orders=0。8checks通過；`/tmp/pb-nov18-browser-report.json`完整call/step/event證據、`/tmp/pb-nov18-browser-cart.png`截圖。此輪直接呼叫正式工具與Host，不含真Jev/Main分類或麥克風ASR；fixture仍為click型stepper，不能冒充商家Element元件實測。已裝agent-browser不支援skills get，讀本機help後使用。
+- 商家另開無登入session唯讀對照：直接menu回403／請掃QR，正常select-table可開但顯示「準備中! 未正式營運 敬請期待」，combobox click遭遮擋未成功；沒有force／繞過、加商家cart、送單、付款。`/tmp/pb-nov18-merchant-entry.png`。實站事件差異仍待營業可操作時驗證；本輪沒有部署或重啟既有5188（啟動嘗試只回port in use）。
+- 使用者追問自建站是否同樣會失敗後，再開全新session作實際A/B：將HEAD原版pbControls用Node stripTypeScriptTypes轉譯至/tmp，與當前新版共用真實lab DOM、production pbOperation/pbPresentation。原版prepare1→2成功，證實lab click型stepper不重現Element的mousedown事件差異，勿宣稱此前lab通過已證明商家加減修好。原版modal-open navigate明確重現「被其他畫面遮住」；新版2→1→2及先close再navigate成功。再跑正式createPbService加排骨2/260、cart3/390→1/130→2/260、商品open→review全部通過，未送單。9checks含1個預期原版失敗，`/tmp/pb-nov18-browser-ab-report.json`與`/tmp/pb-nov18-browser-ab-cart.png`；未改lab事件模擬或部署。
+
 ## 2026-11-18 嘴型輔助語音偵測開關（實作／成品完成，等待使用者sudo啟用）
 
 - 使用者明確要求MediaPipe嘴型輔助做成可設定開關。新增共享`DeviceSettingsValues.mouthDetectionEnabled`、allowlist／Server validator及雙語標籤說明，預設false；共用deviceSettingsEditor在本機管理及後台皆可開／關、保存及重新載入。無新套件、DB migration或EXE重包，沒有直接寫設備override。

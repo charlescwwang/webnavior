@@ -242,6 +242,29 @@ master key 等值；不能只留下上述最小片段。不要把任何 `.env.lo
 sudo install -d -o <deploy-user> -g <deploy-user> -m 0750 /var/lib/webnavior/kiosk-assets
 ```
 
+### Windows 三入口（0.4.1）
+
+同一套 Kiosk/API 可由現場 `http://172.17.69.17:5169`、Tailscale
+`http://100.92.1.80:5169` 及既有公開 HTTPS 連入。Kiosk 正式建置的
+API 與素材隨入口 origin；不需要為三入口各建一套資料庫或各打包一次。
+Windows 的 `connections` 與預選 `kioskUrl` 位於 EXE 旁的設定檔。
+
+Server 的精確 Kiosk 來源清單使用 `KIOSK_TRUSTED_ORIGINS`，預設如下：
+
+```dotenv
+KIOSK_TRUSTED_ORIGINS=http://100.92.1.80:5169,http://172.17.69.17:5169
+```
+
+設定此變數會取代預設清單；現場換 IP 時請保留仍需使用的其他入口。
+此清單控制 Kiosk CORS、PIN/POS 來源與 HTTP Cookie，不會放寬公開 HTTPS 的 Secure Cookie。
+修改後須重啟 API。`API_SERVER_URL` 等 canonical 設定繼續保留公開 HTTPS。
+它也不把一般網頁管理登入變成 HTTP；完整管理後台沿用公開 HTTPS，
+EXE 內設備 PIN 設定則可走這兩個 HTTP 入口。
+
+只有 EXE 對其設定的 HTTP origin 提供 Chromium 影音安全來源特例；
+普通瀏覽器的相機／麥克風仍須 HTTPS。其他機器須能連 TCP 5169，
+並建議由網管固定現場 IP。內網連線不代表 PB 或模型服務可離線。
+
 ## 5. 用 systemd 管理 API
 
 此方式直接在 checkout 中執行 Server，並使用前端部署腳本已安裝在
@@ -350,8 +373,10 @@ checkout 包含 `apps/server/drizzle/` 的新 SQL 與 `_journal.json` 項目、
 
 ### 前端建置網址
 
-前端的 `VITE_*` 值是在建置時寫入靜態檔，不能放在
-`/etc/webnavior/server.env`。在每台部署機建立下列未提交的檔案；將
+Stage Web 的 `VITE_*` 值是在建置時寫入靜態檔，不能放在
+`/etc/webnavior/server.env`。Kiosk 正式建置的 `VITE_SERVER_URL` 與
+`VITE_API_SERVER_URL` 已改由頁面 origin 決定，所以下列兩值主要適用開發；
+正式三入口共用同一份 Kiosk 成品。在每台部署機建立下列未提交的檔案；將
 `https://kiosk.example.com` 替換為實際對外 HTTPS 網域。
 
 `apps/stage-web/.env.production.local`：
