@@ -39,7 +39,30 @@ kiosk:
       Falcon inference: {inference}
       ASR: {asr}
       Audio ready/delivery duration: Not measured
+  native-audio:
+    model-bypassed: 'Test mode: UL-UNAS skipped; AEC3, RTF/MVDR and speech segmentation remain active.'
+    input: 'Native eight-channel input'
+    automatic: 'Detect one UMA-8 RAW device'
+    refresh-devices: 'Refresh native devices'
+    title: 'Local GPU audio'
+    description: 'AEC3 → online RTF/MVDR → GPU denoising → utterance segmentation. Managed by Kiosk; the active runtime is shown below.'
+    update-exe: 'Update to Kiosk 0.6.0 or newer for automatic tracking and independent speaker settings.'
+    failed: 'GPU audio could not start.'
+    gpu-ready: 'GPU model kernel execution verified'
+    gpu-pending: 'Checking GPU status'
+    gain: 'Shared input gain (dB)'
+    apply: 'Apply audio settings'
+    automatic-tracking: 'Automatic learning and continuous tracking'
+    independent-output: 'Use the normal speaker selector above. Speakers and microphone are independent and do not need the same host API.'
+    tracking-description: 'Speak as soon as capture starts. No manual five-second recording or anchor file is required. Reliable speech updates spatial tracking; playback, mixed or uncertain evidence pauses learning. This follows a dominant source, not customer identity.'
   array-audio:
+    native-description: 'Desktop LCMV uses native eight-channel input with the existing AEC3, LCMV and recognition settings. No GPU model is loaded. Speakers retain the normal output selection.'
+    native-update: 'Native LCMV capture requires Kiosk EXE 0.6.3 or newer.'
+    backend: 'UMA-8 processing pipeline'
+    existing: 'Existing capture (LCMV / Spatial Mask)'
+    native-gpu: 'Online RTF / MVDR + GPU (testing)'
+    applyBackend: 'Apply capture method'
+    backendDescription: 'Use existing capture for daily operation; the GPU pipeline is still being tested. Switching restarts capture and discards unfinished speech. Apply while no customer is speaking.'
     metrics: 'Lag {lag} ms · Render {reference} frames · RMS {input} → {output} dBFS · Limited {limited}%'
     algorithm: 'Legacy ASR array algorithm'
     lcmv: 'LCMV (existing)'
@@ -71,6 +94,8 @@ kiosk:
     falconGainDescription: 'Adjusts UMA-8 audio before Falcon independently of VAD gain; defaults to 0 dB. Peak limiting preserves sample timing. Changes restart capture; adjust while silent.'
     raw-unavailable: 'Eight raw UMA-8 channels are not available yet. Select the UMA-8 device and reconnect. Capture has not switched to another microphone.'
   media-devices:
+    raw-hint: 'Capture currently requires eight raw channels. If the device or Windows audio settings cannot provide them, use standard microphone capture; this disables array processing.'
+    try-standard: 'Use standard microphone and reconnect'
     title: 'Local microphone and speakers'
     description: 'Selections are saved on this kiosk and restored after restart. Changing devices reconnects capture; adjust between customer conversations.'
     microphone: 'Microphone input'

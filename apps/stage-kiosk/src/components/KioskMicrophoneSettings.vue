@@ -6,14 +6,20 @@ import { Button, FieldCheckbox, FieldInput, FieldRange, FieldSelect } from '@pro
 import { computed, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import ArrayInputSettings from './ArrayInputSettings.vue'
+import NativeMicrophoneSettings from './NativeMicrophoneSettings.vue'
+
 import { useKioskMicrophone } from '../composables/useKioskMicrophone'
 
 const props = defineProps<{ recognitionMode?: SpeechRecognitionPolicy['mode'] }>()
 const microphone = useKioskMicrophone()
-const { settings, falconGainDb, algorithm, spatialMask } = microphone
+const nativeDesktop = Boolean(window.airiKioskDesktop)
+const { settings, falconGainDb, algorithm, spatialMask, processingBackend, nativeSelected } = microphone
 // Drafts make algorithm/AEC/gain one deliberate apply instead of restarting
 // capture at each keystroke. Other existing hardware controls keep their policy.
 const draftAlgorithm = shallowRef(algorithm.value)
+const draftBackend = shallowRef(processingBackend.value)
+watch(processingBackend, value => draftBackend.value = value)
 const draftMask = ref({ ...spatialMask.value })
 const error = shallowRef('')
 const changed = computed(() => draftAlgorithm.value !== algorithm.value || JSON.stringify(draftMask.value) !== JSON.stringify(spatialMask.value))
@@ -40,7 +46,14 @@ const advancedFields = ['frontDeg', 'suppress1Deg', 'suppress2Deg', 'radiusMm', 
   <section :class="['grid gap-3']">
     <h4>{{ t('stage.kiosk.array-audio.title') }}</h4>
     <FieldSelect v-model="settings.inputMode" :label="t('stage.kiosk.array-audio.mode')" :options="['auto', 'uma8', 'standard'].map(value => ({ value, label: t(`stage.kiosk.array-audio.${value}`) }))" layout="vertical" />
-    <template v-if="settings.inputMode !== 'standard'">
+    <template v-if="nativeDesktop && settings.inputMode !== 'standard'">
+      <FieldSelect v-model="draftBackend" :label="t('stage.kiosk.array-audio.backend')" :options="['existing', 'native-gpu'].map(value => ({ value, label: t(`stage.kiosk.array-audio.${value}`) }))" layout="vertical" />
+      <p>{{ t('stage.kiosk.array-audio.backendDescription') }}</p>
+      <Button :disabled="draftBackend === processingBackend" :label="t('stage.kiosk.array-audio.applyBackend')" @click="processingBackend = draftBackend" />
+    </template>
+    <NativeMicrophoneSettings v-if="nativeDesktop && nativeSelected && settings.inputMode !== 'standard'" />
+    <template v-else-if="settings.inputMode !== 'standard'">
+      <ArrayInputSettings v-if="nativeDesktop && showLcmv" />
       <p>{{ t('stage.kiosk.array-audio.description') }}</p>
       <template v-if="props.recognitionMode === 'legacy'">
         <FieldSelect v-model="draftAlgorithm" :label="t('stage.kiosk.array-audio.algorithm')" :options="['lcmv', 'spatial-mask'].map(value => ({ value, label: t(`stage.kiosk.array-audio.${value}`) }))" layout="vertical" />

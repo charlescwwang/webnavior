@@ -11,8 +11,9 @@ describe('useKioskInteractionTurn', () => {
       throw new Error('Expected kiosk interaction turn to initialize.')
 
     const welcome = interaction.begin('proactive', 'speaking')
-    interaction.cancelProactive()
+    interaction.cancelProactive('customer-touch')
     expect(welcome.signal.aborted).toBe(true)
+    expect(welcome.signal.reason).toBe('customer-touch')
     expect(interaction.phase.value).toBe('listening')
 
     const customer = interaction.begin('conversation', 'using-tool')

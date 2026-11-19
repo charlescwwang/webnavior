@@ -3,7 +3,7 @@ import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
 import { describe, expect, it, vi } from 'vitest'
 import { readonly, shallowRef } from 'vue'
 
-import { createFixedGreetings, greetingPhase, readGreetingPhase } from './fixedGreetings'
+import { createFixedGreetings, createGreetingDelivery, greetingPhase, readGreetingPhase } from './fixedGreetings'
 
 // Report: this chat, 2026-11-17 — Windows DEV-904267 detects visitors but never welcomes them.
 it('reads PB table and menu pages without requiring the owned-menu state tool', async () => {
@@ -42,6 +42,54 @@ it('rechecks pending questions after a read and keeps owned-menu entry behavior'
 })
 
 describe('fixed welcome playback', () => {
+  // Report: this chat, 2026-11-18 — DEV-757106's welcome briefly starts,
+  // then vanishes and leaves an active reception without another attempt.
+  it('retries an interrupted welcome in the same reception with a bounded budget', () => {
+    const delivery = createGreetingDelivery()
+    const first = delivery.claim(1, 0)!
+    expect(first).toBeDefined()
+    expect(delivery.claim(1, 10)).toBeUndefined()
+    delivery.finish(first, 'retry', 100)
+    expect(delivery.canRetry(1, 1000)).toBe(false)
+    expect(delivery.canRetry(1, 1700)).toBe(true)
+    const second = delivery.claim(1, 1700)!
+    delivery.finish(first, 'delivered', 1750)
+    delivery.finish(second, 'retry', 1800)
+    const third = delivery.claim(1, 3500)!
+    delivery.finish(third, 'retry', 3600)
+    expect(delivery.canRetry(1, 6000)).toBe(false)
+    expect(delivery.claim(1, 6000)).toBeUndefined()
+  })
+
+  it('never retries after delivery, customer activity, expiration or a reception reset', () => {
+    const delivery = createGreetingDelivery()
+    const first = delivery.claim(1, 0)!
+    delivery.finish(first, 'delivered', 100)
+    expect(delivery.canRetry(1, 2000)).toBe(false)
+    const second = delivery.claim(2, 3000)!
+    delivery.finish(second, 'retry', 3100)
+    delivery.cancel()
+    expect(delivery.canRetry(2, 6000)).toBe(false)
+    const third = delivery.claim(3, 7000)!
+    delivery.finish(third, 'retry', 7100)
+    expect(delivery.canRetry(4, 10000)).toBe(false)
+    expect(delivery.canRetry(3, 30000)).toBe(false)
+  })
+
+  it('releases a cancelled visitor while keeping shared welcome synthesis reusable', async () => {
+    let finish!: (audio: Blob) => void
+    const greetings = createFixedGreetings(() => new Promise<Blob>(resolve => finish = resolve))
+    const warming = greetings.prepare({ locale: 'zh-TW', openings: ['您好'], entryHint: '' })
+    const controller = new AbortController()
+    const pending = greetings.next('ordering', controller.signal)
+    const rejected = expect(pending).rejects.toThrow()
+    controller.abort()
+    await rejected
+    finish(new Blob(['welcome']))
+    await warming
+    expect((await greetings.next('ordering')).text).toBe('您好')
+    greetings.dispose()
+  })
   it('prepares speech once, rotates openings, and reuses audio across visitors', async () => {
     const synthesize = vi.fn(async ({ text }: { text: string }) => new Blob([text]))
     const greetings = createFixedGreetings(synthesize)

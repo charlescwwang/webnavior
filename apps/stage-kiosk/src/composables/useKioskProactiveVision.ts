@@ -7,7 +7,7 @@ import type { KioskPerformanceSettings } from '../services/kiosk-performance'
 import type { MouthGeometry } from '../services/mouthActivity'
 
 import { errorMessageFrom } from '@moeru/std'
-import { createAttentionObservation } from '@proj-airi/kiosk-proactive'
+import { createAttentionObservation, defaultPresenceSettings } from '@proj-airi/kiosk-proactive'
 import { shallowRef } from 'vue'
 
 import { createCustomerTarget } from '../services/customerTarget'
@@ -66,6 +66,34 @@ export function useKioskProactiveVision(options: Options) {
   let cropMouth: ReturnType<typeof createMouthCropper> | undefined
   const customerTarget = createCustomerTarget()
   let targetRevision: number | undefined
+  const slowInferenceAt = new Map<string, number>()
+
+  // A fixed numeric envelope is collected by the desktop flight recorder.
+  // Never include camera frames, landmarks, errors or customer observations.
+  async function initializeModel<T>(model: 'runtime' | 'face' | 'pose', initialize: () => Promise<T>) {
+    const startedAt = performance.now()
+    console.info('[webnavior-performance]', JSON.stringify({ kind: 'model', model, phase: 'start', durationMs: 0 }))
+    try {
+      const result = await initialize()
+      console.info('[webnavior-performance]', JSON.stringify({ kind: 'model', model, phase: 'ready', durationMs: Math.round(performance.now() - startedAt) }))
+      return result
+    }
+    catch (cause) {
+      console.info('[webnavior-performance]', JSON.stringify({ kind: 'model', model, phase: 'failed', durationMs: Math.round(performance.now() - startedAt) }))
+      throw cause
+    }
+  }
+
+  function reportSlowInference(model: 'face' | 'pose', startedAt: number) {
+    const now = performance.now()
+    const durationMs = Math.round(now - startedAt)
+    // Inference can run at camera cadence. Record only >=100 ms work and at
+    // most once per model per five seconds so diagnostics cannot flood the UI.
+    if (durationMs >= 100 && now - (slowInferenceAt.get(model) ?? -Infinity) >= 5000) {
+      slowInferenceAt.set(model, now)
+      console.info('[webnavior-performance]', JSON.stringify({ kind: 'model', model, phase: 'slow-inference', durationMs }))
+    }
+  }
 
   async function start(nextVideo: HTMLVideoElement) {
     if (running)
@@ -198,8 +226,10 @@ export function useKioskProactiveVision(options: Options) {
     if (vision)
       return vision
     const owner = generation
-    const { FilesetResolver } = await import('@mediapipe/tasks-vision')
-    const loaded = await FilesetResolver.forVisionTasks(wasmRoot)
+    const loaded = await initializeModel('runtime', async () => {
+      const { FilesetResolver } = await import('@mediapipe/tasks-vision')
+      return FilesetResolver.forVisionTasks(wasmRoot)
+    })
     if (owner !== generation)
       throw new Error('Camera model initialization was cancelled.')
     vision = loaded
@@ -210,14 +240,16 @@ export function useKioskProactiveVision(options: Options) {
     if (faceLandmarker)
       return faceLandmarker
     const owner = generation
-    const { FaceLandmarker } = await import('@mediapipe/tasks-vision')
-    const model = await FaceLandmarker.createFromOptions(await ensureVision(), {
-      baseOptions: { modelAssetPath: faceModelAssetPath },
-      runningMode: 'VIDEO',
-      numFaces: (options.mouthEnabled?.() || options.mouthTrackingEnabled?.()) ? Math.max(2, options.performance().maxFaces) : options.performance().maxFaces,
-      minFaceDetectionConfidence: options.detectionConfidence(),
-      minFacePresenceConfidence: options.detectionConfidence(),
-      minTrackingConfidence: options.detectionConfidence(),
+    const model = await initializeModel('face', async () => {
+      const { FaceLandmarker } = await import('@mediapipe/tasks-vision')
+      return FaceLandmarker.createFromOptions(await ensureVision(), {
+        baseOptions: { modelAssetPath: faceModelAssetPath },
+        runningMode: 'VIDEO',
+        numFaces: (options.mouthEnabled?.() || options.mouthTrackingEnabled?.()) ? Math.max(2, options.performance().maxFaces) : options.performance().maxFaces,
+        minFaceDetectionConfidence: options.detectionConfidence(),
+        minFacePresenceConfidence: options.detectionConfidence(),
+        minTrackingConfidence: options.detectionConfidence(),
+      })
     })
     if (owner !== generation) {
       model.close()
@@ -231,15 +263,17 @@ export function useKioskProactiveVision(options: Options) {
     if (poseLandmarker)
       return poseLandmarker
     const owner = generation
-    const { PoseLandmarker } = await import('@mediapipe/tasks-vision')
-    const model = await PoseLandmarker.createFromOptions(await ensureVision(), {
-      baseOptions: { modelAssetPath: poseModelAssetPath },
-      runningMode: 'VIDEO',
-      numPoses: 1,
-      minPoseDetectionConfidence: options.detectionConfidence(),
-      minPosePresenceConfidence: options.detectionConfidence(),
-      minTrackingConfidence: options.detectionConfidence(),
-      outputSegmentationMasks: false,
+    const model = await initializeModel('pose', async () => {
+      const { PoseLandmarker } = await import('@mediapipe/tasks-vision')
+      return PoseLandmarker.createFromOptions(await ensureVision(), {
+        baseOptions: { modelAssetPath: poseModelAssetPath },
+        runningMode: 'VIDEO',
+        numPoses: 1,
+        minPoseDetectionConfidence: options.detectionConfidence(),
+        minPosePresenceConfidence: options.detectionConfidence(),
+        minTrackingConfidence: options.detectionConfidence(),
+        outputSegmentationMasks: false,
+      })
     })
     if (owner !== generation) {
       model.close()
@@ -251,7 +285,10 @@ export function useKioskProactiveVision(options: Options) {
 
   async function detectPose(nowMs: number) {
     lastPoseAtMs = nowMs
-    const landmarks = (await ensurePoseLandmarker()).detectForVideo(video!, nowMs).landmarks[0] ?? []
+    const model = await ensurePoseLandmarker()
+    const startedAt = performance.now()
+    const landmarks = model.detectForVideo(video!, nowMs).landmarks[0] ?? []
+    reportSlowInference('pose', startedAt)
     poseHead = visible(landmarks[0])
     const candidate = toPoseCandidate(landmarks)
     if (candidate && hasMeaningfulMovement(candidate, previousPoseCandidate))
@@ -272,7 +309,9 @@ export function useKioskProactiveVision(options: Options) {
         return
       lastFaceVideoTime = video.currentTime
     }
+    const startedAt = performance.now()
     const landmarks = model.detectForVideo(video!, nowMs).faceLandmarks
+    reportSlowInference('face', startedAt)
     // The existing single-pose target owns admission. Associate face noses to
     // that target's nose, never to its torso centre or an unrelated first face.
     // Ambiguous/missing matches leave the mouth frame invalid for this clip.
@@ -291,7 +330,7 @@ export function useKioskProactiveVision(options: Options) {
       options.onPresenceCandidate(selected && { attention: selected.facesCamera, bodyScale: selected.bodyScale, centre: selected.centre, poseQuality: 1 })
     }
     else {
-      // Falcon retains its original Pose association and ambiguous-mouth policy.
+      // Keep the existing Pose-owned mouth crop association for Falcon.
       mouthFaces = options.visionMode() === 'face_only'
         ? landmarks
         : poseHead ? landmarks.filter(face => face[1] && distance(face[1], poseHead!) <= 0.15) : []
@@ -308,9 +347,15 @@ export function useKioskProactiveVision(options: Options) {
       options.onPresenceCandidate(face && { attention: face.facesCamera, bodyScale: face.bodyScale, centre: face.centre, poseQuality: 1 })
       return
     }
-    const matched = lastPoseCandidate && faces.find(face => distance(face.centre, lastPoseCandidate!.centre) <= 0.18)
-    if (matched && lastPoseCandidate)
-      options.onPresenceCandidate({ ...lastPoseCandidate, attention: matched.facesCamera })
+    const poseAgeMs = performance.now() - lastPoseAtMs
+    if (lastPoseCandidate && mouthFaces.length === 1 && poseAgeMs >= 0 && poseAgeMs <= defaultPresenceSettings.lostGraceMs) {
+      const matched = faces[landmarks.indexOf(mouthFaces[0])]
+      // A unique, current Face match confirms presence even when hips are out
+      // of frame and Pose's five-anchor score is low. Keep Pose geometry/scale;
+      // two nearby faces remain ambiguous and cannot promote its confidence.
+      // Reuse the nose-to-nose association above, not forehead-to-torso distance.
+      options.onPresenceCandidate({ ...lastPoseCandidate, attention: matched.facesCamera, poseQuality: 1 })
+    }
   }
 
   return {

@@ -5,6 +5,7 @@ import { expect, it, vi } from 'vitest'
 
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createMouthActivityGate } from '../services/mouthActivity'
+import { createVoicePresenceGate } from '../services/voicePresence'
 import { useKioskProactiveVision } from './useKioskProactiveVision'
 
 const face: NormalizedLandmark[] = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 1 }))
@@ -97,6 +98,65 @@ function customerFace(x: number, width: number) {
   points[14].y = 0.501
   return points
 }
+
+// Report: this chat, 2026-11-18 — DEV-757106 greeting_delivery records
+// presence-expired with ENGAGED and no local speech interruption.
+it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('keeps a matched face present when the close customer has no visible hips, without borrowing another face', async () => {
+  const originalPose = pose.map(point => ({ ...point }))
+  pose.forEach(point => point.visibility = 0)
+  pose[0] = { x: 0.5, y: 0.35, z: 0, visibility: 0.9 }
+  pose[11] = { x: 0.4, y: 0.75, z: 0, visibility: 0.7 }
+  pose[12] = { x: 0.6, y: 0.75, z: 0, visibility: 0.7 }
+  const customer = customerFace(0.5, 0.2)
+  customer[1].y = 0.35
+  customer[10].y = 0.3
+  faces = [customer]
+  const gate = createVoicePresenceGate()
+  const candidates = vi.fn()
+  let captureBudget = kioskPerformanceSettings.balanced
+  const zone = { x: 0.2, y: 0.15, width: 0.6, height: 0.7 }
+  const video = document.createElement('video')
+  video.muted = true
+  document.body.append(video)
+  const vision = useKioskProactiveVision({
+    detectionConfidence: () => 0.6,
+    detectionEnabled: () => true,
+    detectionZone: () => zone,
+    performance: () => captureBudget,
+    visionMode: () => 'pose_plus_conditional_face',
+    shouldRunFace: () => true,
+    mouthTrackingEnabled: () => false,
+    mouthEnabled: () => false,
+    onObservation: () => {},
+    onPresenceCandidate: (candidate) => {
+      candidates(candidate)
+      gate.observe(performance.now(), candidate, zone)
+    },
+  })
+  const present = () => gate.allows({ enabled: true, observing: vision.status.value === 'observing', nowMs: performance.now() })
+  try {
+    await vision.start(video)
+    await expect.poll(() => candidates.mock.calls.some(([candidate]) => candidate?.attention === true && candidate.poseQuality === 1), { timeout: 3000 }).toBe(true)
+    await new Promise(resolve => setTimeout(resolve, 1700))
+    expect(present()).toBe(true)
+    faces = [customerFace(0.85, 0.15)]
+    await expect.poll(present, { timeout: 3000 }).toBe(false)
+    faces = [customer]
+    await expect.poll(present, { timeout: 3000 }).toBe(true)
+    faces = [customer, customer]
+    await expect.poll(present, { timeout: 3000 }).toBe(false)
+    faces = [customer]
+    await expect.poll(present, { timeout: 3000 }).toBe(true)
+    captureBudget = { ...captureBudget, presenceCadence: { ...captureBudget.presenceCadence, boostMs: 10000, stableMs: 10000 } }
+    await expect.poll(present, { timeout: 4000 }).toBe(false)
+  }
+  finally {
+    vision.stop()
+    video.remove()
+    originalPose.forEach((point, index) => pose[index] = point)
+    faces = [face]
+  }
+}, 15000)
 
 // Report: this chat, 2026-11-17 — a seated bystander acquired Pose before the ordering customer arrived.
 it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('moves legacy mouth admission to the stable front customer without following the single Pose or face array order', async () => {

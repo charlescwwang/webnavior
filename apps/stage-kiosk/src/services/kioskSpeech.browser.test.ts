@@ -3,6 +3,7 @@ import { page } from 'vitest/browser'
 import { effectScope } from 'vue'
 
 import { useKioskInteractionTurn } from '../composables/useKioskInteractionTurn'
+import { createGreetingDelivery } from './fixedGreetings'
 import { createSpeechPlayer } from './kioskSpeech'
 import { createSpeechInterruption } from './speechInterruption'
 
@@ -29,6 +30,44 @@ function silence(samples = 800) {
   new Uint8Array(buffer, 44).fill(128)
   return new Blob([buffer], { type: 'audio/wav' })
 }
+
+// Report: this chat, 2026-11-18 — the welcome starts briefly, then stops.
+it('retries a genuinely interrupted welcome and closes its budget only after playback ends', async () => {
+  const scope = effectScope()
+  const turn = scope.run(useKioskInteractionTurn)!
+  const delivery = createGreetingDelivery()
+  const onPlaying = vi.fn()
+  const player = createSpeechPlayer({ synthesize: async () => silence(16000), onPlaying, onSource: (audio) => {
+    audio!.muted = true
+    return undefined
+  } })
+  const button = document.createElement('button')
+  button.textContent = '開始招呼重試測試'
+  document.body.append(button)
+  try {
+    const first = delivery.claim(1, 0)!
+    const welcome = turn.begin('proactive', 'speaking')
+    let playing: ReturnType<typeof player.play> | undefined
+    button.onclick = () => playing = player.play({ text: '歡迎光臨。', locale: 'zh-TW', signal: welcome.signal })
+    await page.getByRole('button', { name: button.textContent }).click()
+    await expect.poll(() => onPlaying.mock.calls.length, { timeout: 5000 }).toBe(1)
+    turn.cancelProactive('presence-expired')
+    expect(await playing).toBe('cancelled')
+    delivery.finish(first, 'retry', 100)
+    expect(delivery.canRetry(1, 1700)).toBe(true)
+    const second = delivery.claim(1, 1700)!
+    const retried = turn.begin('proactive', 'speaking')
+    expect(await player.play({ text: '歡迎光臨。', locale: 'zh-TW', signal: retried.signal, preparedAudio: silence() })).toBe('completed')
+    delivery.finish(second, 'delivered', 1800)
+    expect(delivery.canRetry(1, 3500)).toBe(false)
+    expect(onPlaying).toHaveBeenCalledTimes(2)
+  }
+  finally {
+    player.stop()
+    scope.stop()
+    button.remove()
+  }
+})
 
 // Report: this chat, 2026-11-17 — local interruption must stop real playback without cancelling the order or consulting a model.
 it.each(['off', 'observe', 'enforce'] as const)('applies %s to local TTS interruption while preserving the active tool and speech candidate', async (mode) => {

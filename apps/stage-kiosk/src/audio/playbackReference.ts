@@ -15,8 +15,9 @@ export function installPlaybackReference(context: AudioContext) {
   const owner = { context, input }
   active = owner
   for (const source of sources) {
-    if (source.context === context)
+    if (source.context === context) {
       source.connect(input)
+    }
   }
   return { input, dispose() {
     if (active === owner)
@@ -35,8 +36,9 @@ export function installPlaybackReference(context: AudioContext) {
 /** Mirrors a source into AEC without creating a second audible output. */
 export function connectPlaybackReference(source: AudioNode) {
   sources.add(source)
-  if (active?.context === source.context)
+  if (active?.context === source.context) {
     source.connect(active.input)
+  }
   return () => {
     sources.delete(source)
     if (active?.context === source.context) {

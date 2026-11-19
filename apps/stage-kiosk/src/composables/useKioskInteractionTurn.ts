@@ -69,8 +69,8 @@ export function useKioskInteractionTurn() {
     return true
   }
 
-  function cancelActiveTurn() {
-    activeTurn?.controller.abort()
+  function cancelActiveTurn(reason?: string) {
+    activeTurn?.controller.abort(reason)
     activeTurn = undefined
     phase.value = 'listening'
   }
@@ -82,9 +82,9 @@ export function useKioskInteractionTurn() {
     cancelActiveTurn()
   }
 
-  function cancelProactive() {
+  function cancelProactive(reason?: string) {
     if (activeTurn?.kind === 'proactive')
-      cancelActiveTurn()
+      cancelActiveTurn(reason)
   }
 
   /** Captures ASR independently so a model or tool turn cannot discard speech. */

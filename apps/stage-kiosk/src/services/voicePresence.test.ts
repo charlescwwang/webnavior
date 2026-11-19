@@ -34,8 +34,39 @@ describe('local presence admission for voice and proactive speech', () => {
     const gate = createVoicePresenceGate()
     gate.observe(100, { ...person, poseQuality: 0.4 }, zone)
     expect(gate.allows({ ...observing, nowMs: 100 })).toBe(false)
+    expect(gate.shouldCancelProactive({ ...observing, nowMs: 100 })).toBe(true)
     gate.observe(200, { ...person, centre: { x: 0.05, y: 0.05 } }, zone)
     expect(gate.allows({ ...observing, nowMs: 200 })).toBe(false)
+  })
+
+  // Report: this chat, 2026-11-18 — a weak upper-body Pose sample cancels
+  // an already admitted welcome even though the visitor has not left.
+  it('keeps an admitted welcome through uncertain in-zone geometry without admitting new speech', () => {
+    const gate = createVoicePresenceGate()
+    gate.observe(100, person, zone)
+    gate.observe(1800, { ...person, poseQuality: 0.4 }, zone)
+    expect(gate.allows({ ...observing, nowMs: 1800 })).toBe(false)
+    expect(gate.shouldCancelProactive({ ...observing, nowMs: 1800 })).toBe(false)
+    gate.observe(1900, undefined, zone)
+    expect(gate.shouldCancelProactive({ ...observing, nowMs: 1900 })).toBe(false)
+    expect(gate.shouldCancelProactive({ ...observing, nowMs: 3401 })).toBe(true)
+    gate.observe(3500, undefined, zone)
+    expect(gate.shouldCancelProactive({ ...observing, nowMs: 3500 })).toBe(true)
+  })
+
+  it('still cancels for departure, an out-of-zone person or a stopped camera', () => {
+    const gate = createVoicePresenceGate()
+    gate.observe(100, person, zone)
+    gate.observe(200, undefined, zone)
+    expect(gate.shouldCancelProactive({ ...observing, nowMs: 200 })).toBe(false)
+    expect(gate.shouldCancelProactive({ ...observing, nowMs: 1601 })).toBe(true)
+    gate.observe(1700, { ...person, poseQuality: 0.4, centre: { x: 0.05, y: 0.05 } }, zone)
+    expect(gate.shouldCancelProactive({ ...observing, nowMs: 1700 })).toBe(true)
+    gate.observe(1800, { ...person, poseQuality: 0.4 }, zone)
+    expect(gate.shouldCancelProactive({ enabled: true, observing: false, nowMs: 1800 })).toBe(true)
+    gate.reset()
+    expect(gate.shouldCancelProactive({ ...observing, nowMs: 1801 })).toBe(true)
+    expect(gate.shouldCancelProactive({ enabled: false, observing: false, nowMs: 1801 })).toBe(false)
   })
 
   it('blocks starting, failed and restarted cameras until fresh detection', () => {

@@ -84,3 +84,65 @@ it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('routes both native media an
   }
   finally { await state.dispose() }
 })
+
+// Report: this chat, 2026-11-18 — DEV-757106 repeatedly disables capture with
+// zero tracks. Chromium's real constraint rejection can have an empty message.
+it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('shows a rejected channel layout and can reconnect after selecting standard capture', async () => {
+  const state = setup()
+  try {
+    state.devices.inputConstraints = { channelCount: { exact: 32 } }
+    await state.screen.getByRole('button', { name: 'stage.kiosk.media-devices.refresh', exact: true }).click()
+    await expect.element(state.screen.getByRole('button', { name: 'stage.kiosk.media-devices.refresh', exact: true })).toBeEnabled()
+    await expect.element(state.screen.getByRole('alert')).toHaveTextContent('OverconstrainedError')
+    // Chromium may identify deviceId when no enumerated device can satisfy
+    // the channel layout, or channelCount when that constraint is checked first.
+    await expect.element(state.screen.getByRole('alert')).toHaveTextContent(/OverconstrainedError \((?:channelCount|deviceId)\)/)
+    expect(state.devices.stream).toBeUndefined()
+    await state.screen.getByRole('button', { name: 'stage.kiosk.media-devices.try-standard', exact: true }).click()
+    await expect.poll(() => state.devices.stream?.getAudioTracks()[0]?.readyState).toBe('live')
+    await expect.element(state.screen.getByRole('alert')).not.toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem('kiosk/audio/microphone-processing')!).inputMode).toBe('standard')
+  }
+  finally {
+    await state.dispose()
+    localStorage.removeItem('kiosk/audio/microphone-processing')
+  }
+})
+
+// Report: this chat, 2026-11-18 — exact-eight-channel getUserMedia fails on UMA-8.
+it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('keeps desktop LCMV native when switching from GPU and restores browser capture only for standard input', async () => {
+  localStorage.setItem('kiosk/audio/array-backend', 'native-gpu')
+  localStorage.setItem('kiosk/audio/microphone-processing', JSON.stringify({ inputMode: 'uma8' }))
+  vi.stubGlobal('airiKioskDesktop', {})
+  vi.stubGlobal('airiKioskAudio', { version: 3, request: vi.fn().mockResolvedValue({ devices: [], samples: new Float32Array() }) })
+  const getUserMedia = vi.spyOn(navigator.mediaDevices, 'getUserMedia')
+  const state = setup()
+  try {
+    await expect.element(state.screen.getByRole('combobox', { name: 'stage.kiosk.media-devices.output', exact: true })).toBeVisible()
+    await expect.element(state.screen.getByRole('button', { name: 'stage.kiosk.media-devices.test-output' })).toBeVisible()
+    expect(state.devices.browserCaptureEnabled).toBe(false)
+    state.devices.enabled = true
+    await state.devices.startStream()
+    await state.screen.getByRole('button', { name: 'stage.kiosk.media-devices.refresh', exact: true }).click()
+    expect(getUserMedia).not.toHaveBeenCalled()
+    expect(state.devices.enabled).toBe(true)
+    expect(state.devices.stream).toBeUndefined()
+    await state.screen.getByRole('combobox', { name: 'stage.kiosk.array-audio.backend', exact: true }).click()
+    await state.screen.getByRole('option', { name: 'stage.kiosk.array-audio.existing', exact: true }).click()
+    await state.screen.getByRole('button', { name: 'stage.kiosk.array-audio.applyBackend', exact: true }).click()
+    expect(state.devices.browserCaptureEnabled).toBe(false)
+    expect(getUserMedia).not.toHaveBeenCalled()
+    await state.screen.getByRole('combobox', { name: 'stage.kiosk.array-audio.mode', exact: true }).click()
+    await state.screen.getByRole('option', { name: 'stage.kiosk.array-audio.standard', exact: true }).click()
+    await expect.poll(() => state.devices.stream?.getAudioTracks()[0]?.readyState).toBe('live')
+    expect(state.devices.browserCaptureEnabled).toBe(true)
+    expect(getUserMedia).toHaveBeenCalled()
+  }
+  finally {
+    await state.dispose()
+    getUserMedia.mockRestore()
+    vi.unstubAllGlobals()
+    localStorage.removeItem('kiosk/audio/array-backend')
+    localStorage.removeItem('kiosk/audio/microphone-processing')
+  }
+})

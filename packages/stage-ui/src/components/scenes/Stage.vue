@@ -23,12 +23,11 @@ import { useBroadcastChannel } from '@vueuse/core'
 // import { embed } from '@xsai/embed'
 import { generateSpeech } from '@xsai/generate-speech'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 
 import { useSettingsLive2d } from '../../../../stage-ui-live2d/src/composables/live2d/live2d'
 import { useExternalSpeechSource } from '../../composables/audio/useExternalSpeechSource'
 import { useAnalytics } from '../../composables/use-analytics'
-import { useDuckDb } from '../../composables/use-duck-db'
 import { useIOTraceBridge } from '../../composables/use-io-trace-bridge'
 import { initIOTracer } from '../../composables/use-io-tracer'
 import { useSpeechPipelineAnalytics } from '../../composables/use-speech-pipeline-analytics'
@@ -70,7 +69,6 @@ const props = withDefaults(defineProps<{
 
 const componentState = defineModel<'pending' | 'loading' | 'mounted'>('state', { default: 'pending' })
 
-const { getDb } = useDuckDb()
 // const transformersProvider = createTransformers({ embedWorkerURL })
 
 const vrmViewerRef = ref<InstanceType<typeof ThreeScene>>()
@@ -912,10 +910,6 @@ if (typeof window !== 'undefined') {
     window.addEventListener(event, resumeAudioContextOnInteraction, { once: true, passive: true })
   })
 }
-
-onMounted(async () => {
-  await getDb() // stub for future update
-})
 
 watch([stageModelRenderer, () => props.paused], ([renderer]) => {
   if (renderer === 'godot') {

@@ -25,6 +25,14 @@ export type CaptureRequest = {
   radiusMm: number
   processing: ArrayProcessing
   wasmUrl?: string
+} | {
+  type: 'native-ports'
+  generation: string
+  input: MessagePort
+  render: MessagePort
+} | {
+  type: 'reference-port'
+  port: MessagePort
 } | CaptureBlock | {
   type: 'run'
 } | {
@@ -65,7 +73,11 @@ export function createCaptureContext(port: AudioPort, side: 'client' | 'processo
     if (!body)
       return
     const arrays = body.type === 'block' ? [...body.channels, ...body.render] : body.type === 'pcm' ? [body.packet.raw, body.packet.mask] : []
-    const transfer: ArrayBuffer[] = []
+    const transfer: Transferable[] = []
+    if (body.type === 'native-ports')
+      transfer.push(body.input, body.render)
+    else if (body.type === 'reference-port')
+      transfer.push(body.port)
     for (const array of arrays) {
       if (array.buffer instanceof ArrayBuffer && !transfer.includes(array.buffer))
         transfer.push(array.buffer)

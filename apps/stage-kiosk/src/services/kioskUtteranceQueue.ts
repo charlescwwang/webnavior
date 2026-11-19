@@ -17,7 +17,7 @@ export interface KioskUtteranceTicket {
 export type KioskUtteranceReservation = {
   kind: 'ACCEPTED'
   id: number
-  /** Aborted on expiry/reset so unfinished ASR cannot keep uploading stale speech. */
+  /** Aborted on an explicit transcription deadline or reception reset. */
   signal: AbortSignal
   /** Restarts the inactivity deadline only after another complete ASR chunk. */
   markTranscriptionProgress: () => void
@@ -25,23 +25,15 @@ export type KioskUtteranceReservation = {
   cancel: () => void
 } | { kind: 'OVERLOADED' }
 
-interface ReadyUtterance {
-  utterance: KioskUtterance
-  /** Queue freshness starts when the complete transcript becomes available. */
-  readyAt: number
-}
-
 interface PendingUtterance {
   utterance: KioskUtterance
-  ready: Promise<ReadyUtterance | undefined>
+  ready: Promise<KioskUtterance | undefined>
   settle: (utterance?: KioskUtterance) => void
 }
 
 /** Serializes decisions and browser mutations without waiting for Agent speech. */
 export function createKioskUtteranceQueue(options: {
   maxPending?: number
-  /** Maximum ASR inactivity, and maximum wait after the whole transcript is ready. @default 15000 */
-  maxWaitMs?: number
   now?: () => number
   onReady?: (utterance: KioskUtterance) => void
   onDrop?: (utterance: KioskUtterance, reason: 'expired' | 'reset') => void
@@ -51,7 +43,6 @@ export function createKioskUtteranceQueue(options: {
 }) {
   const now = options.now ?? (() => Date.now())
   const maxPending = options.maxPending ?? 4
-  const maxWaitMs = options.maxWaitMs ?? 15_000
   const pending: PendingUtterance[] = []
   const idleResolvers: Array<() => void> = []
   let activeController: AbortController | undefined
@@ -77,23 +68,19 @@ export function createKioskUtteranceQueue(options: {
         const currentGeneration = run.generation
         activeItem = item
         publish()
-        const completed = await item.ready
+        const utterance = await item.ready
         if (activeRun !== run)
           return
-        if (!completed || currentGeneration !== generation) {
+        if (!utterance || currentGeneration !== generation) {
           activeItem = undefined
           publish()
           continue
         }
-        const { utterance, readyAt } = completed
         item.utterance = utterance
         publish()
-        if (now() - readyAt > maxWaitMs) {
-          options.onDrop?.(utterance, 'expired')
-          activeItem = undefined
-          publish()
-          continue
-        }
+        // Accepted sentences belong to this reception, regardless of an earlier
+        // ASR/Agent's latency. Only reset revokes their FIFO ownership; replaying
+        // each against fresh cart/question state remains the processor's job.
         try {
           const controller = new AbortController()
           activeController = controller
@@ -124,15 +111,15 @@ export function createKioskUtteranceQueue(options: {
   }
 
   /** Claims ordering at speech-capture time, before asynchronous ASR completes. */
-  function reserve(source: KioskUtterance['source'], transcriptionTimeoutMs = maxWaitMs): KioskUtteranceReservation {
+  function reserve(source: KioskUtterance['source'], transcriptionTimeoutMs?: number): KioskUtteranceReservation {
     if (pending.length >= maxPending)
       return { kind: 'OVERLOADED' }
     const utterance: KioskUtterance = { capturedAt: now(), id: ++nextId, source, text: '' }
-    let resolveReady!: (completed?: ReadyUtterance) => void
-    const ready = new Promise<ReadyUtterance | undefined>(resolve => resolveReady = resolve)
+    let resolveReady!: (completed?: KioskUtterance) => void
+    const ready = new Promise<KioskUtterance | undefined>(resolve => resolveReady = resolve)
     let settled = false
     const captureController = new AbortController()
-    let readinessTimeout: ReturnType<typeof setTimeout>
+    let readinessTimeout: ReturnType<typeof setTimeout> | undefined
     const settle = (completed?: KioskUtterance) => {
       if (settled)
         return
@@ -140,12 +127,13 @@ export function createKioskUtteranceQueue(options: {
       if (!completed)
         captureController.abort()
       clearTimeout(readinessTimeout)
-      resolveReady(completed ? { utterance: completed, readyAt: now() } : undefined)
+      resolveReady(completed)
     }
-    // Successful chunks renew ASR inactivity, not capture order. A hung chunk
-    // still releases later speech; no partial transcript can become executable.
+    // The network/provider owns ordinary ASR failure and cancellation. Only an
+    // explicitly supplied provider deadline adds a queue watchdog; it never
+    // expires a completed transcript waiting behind another operation.
     const markTranscriptionProgress = () => {
-      if (settled)
+      if (settled || transcriptionTimeoutMs === undefined)
         return
       clearTimeout(readinessTimeout)
       readinessTimeout = setTimeout(() => {

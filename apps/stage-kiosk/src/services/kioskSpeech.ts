@@ -69,8 +69,11 @@ export function createSpeechPlayer(options: {
           const player = new Audio(url)
           let disposeSource: (() => void) | undefined
           try {
-            await applyAudioOutput(player)
             disposeSource = await options.onSource(player)
+            // A supplied graph owns its audible device (including native DAC).
+            // Only a standalone media element needs its own browser sink.
+            if (!disposeSource)
+              await applyAudioOutput(player)
             await new Promise<void>((resolve) => {
               let settled = false
               const finish = () => {

@@ -1,18 +1,21 @@
 /** Browser-local output preference shared by TTS, prompts and waiting music. */
 export const audioOutputStorageKey = 'kiosk/audio/output'
 
-/** Applies output to the owner of audible sound: a media element or its Web Audio graph. */
-export async function applyAudioOutput(target: HTMLMediaElement | AudioContext, deviceId = localStorage.getItem(audioOutputStorageKey) ?? '') {
-  // NOTICE: Web Audio output routing is absent from some browser API typings and
-  // runtimes. Default output remains usable; an explicit selection must work
-  // rather than silently playing through an unrelated speaker.
+/** Apply the independent browser speaker preference to any application playback path. */
+export async function applyAudioOutput(target: HTMLMediaElement | AudioContext, deviceId?: string) {
+  // NOTICE: TypeScript's DOM declarations expose setSinkId on media elements,
+  // but omit Chromium's AudioContext variant.
+  // Inspect that runtime capability without inventing a second browser contract.
   // https://developer.chrome.com/blog/audiocontext-setsinkid
-  if (!('setSinkId' in target) || typeof target.setSinkId !== 'function') {
+  const sinkId: unknown = Reflect.get(target, 'sinkId')
+  const setSinkId: unknown = Reflect.get(target, 'setSinkId')
+  deviceId ??= localStorage.getItem(audioOutputStorageKey) ?? ''
+  if (typeof setSinkId !== 'function') {
     if (deviceId)
       throw new Error('Audio output selection is unavailable in this browser.')
     return
   }
-  if ('sinkId' in target && target.sinkId === deviceId)
+  if (sinkId === deviceId)
     return
-  await target.setSinkId(deviceId)
+  await setSinkId.call(target, deviceId)
 }

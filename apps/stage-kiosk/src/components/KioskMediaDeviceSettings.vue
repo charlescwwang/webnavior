@@ -7,18 +7,22 @@ import { useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
 import { Button, FieldSelect } from '@proj-airi/ui'
 import { useDevicesList, useLocalStorage } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, onScopeDispose, shallowRef } from 'vue'
+import { computed, nextTick, onScopeDispose, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import KioskMicrophoneSettings from './KioskMicrophoneSettings.vue'
 
+import { useKioskMicrophone } from '../composables/useKioskMicrophone'
 import { applyAudioOutput, audioOutputStorageKey } from '../services/kioskAudioOutput'
 import { playKioskAudio } from '../services/kioskPlayback'
 
 const props = defineProps<{ textOnlyMode?: boolean, recognitionMode?: SpeechRecognitionPolicy['mode'] }>()
 const { t } = useI18n()
 const devices = useSettingsAudioDevice()
+const microphone = useKioskMicrophone()
 const { audioInputs, selectedAudioInput, stream } = storeToRefs(devices)
+const nativeCapture = computed(() => Boolean(window.airiKioskDesktop) && microphone.settings.value.inputMode !== 'standard' && (microphone.nativeSelected.value || microphone.usesNativeLcmv(props.recognitionMode, microphone.isArray(audioInputs.value.find(device => device.deviceId === selectedAudioInput.value)?.label || stream.value?.getAudioTracks()[0]?.label || ''))))
+watch(nativeCapture, native => devices.browserCaptureEnabled = !native, { immediate: true, flush: 'sync' })
 const refreshing = shallowRef(false)
 const error = shallowRef<string>()
 const testing = shallowRef(false)
@@ -58,20 +62,38 @@ async function refresh() {
   refreshing.value = true
   error.value = undefined
   try {
+    if (nativeCapture.value) {
+      devices.stopStream()
+      if (!props.textOnlyMode)
+        devices.enabled = true
+      return
+    }
     await devices.askPermission()
     if (!props.textOnlyMode) {
       devices.enabled = true
       if (!stream.value)
         await devices.startStream()
     }
-    await outputs.ensurePermissions()
+    // A live input already grants device enumeration. A second permission
+    // probe can compete with the raw USB capture on Windows audio drivers.
+    if (!stream.value?.getAudioTracks().some(track => track.readyState === 'live'))
+      await outputs.ensurePermissions()
   }
   catch (cause) {
-    error.value = errorMessageFrom(cause) ?? t('stage.kiosk.media-devices.failed')
+    error.value = devices.inputError?.message || errorMessageFrom(cause) || t('stage.kiosk.media-devices.failed')
   }
   finally {
     refreshing.value = false
   }
+}
+
+async function useStandardCapture() {
+  // This explicit operator choice abandons array geometry; never silently
+  // process a mono/stereo stream as seven physical microphones.
+  microphone.settings.value.inputMode = 'standard'
+  devices.inputConstraints = undefined
+  await nextTick()
+  await refresh()
 }
 
 async function testOutput() {
@@ -106,10 +128,10 @@ async function testOutput() {
   <section :class="['admin-section grid gap-3']">
     <h3>{{ t('stage.kiosk.media-devices.title') }}</h3>
     <p>{{ t('stage.kiosk.media-devices.description') }}</p>
-    <FieldSelect v-model="microphoneSelection" :label="t('stage.kiosk.media-devices.microphone')" :options="microphoneOptions" layout="vertical" />
+    <FieldSelect v-if="!nativeCapture" v-model="microphoneSelection" :label="t('stage.kiosk.media-devices.microphone')" :options="microphoneOptions" layout="vertical" />
     <FieldSelect v-model="outputSelection" :label="t('stage.kiosk.media-devices.output')" :options="outputOptions" layout="vertical" />
     <KioskMicrophoneSettings :recognition-mode="props.recognitionMode" />
-    <p role="status">
+    <p v-if="!nativeCapture" role="status">
       {{ t(stream?.getAudioTracks().some(track => track.readyState === 'live') ? 'stage.kiosk.media-devices.connected' : 'stage.kiosk.media-devices.disconnected') }}
     </p>
     <Button :disabled="refreshing" @click="refresh">
@@ -118,8 +140,12 @@ async function testOutput() {
     <Button :disabled="testing" @click="testOutput">
       {{ t('stage.kiosk.media-devices.test-output') }}
     </Button>
-    <p v-if="error" role="alert">
-      {{ error }}
+    <p v-if="error || (!nativeCapture && devices.inputError)" role="alert">
+      {{ error || devices.inputError?.message }}
     </p>
+    <template v-if="devices.inputError && devices.inputConstraints?.channelCount">
+      <p>{{ t('stage.kiosk.media-devices.raw-hint') }}</p>
+      <Button :disabled="refreshing" :label="t('stage.kiosk.media-devices.try-standard')" @click="useStandardCapture" />
+    </template>
   </section>
 </template>

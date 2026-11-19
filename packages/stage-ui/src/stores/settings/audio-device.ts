@@ -1,10 +1,28 @@
+import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
 import { defineStore } from 'pinia'
-import { watch } from 'vue'
+import { shallowRef, watch } from 'vue'
 
 import { useAudioDevice } from '../../composables/audio'
 
 let microphonePermissionStatus: PermissionStatus
+
+/** Browser acquisition failure, retained until the operator retries capture. */
+export interface AudioInputFailure {
+  name: string
+  message: string
+  constraint?: string
+}
+
+function inputFailure(error: unknown): AudioInputFailure {
+  const detail = error && typeof error === 'object' ? error : undefined
+  const name = detail && 'name' in detail && typeof detail.name === 'string' ? detail.name : 'MicrophoneError'
+  const constraint = detail && 'constraint' in detail && typeof detail.constraint === 'string' ? detail.constraint : undefined
+  // Chromium may provide an empty message for OverconstrainedError. Preserve
+  // the name and constraint instead of rendering a blank connection failure.
+  const message = [name, constraint ? `(${constraint})` : undefined, errorMessageFrom(error)?.trim()].filter(Boolean).join(' ')
+  return { name, message, constraint }
+}
 
 export const useSettingsAudioDevice = defineStore('settings-audio-devices', () => {
   const {
@@ -22,6 +40,10 @@ export const useSettingsAudioDevice = defineStore('settings-audio-devices', () =
 
   const selectedAudioInputPersist = useLocalStorageManualReset<string>('settings/audio/input', selectedAudioInputNonPersist.value)
   const audioInputEnabled = useLocalStorageManualReset<boolean>('settings/audio/input/enabled', false)
+  // External native capture owns the device while enabled remains the user's
+  // listening preference. It must never allocate a competing browser stream.
+  const browserCaptureEnabled = shallowRef(true)
+  const inputError = shallowRef<AudioInputFailure>()
   let audioInputStartGeneration = 0
   let audioInputStart: ReturnType<typeof startAudioInputStream> | undefined
 
@@ -37,7 +59,13 @@ export const useSettingsAudioDevice = defineStore('settings-audio-devices', () =
 
   async function askPermission() {
     syncSelectedAudioInputToRuntime()
-    await askAudioInputPermission()
+    try {
+      await askAudioInputPermission()
+    }
+    catch (error) {
+      inputError.value = inputFailure(error)
+      throw error
+    }
     syncSelectedAudioInputFromRuntime()
   }
 
@@ -55,13 +83,17 @@ export const useSettingsAudioDevice = defineStore('settings-audio-devices', () =
     if (audioInputStart)
       return audioInputStart
 
+    inputError.value = undefined
     const currentStart = startAudioInputStream()
     audioInputStart = currentStart
     const clearCurrentStart = () => {
       if (audioInputStart === currentStart)
         audioInputStart = undefined
     }
-    void currentStart.then(clearCurrentStart, clearCurrentStart)
+    void currentStart.then(clearCurrentStart, (error) => {
+      inputError.value = inputFailure(error)
+      clearCurrentStart()
+    })
     return currentStart
   }
 
@@ -74,6 +106,8 @@ export const useSettingsAudioDevice = defineStore('settings-audio-devices', () =
   }
 
   async function startStream() {
+    if (!browserCaptureEnabled.value)
+      return
     await startStreamForGeneration(createAudioInputStartGeneration())
   }
 
@@ -93,8 +127,8 @@ export const useSettingsAudioDevice = defineStore('settings-audio-devices', () =
     selectedAudioInputNonPersist.value = newValue
   })
 
-  watch(audioInputEnabled, (val) => {
-    if (val) {
+  watch([audioInputEnabled, browserCaptureEnabled], ([val, browser]) => {
+    if (val && browser) {
       const generation = createAudioInputStartGeneration()
       startStreamForGeneration(generation).catch((error) => {
         handleStartStreamError(generation, error, 'Unable to start audio input stream:')
@@ -111,8 +145,11 @@ export const useSettingsAudioDevice = defineStore('settings-audio-devices', () =
     navigator?.permissions?.query({ name: 'microphone' }).then((status) => {
       microphonePermissionStatus = status // existing one cleaned up by GC
       status.onchange = () => {
-        if (status.state === 'denied' || status.state === 'prompt')
+        if (browserCaptureEnabled.value && (status.state === 'denied' || status.state === 'prompt')) {
+          permissionState.value = status.state === 'denied' ? 'denied' : 'idle'
+          inputError.value = { name: 'NotAllowedError', message: `NotAllowedError: microphone permission changed to ${status.state}` }
           audioInputEnabled.value = false
+        }
       }
     })
   }
@@ -125,7 +162,7 @@ export const useSettingsAudioDevice = defineStore('settings-audio-devices', () =
     if (hasSelectedInput)
       syncSelectedAudioInputToRuntime()
 
-    if (audioInputEnabled.value && hasSelectedInput) {
+    if (browserCaptureEnabled.value && audioInputEnabled.value && hasSelectedInput) {
       const generation = createAudioInputStartGeneration()
       startStreamForGeneration(generation).catch((error) => {
         handleStartStreamError(generation, error, 'Unable to initialize audio input stream:')
@@ -140,6 +177,7 @@ export const useSettingsAudioDevice = defineStore('settings-audio-devices', () =
   }
 
   function resetState() {
+    inputError.value = undefined
     selectedAudioInputPersist.reset()
     selectedAudioInputNonPersist.value = ''
     audioInputEnabled.reset()
@@ -154,6 +192,8 @@ export const useSettingsAudioDevice = defineStore('settings-audio-devices', () =
     enabled: audioInputEnabled,
     permissionGranted,
     permissionState,
+    inputError,
+    browserCaptureEnabled,
 
     stream,
 

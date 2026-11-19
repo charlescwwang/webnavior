@@ -39,7 +39,30 @@ kiosk:
       Falcon 推論：{inference}
       ASR：{asr}
       音檔完成／回傳耗時：未量測
+  native-audio:
+    model-bypassed: '測試模式：已略過 UL-UNAS；AEC3、RTF／MVDR 與語音分段仍啟用。'
+    input: '原生八聲道麥克風'
+    automatic: '自動選取唯一的 UMA-8 RAW 裝置'
+    refresh-devices: '重新偵測原生音訊裝置'
+    title: '本機 GPU 音訊處理'
+    description: 'AEC3 → 線上 RTF／MVDR → GPU 降噪 → 語音分段。由 Kiosk 自動管理，下方顯示實際使用的執行引擎。'
+    update-exe: '請更新至 Kiosk 0.6.0 或更新版本，以使用自動追蹤與獨立喇叭設定。'
+    failed: 'GPU 音訊處理無法啟動。'
+    gpu-ready: 'GPU 模型節點執行已確認'
+    gpu-pending: '正在確認 GPU 狀態'
+    gain: '共同輸入增益（dB）'
+    apply: '套用音訊設定'
+    automatic-tracking: '自動學習並持續追蹤'
+    independent-output: '喇叭使用上方的正常喇叭設定，與麥克風分開選擇，不要求相同音訊介面。'
+    tracking-description: '不需要手動錄製五秒或準備基準檔。開始收音即可說話，系統由可靠語音自動學習並持續更新；播音、混雜或不確定時暫停學習。此功能追蹤主要聲源，並非顧客身分辨識。'
   array-audio:
+    native-description: 'EXE 的 LCMV 使用原生八聲道輸入，保留既有 AEC3、LCMV 與辨識設定；不載入 GPU 模型。喇叭仍由一般輸出設定選擇。'
+    native-update: '原生 LCMV 收音需要更新至 Kiosk EXE 0.6.3 或更新版本。'
+    backend: 'UMA-8 處理管線'
+    existing: '既有收音方式（LCMV／Spatial Mask）'
+    native-gpu: '線上 RTF／MVDR＋GPU（測試中）'
+    applyBackend: '套用收音方式'
+    backendDescription: '既有方式可供日常使用；GPU 管線尚在測試。切換會重啟收音並丟棄未完成語句，請在沒有顧客說話時套用。'
     metrics: '延遲 {lag} ms · 播放參考 {reference} frames · RMS {input} → {output} dBFS · 限幅 {limited}%'
     algorithm: '舊 ASR 陣列演算法'
     lcmv: 'LCMV（現有方式）'
@@ -71,6 +94,8 @@ kiosk:
     falconGainDescription: '僅調整 UMA-8 送進 Falcon 前的音訊，與 VAD 增益分開；預設 0 dB。套用峰值限幅，並保留影音時間對齊。變更會重新啟動收音，請在未說話時調整。'
     raw-unavailable: '尚未取得 UMA-8 的 8 路原始聲道。請確認選擇正確的 UMA-8 裝置，並按重新偵測與連接；本次未改用其他麥克風。'
   media-devices:
+    raw-hint: '目前要求 8 聲道原始收音。若裝置或 Windows 音效設定無法提供，可先改用一般麥克風收音；這會停用陣列處理。'
+    try-standard: '改用一般麥克風並重新連線'
     title: '本機麥克風與喇叭'
     description: '選擇只保存在這台機台，重新開啟後仍會沿用。更換裝置會重新連接；請在沒有顧客說話時調整。'
     microphone: '收音麥克風'

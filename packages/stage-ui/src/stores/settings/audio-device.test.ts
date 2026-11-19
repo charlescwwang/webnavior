@@ -63,6 +63,20 @@ function createAudioInput(deviceId: string): MediaDeviceInfo {
 }
 
 describe('store settings-audio-devices', () => {
+  // Report: this chat, 2026-11-18 — DEV-757106 reports no tracks and a blank
+  // capture error; raw getUserMedia failures may have no message at all.
+  it('retains the browser error name and failed constraint until capture is retried', async () => {
+    const failure = { name: 'OverconstrainedError', message: '', constraint: 'channelCount' }
+    audioDeviceMock.startStream.mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined)
+    const { useSettingsAudioDevice } = await import('./audio-device')
+    const store = useSettingsAudioDevice()
+    await expect(store.startStream()).rejects.toEqual(failure)
+    expect(store.inputError).toEqual({ name: 'OverconstrainedError', constraint: 'channelCount', message: 'OverconstrainedError (channelCount)' })
+    store.stopStream()
+    expect(store.inputError?.message).toBe('OverconstrainedError (channelCount)')
+    await store.startStream()
+    expect(store.inputError).toBeUndefined()
+  })
   beforeEach(() => {
     setActivePinia(createTestingPinia({ createSpy: vi.fn, stubActions: false }))
     storageMock.values.clear()

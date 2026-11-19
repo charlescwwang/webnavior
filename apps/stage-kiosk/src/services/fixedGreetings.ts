@@ -56,6 +56,51 @@ interface GreetingConfiguration {
   openings: readonly string[]
 }
 
+interface GreetingAttempt {
+  id: number
+  reception: number
+}
+
+/**
+ * Tracks delivery for one reception, independently of its active/standby state.
+ * A failed welcome can retry twice within 20 seconds, at least 1.5 seconds apart.
+ * Customer activity/reset closes the budget; stale completions cannot reopen it.
+ */
+export function createGreetingDelivery() {
+  let nextId = 0
+  let state: { reception: number, startedAtMs: number, attempts: number, nextAtMs: number, closed: boolean, pending?: GreetingAttempt } | undefined
+  function eligible(reception: number, nowMs: number) {
+    return state?.reception === reception && !state.closed && !state.pending && state.attempts < 3
+      && nowMs >= state.nextAtMs && nowMs - state.startedAtMs <= 20_000
+  }
+  return {
+    canRetry(reception: number, nowMs: number) {
+      return Boolean(state?.attempts && eligible(reception, nowMs))
+    },
+    claim(reception: number, nowMs: number): GreetingAttempt | undefined {
+      if (!state || state.reception !== reception)
+        state = { reception, startedAtMs: nowMs, attempts: 0, nextAtMs: nowMs, closed: false }
+      if (!eligible(reception, nowMs))
+        return
+      const attempt = { id: ++nextId, reception }
+      state.pending = attempt
+      state.attempts++
+      return attempt
+    },
+    finish(attempt: GreetingAttempt, outcome: 'delivered' | 'retry' | 'closed', nowMs: number) {
+      if (state?.pending !== attempt)
+        return
+      state.pending = undefined
+      state.closed ||= outcome !== 'retry'
+      state.nextAtMs = nowMs + 1500
+    },
+    cancel() {
+      if (state)
+        state.closed = true
+    },
+  }
+}
+
 /**
  * Owns one scene's bounded welcome-audio bank. Preparation and playback share
  * in-flight synthesis; visitor cancellation does not evict reusable audio.
@@ -126,13 +171,33 @@ export function createFixedGreetings(synthesize: (input: { locale: string, signa
     }
   }
 
-  async function next(phase: GreetingPhase) {
+  async function next(phase: GreetingPhase, signal?: AbortSignal) {
     if (!configuration?.openings.length || disposed)
       throw new Error('Welcome phrases are not configured')
     const opening = configuration.openings[index]
     index = (index + 1) % configuration.openings.length
     const text = phase === 'customer_entry' ? `${opening}${configuration.entryHint}` : opening
-    return { audio: await speech(text), text }
+    signal?.throwIfAborted()
+    const pending = speech(text)
+    if (!signal)
+      return { audio: await pending, text }
+    // A visitor owns this wait, not the shared synthesis cache. Release its
+    // turn promptly on cancellation while keeping late audio reusable.
+    let abort: () => void = () => {}
+    try {
+      const audio = await new Promise<Blob>((resolve, reject) => {
+        abort = () => reject(signal.reason)
+        if (signal.aborted)
+          abort()
+        else
+          signal.addEventListener('abort', abort, { once: true })
+        void pending.then(resolve, reject)
+      })
+      return { audio, text }
+    }
+    finally {
+      signal.removeEventListener('abort', abort)
+    }
   }
 
   function dispose() {

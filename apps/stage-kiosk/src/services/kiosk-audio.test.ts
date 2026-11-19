@@ -81,13 +81,14 @@ describe('complete utterance transcription', () => {
     expect(transcribe).toHaveBeenCalledTimes(2)
   })
 
-  it('expires a stalled later chunk without executing its earlier recognized demand or blocking later speech', async () => {
+  // Report: this chat, Nov19: ordinary ASR no longer has a default 15-second watchdog.
+  it('expires a stalled later chunk only with an explicit provider deadline, without executing a partial demand', async () => {
     vi.useFakeTimers()
     try {
       const process = vi.fn(async () => {})
       const onDrop = vi.fn()
       const queue = createKioskUtteranceQueue({ process, onDrop })
-      const reservation = queue.reserve('asr')
+      const reservation = queue.reserve('asr', 15_000)
       if (reservation.kind !== 'ACCEPTED')
         throw new Error('Expected capture reservation.')
       const transcribe = vi.fn(async (_recording: Blob, signal?: AbortSignal) => {

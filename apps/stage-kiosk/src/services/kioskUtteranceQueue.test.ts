@@ -103,11 +103,10 @@ describe('kiosk utterance queue', () => {
       const handled: string[] = []
       const dropped: string[] = []
       const queue = createKioskUtteranceQueue({
-        maxWaitMs: 100,
         onDrop: (utterance) => { dropped.push(utterance.source) },
         process: async (utterance) => { handled.push(utterance.text) },
       })
-      const stalled = queue.reserve('asr')
+      const stalled = queue.reserve('asr', 100)
       expect(stalled.kind).toBe('ACCEPTED')
       await vi.advanceTimersByTimeAsync(50)
       queue.submit({ source: 'simulation', text: '我要水餃' })
@@ -139,27 +138,51 @@ describe('kiosk utterance queue', () => {
     expect(process).toHaveBeenCalledTimes(2)
   })
 
-  it('drops a complete transcript that has waited too long behind an active operation', async () => {
+  // Report: this chat, Nov19 — a slow operation discarded the speaker's next sentence after 15 seconds.
+  it('keeps complete transcripts in order while an earlier operation takes longer than 15 seconds', async () => {
     vi.useFakeTimers()
     try {
       let finish!: () => void
       const onDrop = vi.fn()
-      const process = vi.fn(async () => {
-        await new Promise<void>(resolve => finish = resolve)
+      const process = vi.fn(async (utterance) => {
+        if (utterance.text === '正在操作的一句')
+          await new Promise<void>(resolve => finish = resolve)
       })
       const queue = createKioskUtteranceQueue({ process, onDrop })
       queue.submit({ source: 'simulation', text: '正在操作的一句' })
       await Promise.resolve()
       queue.submit({ source: 'asr', text: '等待的一句' })
-      await vi.advanceTimersByTimeAsync(15_001)
+      queue.submit({ source: 'asr', text: '再補充的一句' })
+      await vi.advanceTimersByTimeAsync(60_000)
       finish()
       await queue.idle()
-      expect(process).toHaveBeenCalledTimes(1)
-      expect(onDrop).toHaveBeenCalledWith(expect.objectContaining({ text: '等待的一句' }), 'expired')
+      expect(process.mock.calls.map(([utterance]) => utterance.text)).toEqual(['正在操作的一句', '等待的一句', '再補充的一句'])
+      expect(onDrop).not.toHaveBeenCalled()
     }
     finally {
       vi.useRealTimers()
     }
+  })
+
+  // Report: this chat, Nov19 — queue timers must not cancel an otherwise active ASR request at 15 seconds.
+  it('lets the transcription request own its deadline instead of cancelling it at 15 seconds', async () => {
+    vi.useFakeTimers()
+    try {
+      const process = vi.fn<Parameters<typeof createKioskUtteranceQueue>[0]['process']>(async () => {})
+      const onDrop = vi.fn()
+      const queue = createKioskUtteranceQueue({ process, onDrop })
+      const reservation = queue.reserve('asr')
+      if (reservation.kind !== 'ACCEPTED')
+        throw new Error('Expected capture reservation.')
+      queue.submit({ source: 'asr', text: '後面補充的一句' })
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(reservation.signal.aborted).toBe(false)
+      reservation.complete({ text: '水餃十顆兩份' })
+      await queue.idle()
+      expect(process.mock.calls.map(([utterance]) => utterance.text)).toEqual(['水餃十顆兩份', '後面補充的一句'])
+      expect(onDrop).not.toHaveBeenCalled()
+    }
+    finally { vi.useRealTimers() }
   })
 
   it('aborts incomplete transcription on reset and ignores late progress or completion', async () => {
