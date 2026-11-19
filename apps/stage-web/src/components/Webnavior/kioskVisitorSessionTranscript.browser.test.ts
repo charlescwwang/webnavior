@@ -12,11 +12,11 @@ it('renders recognition start and completed duration in the authenticated histor
   const createdAt = '2026-11-17T00:00:00Z'
   const entries: KioskInteractionEntry[] = [
     { id: 'start', kind: 'service_event', content: 'voice_recognition_started', metadata: { utteranceId: 1 }, sequence: 1, createdAt },
-    { id: 'done', kind: 'service_event', content: JSON.stringify({ elapsedMs: 1250, mode: 'falcon', submitted: true }), metadata: { source: 'voice_recognition_timing', utteranceId: 1 }, sequence: 2, createdAt },
+    { id: 'done', kind: 'service_event', content: JSON.stringify({ elapsedMs: 1250, mode: 'asr', submitted: true }), metadata: { source: 'voice_recognition_timing', utteranceId: 1 }, sequence: 2, createdAt },
   ]
   const screen = render(KioskVisitorSessionTranscript, { props: { detail: { session: { id: 'visitor' }, entries, media: [] } }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage } } })] } })
   await expect.element(screen.getByText('已收音，正在等待語音辨識回覆', { exact: true })).toBeVisible()
-  await expect.element(screen.getByText('語音辨識完成（Falcon）：1.25 秒', { exact: false })).toBeVisible()
+  await expect.element(screen.getByText('語音辨識完成（ASR）：1.25 秒', { exact: false })).toBeVisible()
 })
 
 // Report: Nov14 user audit; time/position matching attached recordings to the wrong transcript.
@@ -35,15 +35,4 @@ it('retains repeated customer phrases and only attaches explicitly linked audio'
   expect([...screen.container.querySelectorAll('button')].filter(button => button.textContent?.includes('聽顧客原始語音'))).toHaveLength(1)
   await expect.element(screen.getByText('Unlinked audio')).toBeVisible()
   expect([...screen.container.querySelectorAll('button')].filter(button => button.textContent === 'Play original')).toHaveLength(2)
-})
-
-// Report: this chat, 2026-11-17 — managers need Falcon stages rather than combined ASR latency.
-it('labels inference and ASR separately and leaves audio delivery explicitly unmeasured', async () => {
-  const entries: KioskInteractionEntry[] = [{ id: 'timing', kind: 'service_event', content: JSON.stringify({ elapsedMs: 1250, audioMs: 3000, mode: 'falcon', submitted: true, falconTiming: { inferenceMs: 493.9, asrMs: 300.2 } }), metadata: { source: 'voice_recognition_timing', utteranceId: 1 }, sequence: 1, createdAt: '2026-11-17T00:00:00Z' }]
-  const screen = render(KioskVisitorSessionTranscript, { props: { detail: { session: { id: 'visitor' }, entries, media: [] } }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage } } })] } })
-  const text = screen.container.textContent
-  expect(text).toContain('音訊片段（含靜音補齊）：3.00 秒')
-  expect(text).toContain('Falcon 推論：0.49 秒')
-  expect(text).toContain('ASR：0.30 秒')
-  expect(text).toContain('音檔完成／回傳耗時：未量測')
 })

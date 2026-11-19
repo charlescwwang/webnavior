@@ -7,7 +7,8 @@ import type { KioskAssistantPresenceMode } from './KioskAssistantPresence.vue'
 
 import { ChatHistory } from '@proj-airi/stage-ui/components'
 import { toOrderingTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
-import { computed, nextTick, onScopeDispose, useTemplateRef, watch } from 'vue'
+import { Button } from '@proj-airi/ui'
+import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import KioskAssistantPresence from './KioskAssistantPresence.vue'
@@ -82,6 +83,30 @@ const historyMessages = computed<ChatHistoryItem[]>(() => groupConversationMessa
     return { ...message, content: toOrderingTraditionalChinese(message.content) }
   return message
 }))
+const showHistory = shallowRef(false)
+// Keep unfinished requests visible even when an additional utterance arrives.
+// Older completed turns remain available without changing model/audit history.
+const currentTurnStart = computed(() => {
+  const messages = historyMessages.value
+  const pending = messages.findIndex((message) => {
+    const status = requestStatus(message)
+    return status && ['queued', 'processing', 'review', 'failed'].includes(status)
+  })
+  return pending >= 0 ? pending : Math.max(0, messages.findLastIndex(message => message.role === 'user'))
+})
+const previousReply = computed(() => {
+  const previous = historyMessages.value.slice(0, currentTurnStart.value).findLast(message => message.role === 'assistant')
+  if (!previous?.content)
+    return undefined
+  return typeof previous.content === 'string' ? previous.content : previous.content.filter(part => part.type === 'text').map(part => part.text).join('')
+})
+const previousReplyExpanded = shallowRef(false)
+watch(previousReply, () => previousReplyExpanded.value = false)
+const visibleMessages = computed(() => showHistory.value ? historyMessages.value : historyMessages.value.slice(currentTurnStart.value))
+watch(() => props.messages.length, (length) => {
+  if (!length)
+    showHistory.value = false
+})
 // The detached input console shares the same presentation copy as the main
 // history. While a turn is pending, never carry over the previous turn's reply.
 const consoleReply = computed(() => {
@@ -136,7 +161,7 @@ function followLatestMessage() {
   lateTailFollow = setTimeout(() => chatHistory.value?.scrollToBottom(), 300)
 }
 
-watch([historyMessages, () => props.requestStatuses, () => props.activityStatus, () => props.pendingTranscript], followLatestMessage, { flush: 'post' })
+watch([visibleMessages, () => props.requestStatuses, () => props.activityStatus, () => props.pendingTranscript], followLatestMessage, { flush: 'post', immediate: true })
 onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
 </script>
 
@@ -147,18 +172,33 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     aria-label="與虛擬服務員對話"
   >
     <div class="message-history">
+      <Button
+        v-if="currentTurnStart > 0"
+        :class="['history-toggle', 'shrink-0']"
+        :aria-expanded="showHistory"
+        @click="showHistory = !showHistory"
+      >
+        {{ t(showHistory ? 'stage.kiosk-agent.current-conversation' : 'stage.kiosk-agent.previous-conversation') }}
+      </Button>
       <KioskAssistantPresence
         v-if="historyMessages.length === 0 && !props.pendingTranscript"
         :description="toOrderingTraditionalChinese(props.assistantPresence.description)"
         :mode="props.assistantPresence.mode"
         :title="toOrderingTraditionalChinese(props.assistantPresence.title)"
       />
+      <section v-if="previousReply && !showHistory" :class="['previous-reply', { 'is-expanded': previousReplyExpanded }]" :aria-label="t('stage.kiosk-agent.previous-answer')">
+        <Button :class="['previous-reply-toggle']" variant="ghost" :aria-expanded="previousReplyExpanded" @click="previousReplyExpanded = !previousReplyExpanded">
+          {{ t('stage.kiosk-agent.previous-answer') }}
+        </Button>
+        <p>{{ previousReply }}</p>
+      </section>
       <!-- The kiosk owns a separate status row; ChatHistory's empty streaming
            placeholder would otherwise render only the assistant name. -->
       <ChatHistory
         v-if="historyMessages.length > 0"
         ref="chatHistory"
-        :messages="historyMessages"
+        :class="['current-message-list']"
+        :messages="visibleMessages"
         :assistant-label="assistantLabel"
         :error-label="assistantLabel"
         :sending="false"
@@ -224,18 +264,25 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
 </template>
 
 <style scoped>
+.previous-reply { flex: none; min-height: 0; max-height: 30%; overflow: auto; padding: .25rem .5rem .45rem; border-bottom: 1px solid rgb(217 250 246 / 22%); color: #c6dfdc; }
+.previous-reply-toggle { padding: .15rem 0; font-size: .85rem; }
+.previous-reply p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; margin: .2rem 0 0; overflow: hidden; overflow-wrap: anywhere; font-size: calc(var(--conversation-font-size) * .8); line-height: 1.45; }
+.previous-reply.is-expanded p { display: block; }
+.history-toggle { align-self: flex-end; padding: .35rem .6rem; font-size: 1rem; }
 .kiosk-conversation { display: grid; min-width: 0; min-height: 0; overflow: hidden; background: transparent; grid-template-rows: minmax(0, 1fr) auto auto auto; }
-.message-history { min-width: 0; min-height: 0; overflow: hidden; padding: 0 .55rem; background: transparent; }
+.message-history { display: flex; flex-direction: column; gap: .4rem; min-width: 0; min-height: 0; overflow: hidden; padding: 0 .55rem; background: transparent; }
+.message-history :deep(.current-message-list) { flex: 1; min-height: 0; height: auto; overflow-y: auto; }
 .conversation-progress { display: grid; gap: .3rem; padding: 0 .55rem .45rem; background: rgb(1 17 20 / 28%); }
-.message-history :deep([data-chat-message-role]) { display: flex; min-width: 0; max-width: 100%; }
-.message-history :deep(.ph-no-capture) { max-width: min(78%, 42rem); }
-.message-history :deep([data-chat-message-bubble]) { box-sizing: border-box; max-width: 100%; border-width: 2px; box-shadow: 0 .35rem 1rem rgb(0 0 0 / 34%); }
+.message-history :deep([data-chat-message-role]) { display: flex; flex: none; min-width: 0; max-width: 100%; }
+.message-history :deep(.ph-no-capture) { max-width: min(96%, 42rem); }
+.message-history :deep([data-chat-message-bubble]) { box-sizing: border-box; max-width: 100%; border: 2px solid; border-radius: .9rem; padding: .25rem .55rem; box-shadow: 0 .35rem 1rem rgb(0 0 0 / 34%); }
 .message-history :deep([data-chat-message-role='assistant']), .message-history :deep([data-chat-message-role='error']) { justify-content: flex-start; }
 .message-history :deep([data-chat-message-role='user']) { justify-content: flex-end; flex-wrap: wrap; }
 .request-status { flex-basis: 100%; text-align: right; padding: .2rem .3rem; color: #b9f5ec; font-size: .75rem; }
 .request-status.is-processing { font-weight: 800; }
 .request-status.is-failed { color: #ffdbad; }
 .message-history :deep([data-chat-message-bubble]) { user-select: text; }
+.message-history :deep(.markdown-content p) { margin: .15rem 0; }
 .message-history :deep(.markdown-content), .message-history :deep(.markdown-content *) { font-size: var(--conversation-font-size) !important; line-height: 1.45 !important; }
 .message-history :deep(.markdown-content p) { margin: 0; }
 .message-history :deep(.markdown-content p + p) { margin-top: .55em; }

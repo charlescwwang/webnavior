@@ -2,6 +2,7 @@ import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
 import { afterEach, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
+import { page } from 'vitest/browser'
 import { defineComponent, h, shallowRef } from 'vue'
 import { createI18n } from 'vue-i18n'
 
@@ -185,6 +186,7 @@ it('shows request status in the conversation and groups a late reply before the 
   ]
   const screen = render(KioskConversation, { props: { ...props, messages, voiceConversationOnly: true, requestStatuses: { 1: 'completed', 2: 'processing' } }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-TW', messages: { 'zh-TW': { stage: { kiosk: { 'request-status': { completed: '已完成', processing: '處理中' } } } } } })] } })
   await expect.element(screen.getByText('處理中', { exact: true })).toBeVisible()
+  await screen.getByRole('button', { name: 'stage.kiosk-agent.previous-conversation' }).click()
   const rows = [...screen.container.querySelectorAll('[data-chat-message-key]')]
   expect(rows.map(row => row.getAttribute('data-chat-message-key'))).toEqual(['utterance:1:user', 'utterance:1:reply:a', 'utterance:2:user', 'utterance:2:reply:a'])
   expect(rows[0].textContent).toContain('已完成')
@@ -261,4 +263,53 @@ it('shows the text console only in text mode and removes it when returning to vo
     await expect.poll(() => document.querySelector('.text-console')).toBeNull()
   }
   finally { view.unmount() }
+})
+
+// Report: this chat, Nov19 — long continuous history crowds a 28px conversation panel.
+it('shows the current turn by default and allows earlier conversation to be expanded', async () => {
+  const messages: ChatHistoryItem[] = [
+    { role: 'user', content: '先看看菜單' },
+    { role: 'assistant', content: '想吃什麼？', slices: [], tool_results: [] },
+    { role: 'user', content: '我要水餃十顆兩份' },
+    { role: 'assistant', content: '已加入十顆水餃兩份。', slices: [], tool_results: [] },
+  ]
+  const screen = render(KioskConversation, { props: { ...props, fontSize: 28, messages }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
+  await expect.element(screen.getByText('我要水餃十顆兩份', { exact: true })).toBeVisible()
+  expect(screen.container.textContent).not.toContain('先看看菜單')
+  await screen.getByRole('button', { name: '查看先前對話' }).click()
+  await expect.element(screen.getByText('先看看菜單', { exact: true })).toBeVisible()
+  await screen.getByRole('button', { name: '只看本次對話' }).click()
+  expect(screen.container.textContent).not.toContain('先看看菜單')
+  expect(messages).toHaveLength(4)
+})
+
+// Report: this chat, Nov19 — keep the previous answer above this question and reply, with full history intact.
+it('keeps previous reply context above the current question and response at the configured font size', async () => {
+  const messages: ChatHistoryItem[] = [
+    { role: 'user', content: '有哪些套餐' },
+    { role: 'assistant', content: '有A套餐和B套餐。', slices: [], tool_results: [] },
+    { role: 'user', content: '那我要炸的' },
+    { role: 'assistant', content: '有炸雞腿便當、炸排骨便當。', slices: [], tool_results: [] },
+  ]
+  const screen = render(KioskConversation, { props: { ...props, fontSize: 28, messages, voiceConversationOnly: true }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
+  await page.viewport(1280, 480)
+  const panel = screen.container.querySelector<HTMLElement>('.kiosk-conversation')!
+  panel.style.width = '1100px'
+  panel.style.height = '280px'
+  panel.style.background = '#1a2922'
+  await expect.element(screen.getByText('有A套餐和B套餐。', { exact: true })).toBeVisible()
+  const previous = screen.container.querySelector<HTMLElement>('.previous-reply')!
+  const history = screen.container.querySelector<HTMLElement>('[data-chat-message-role="user"]')!
+  expect(previous.getBoundingClientRect().top).toBeLessThan(history.getBoundingClientRect().top)
+  expect(getComputedStyle(previous.querySelector('p')!).fontSize).toBe('22.4px')
+  expect(screen.container.textContent).not.toContain('有哪些套餐')
+  const latest = screen.container.querySelector<HTMLElement>('[data-chat-message-role="assistant"] [data-chat-message-bubble]')!
+  const viewport = screen.container.querySelector<HTMLElement>('.current-message-list')!
+  await expect.poll(() => latest.querySelector('.markdown-content p') !== null).toBe(true)
+  await expect.poll(() => latest.getBoundingClientRect().bottom <= viewport.getBoundingClientRect().bottom + 1).toBe(true)
+  expect(viewport.getBoundingClientRect().bottom).toBeLessThanOrEqual(screen.container.querySelector<HTMLElement>('.message-history')!.getBoundingClientRect().bottom + 1)
+  await page.screenshot({ path: '__screenshots__/kiosk-conversation-context.png' })
+  await screen.getByRole('button', { name: '上一則回覆（展開／收合）' }).click()
+  expect(previous.classList.contains('is-expanded')).toBe(true)
+  expect(messages).toHaveLength(4)
 })

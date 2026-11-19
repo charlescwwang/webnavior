@@ -57,12 +57,6 @@ function formatDate(value: string) {
   return dateTime.format(new Date(value))
 }
 
-function formatStageDuration(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0
-    ? t('stage.kiosk.monitor.stage-duration', { seconds: (value / 1000).toFixed(2) })
-    : t('stage.kiosk.monitor.stage-unavailable')
-}
-
 function formatContent(entry: KioskInteractionEntry) {
   if (entry.kind !== 'service_event')
     return entry.content
@@ -72,17 +66,7 @@ function formatContent(entry: KioskInteractionEntry) {
     try {
       const timing = JSON.parse(entry.content)
       if (typeof timing.elapsedMs === 'number' && Number.isFinite(timing.elapsedMs) && timing.elapsedMs >= 0) {
-        const summary = t(`stage.kiosk.monitor.${timing.submitted ? 'recognized' : 'not-admitted'}`, { mode: timing.mode === 'falcon' ? 'Falcon' : 'ASR', seconds: (timing.elapsedMs / 1000).toFixed(2) })
-        if (timing.mode !== 'falcon')
-          return summary
-        // Upstream inference is not the WAV-ready or WAV-delivery boundary.
-        // Old records and missing provider stages stay explicitly unavailable.
-        return t('stage.kiosk.monitor.falcon-stages', {
-          summary,
-          audio: formatStageDuration(timing.audioMs),
-          inference: formatStageDuration(timing.falconTiming?.inferenceMs),
-          asr: formatStageDuration(timing.falconTiming?.asrMs),
-        })
+        return t(`stage.kiosk.monitor.${timing.submitted ? 'recognized' : 'not-admitted'}`, { mode: 'ASR', seconds: (timing.elapsedMs / 1000).toFixed(2) })
       }
     }
     catch { /* Keep the original event visible if it is not a timing envelope. */ }
