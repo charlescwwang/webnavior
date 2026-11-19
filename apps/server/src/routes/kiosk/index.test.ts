@@ -470,7 +470,7 @@ describe('kiosk routes', () => {
     expect(complete.mock.calls[0]![0].body).toMatchObject({ messages: expect.arrayContaining([expect.objectContaining({ role: 'system', content: expect.stringContaining('沒有提供菜單翻頁工具') })]) })
     expect(complete.mock.calls[0]![0].body).toMatchObject({ messages: expect.arrayContaining([expect.objectContaining({ role: 'system', content: expect.stringContaining('完整菜單查無指定餐點時告知沒找到') })]) })
     // Report: this chat, Nov11; 雞腿 → 有什麼便當 reused a stale filtered screen.
-    expect(complete.mock.calls[0]![0].body).toMatchObject({ messages: expect.arrayContaining([expect.objectContaining({ role: 'system', content: expect.stringContaining('新關鍵字取代舊搜尋') })]) })
+    expect(complete.mock.calls[0]![0].body).toMatchObject({ messages: expect.arrayContaining([expect.objectContaining({ role: 'system', content: expect.stringContaining('關鍵字結果只是候選，依語意選出真正符合的餐點') })]) })
     expect(complete.mock.calls[0]![0].body).toMatchObject({ messages: expect.arrayContaining([expect.objectContaining({ role: 'system', content: expect.stringContaining('不要這些') })]) })
     // Report: this chat, Nov11; checkout in a new conversation skipped its unfinished cart.
     expect(complete.mock.calls[0]![0].body).toMatchObject({ messages: expect.arrayContaining([expect.objectContaining({ role: 'system', content: expect.stringContaining('購物車核對的「好」只進發票流程，不是送單同意') })]) })
@@ -1660,15 +1660,38 @@ describe('kiosk routes', () => {
     expect(payload.profile).not.toHaveProperty('audioModels')
   })
 
+  it('binds ASR vocabulary to the assigned site and rejects malformed or foreign menu context', async () => {
+    const kioskService = createKioskService(db)
+    const registration = await kioskService.registerDevelopmentDevice({ registrationCode: '483920' })
+    const profile = await kioskService.getDeviceProfile(registration.device.id)
+    await db.update(schema.kioskProfileReleases).set({ snapshot: { ...profile!.snapshot, interactiveService: { ...profile!.snapshot.interactiveService, catalogLabels: [{ name: '周氏水餃(最低8顆)', aliases: ['水餃'], category: '' }] } } }).where(eq(schema.kioskProfileReleases.id, profile!.id))
+    const transcribe = vi.fn(async () => '十顆水餃兩份，不要魚丸湯')
+    const app = new Hono().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'unexpected' }, 500)).route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: false, secureCookies: false, kioskService, llmGateway, runtimeModelPolicy, audioGateway: { transcribe, speak: vi.fn() } }))
+    const send = (serviceId: string, menuNames: string) => {
+      const body = new FormData()
+      body.set('file', new File(['audio'], 'order.wav'))
+      body.set('serviceId', serviceId)
+      body.set('menuNames', menuNames)
+      return app.request('/api/kiosk/audio/transcriptions', { method: 'POST', headers: { Cookie: `${kioskDeviceCookieName}=${registration.credential}` }, body })
+    }
+    const response = await send(profile!.snapshot.interactiveService.id, '["魚丸湯"]')
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ text: '十顆水餃兩份，不要魚丸湯' })
+    expect(transcribe).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'restaurant-asr', vocabulary: ['魚丸湯', '周氏水餃', '水餃'] }))
+    expect((await send('unassigned-site', '["魚丸湯"]')).status).toBe(400)
+    expect((await send(profile!.snapshot.interactiveService.id, '{invalid')).status).toBe(400)
+    expect((await send(profile!.snapshot.interactiveService.id, JSON.stringify(['字'.repeat(101)]))).status).toBe(400)
+    expect(transcribe).toHaveBeenCalledOnce()
+  })
+
   it('resolves ASR and TTS from the authenticated device policy without accepting client provider settings', async () => {
     const kioskService = createKioskService(db)
     const transcribe = vi.fn(async () => '我要一份牛肉麵')
-    const transcribeFalcon = vi.fn(async () => ({ text: '水餃一份', timing: { inferenceMs: 493.9, asrMs: 300.2 } }))
     const speak = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), {
       headers: { 'Content-Type': 'audio/mpeg' },
     }))
     const app = new Hono().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'unexpected' }, 500)).route('/api/kiosk', createKioskRoutes({
-      audioGateway: { speak, transcribe, recognitionPolicy: async () => ({ mode: 'legacy', maxUtteranceSeconds: 15, timeoutMs: 60000 }), transcribeFalcon },
+      audioGateway: { speak, transcribe },
       developmentRegistrationEnabled: true,
       kioskService,
       llmGateway,
@@ -1700,15 +1723,8 @@ describe('kiosk routes', () => {
     expect(audio.status).toBe(200)
     expect(audio.headers.get('Content-Type')).toBe('audio/mpeg')
     expect(speak).toHaveBeenCalledWith({ locale: 'zh-TW', modelName: 'restaurant-tts', text: '您好，想吃什麼？' })
-    const policy = await app.request('/api/kiosk/audio/recognition-policy', { headers: { Cookie: cookie } })
-    await expect(policy.json()).resolves.toEqual({ mode: 'legacy', maxUtteranceSeconds: 15, timeoutMs: 60000 })
-    const packet = new ArrayBuffer(294404)
-    new DataView(packet).setUint32(0, 25, true)
-    expect((await app.request('/api/kiosk/audio/falcon-transcriptions', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: packet })).status).toBe(401)
-    const falcon = await app.request('/api/kiosk/audio/falcon-transcriptions', { method: 'POST', headers: { 'Cookie': cookie, 'Content-Type': 'application/octet-stream' }, body: packet })
-    await expect(falcon.json()).resolves.toEqual({ text: '水餃一份', timing: { inferenceMs: 493.9, asrMs: 300.2 } })
-    expect(transcribeFalcon).toHaveBeenCalledTimes(1)
-    expect(transcribeFalcon).toHaveBeenCalledWith(packet, expect.any(AbortSignal))
+    expect((await app.request('/api/kiosk/audio/recognition-policy', { headers: { Cookie: cookie } })).status).toBe(404)
+    expect((await app.request('/api/kiosk/audio/falcon-transcriptions', { method: 'POST', headers: { Cookie: cookie } })).status).toBe(404)
   })
 
   it('retains every tool exchange of the current request and drops them when a new customer request begins', async () => {

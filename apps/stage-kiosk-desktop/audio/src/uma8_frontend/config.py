@@ -6,17 +6,13 @@ import math
 
 @dataclass
 class Config:
-    provider: str = "openvino"
-    device_id: int = 0
     sample_rate: int = 16000
     channels: list[int] = field(default_factory=lambda: list(range(7)))
     reference_channel: int = 0
     calibration: str = "models/target_rtf.npz"
-    model: str = "models/ulunas_stream.onnx"
+    model: str = str(Path(__file__).resolve().parents[2] / "hush")
     aec_enabled: bool = True
     aec_delay_ms: int = 0
-    denoise_enabled: bool = True
-    denoise_floor_db: float = -12.0
     spatial_threshold: float = 0.60
     min_speech_dbfs: float = -55.0
     diagonal_loading: float = 0.03
@@ -43,6 +39,8 @@ class Config:
     max_segment_s: float = 15.0
     gain_db: float = 0.0
     input_gain_db: float = 0.0
+    hush_attenuation_db: float = 100.0
+    hush_dry_mix_percent: float = 0.0
     agc_enabled: bool = True
     agc_target_dbfs: float = -23.0
     agc_max_gain_db: float = 18.0
@@ -56,12 +54,14 @@ class Config:
     asr_token_env: str = "UMA8_ASR_TOKEN"
 
     def validate(self):
-        if self.provider not in ("openvino", "cpu") or type(self.device_id) is not int or self.device_id < 0:
-            raise ValueError("Invalid inference provider or GPU device index")
+        for name in ('hush_attenuation_db', 'hush_dry_mix_percent'):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 100:
+                raise ValueError(f'{name} must be finite and in 0..100')
         if not math.isfinite(self.input_gain_db) or not 0 <= self.input_gain_db <= 40:
             raise ValueError("input_gain_db must be finite and in 0..40")
-        if any(type(value) is not bool for value in (self.aec_enabled, self.denoise_enabled, self.agc_enabled, self.online_rtf_enabled, self.automatic_rtf)):
-            raise ValueError("AEC, denoise and AGC switches must be JSON booleans")
+        if any(type(value) is not bool for value in (self.aec_enabled, self.agc_enabled, self.online_rtf_enabled, self.automatic_rtf)):
+            raise ValueError("AEC and AGC switches must be JSON booleans")
         if self.sample_rate != 16000:
             raise ValueError("Prototype processing rate is fixed at 16000 Hz; capture is resampled first")
         if not math.isfinite(self.rtf_time_constant_s) or self.rtf_time_constant_s <= 0:
@@ -88,8 +88,6 @@ class Config:
             raise ValueError("aec_delay_ms must be 0..500")
         if not 0 < self.spatial_threshold <= 1:
             raise ValueError("spatial_threshold must be in (0, 1]")
-        if not -60 <= self.denoise_floor_db <= 0:
-            raise ValueError("denoise_floor_db must be -60..0")
         for name in ("diagonal_loading", "noise_time_constant_s", "max_weight_norm", "max_segment_s", "asr_timeout_s"):
             if not math.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive and finite")

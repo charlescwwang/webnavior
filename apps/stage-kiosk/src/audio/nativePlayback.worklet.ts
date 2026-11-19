@@ -5,14 +5,16 @@ import { request, response } from './captureProtocol'
 class NativePlayback extends AudioWorkletProcessor {
   private delivery: MessagePort = this.port
   private running: boolean
+  private readonly waitForRun: boolean
   private offset = 0
   private acknowledged = 0
   private size = 0
   private failed = false
   private readonly render = [new Float32Array(384), new Float32Array(384)]
-  constructor(options?: { processorOptions?: { waitForPort?: boolean } }) {
+  constructor(options?: { processorOptions?: { waitForPort?: boolean, waitForRun?: boolean } }) {
     super()
-    this.running = !options?.processorOptions?.waitForPort
+    this.waitForRun = !!options?.processorOptions?.waitForRun
+    this.running = !options?.processorOptions?.waitForPort && !this.waitForRun
     // NOTICE: Worklet scope has no AbortController required by Eventa's
     // createContext. Use the central Eventa envelope on this realtime port.
     this.port.onmessage = ({ data }) => {
@@ -20,9 +22,13 @@ class NativePlayback extends AudioWorkletProcessor {
         this.delivery = data.body.port
         this.delivery.onmessage = this.port.onmessage
         this.delivery.start()
-        this.running = true
+        this.running = !this.waitForRun
+        if (this.waitForRun)
+          this.delivery.postMessage({ ...response, body: { type: 'ready' } })
         return
       }
+      if (data?.id === request.id && data.body?.type === 'run')
+        this.running = true
       if (data?.id === request.id && data.body?.type === 'ack')
         this.acknowledged = data.body.inputFrames
     }

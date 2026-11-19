@@ -33,12 +33,13 @@ def devices(api=None):
 
 class Capture:
     """One generation owns one input stream; close discards all queued audio."""
-    def __init__(self, input_device, api=None):
+    def __init__(self, input_device, api=None, *, paired=True):
         self.api = api or portaudio()
+        self.paired = paired
         listing = devices(self.api)
         inputs = [i for i, d in enumerate(listing) if d['id'] == input_device] if input_device else [
             i for i, d in enumerate(listing) if d['inputChannels'] >= 8 and
-            ('uma' in d['name'].lower() or 'micarray' in d['name'].lower())]
+            any(label in d['name'].lower() for label in ('uma', 'micarray', 'uma‑8'))]
         if not input_device:
             # Windows exposes the same physical device through several hosts.
             # WASAPI is the original package's validated shared-mode path.
@@ -50,8 +51,6 @@ class Capture:
         source = inputs[0]
         if listing[source]['inputChannels'] < 8:
             raise ValueError('Native input requires eight physical channels; mono/stereo cannot be used')
-        self.api.check_input_settings(device=source, channels=8, dtype='float32', samplerate=48000)
-        self.input_id = listing[source]['id']
         self.lock = threading.Lock()
         self.captured = deque()
         self.captured_frames = 0
@@ -59,18 +58,35 @@ class Capture:
         # A bounded 100 ms capture delay keeps IPC-delivered render ahead of
         # its echo. The render reservoir is 40–50 ms; AEC estimates the remaining
         # physical/browser delay. Separate USB/browser clocks are resampled below.
-        self.microphone_delay = np.zeros((4800, 8), np.float32)
+        self.microphone_delay = np.zeros((4800 if paired else 0, 8), np.float32)
         self.position = 0.
         self.primed = False
         self.failure = None
         self.closed = False
-        self.stream = self.api.InputStream(device=source, channels=8, samplerate=48000,
+        # The standalone device trial found a WASAPI endpoint advertising eight
+        # channels but refusing RAW capture. In automatic selection only, try the
+        # unique miniDSP WDM-KS RAW endpoint; explicit choices fail as selected.
+        raw_inputs = [i for i, d in enumerate(listing) if d['host'] == 'Windows WDM-KS'
+                      and d['inputChannels'] >= 8 and 'micarray raw' in d['name'].lower()]
+        try:
+            self.stream = self.open_stream(source)
+        except self.api.PortAudioError:
+            if input_device or listing[source]['host'] != 'Windows WASAPI' or len(raw_inputs) != 1:
+                raise
+            source = raw_inputs[0]
+            self.stream = self.open_stream(source)
+        self.input_id = listing[source]['id']
+
+    def open_stream(self, source):
+        self.api.check_input_settings(device=source, channels=8, dtype='float32', samplerate=48000)
+        stream = self.api.InputStream(device=source, channels=8, samplerate=48000,
                                       dtype='float32', blocksize=480, callback=self._callback)
         try:
-            self.stream.start()
+            stream.start()
         except BaseException:
-            self.stream.close()
+            stream.close()
             raise
+        return stream
 
     def _callback(self, microphone, frames, clock, status):
         with self.lock:
@@ -80,7 +96,7 @@ class Capture:
                 self.failure = 'PortAudio input discontinuity: ' + str(status)
                 return
             if self.captured_frames+frames > 12000:
-                self.failure = 'Native capture exceeded 250 ms backlog waiting for processing/reference'
+                self.failure = 'Native capture exceeded 250 ms backlog waiting for processing' + ('/reference' if self.paired else '')
                 return
             # PortAudio owns/reuses the callback buffer. Copy it before returning;
             # never wait here for browser IPC or consume reference by arrival time.
@@ -89,6 +105,8 @@ class Capture:
 
     def render(self, audio):
         """Enqueue the actual application stereo mix; excess backlog terminates this owner."""
+        if not self.paired:
+            raise ValueError('Unpaired microphone capture does not accept playback reference')
         with self.lock:
             if len(self.playback)+len(audio) > 12000:
                 self.failure = 'Native speaker queue exceeded 250 ms backlog'
@@ -101,6 +119,13 @@ class Capture:
         with self.lock:
             if self.failure:
                 raise RuntimeError(self.failure)
+            if not self.paired:
+                # Hush owns the microphone clock. Never wait for speaker PCM or
+                # add the AEC microphone delay to this independent input path.
+                blocks = list(self.captured)
+                self.captured.clear()
+                self.captured_frames = 0
+                return np.concatenate(blocks) if blocks else np.zeros((0, 8), np.float32)
             # NOTICE: WASAPI/PortAudio and browser IPC can deliver in bursts.
             # Consuming render in the native callback treated a short delivery
             # pause as lost PCM even with the model bypassed. Pair only complete

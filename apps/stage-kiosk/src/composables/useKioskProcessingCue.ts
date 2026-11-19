@@ -1,4 +1,3 @@
-import type { SpeechRecognitionPolicy } from '@proj-airi/stage-shared/falcon-settings'
 import type { MaybeRefOrGetter } from 'vue'
 
 import type { KioskUtterance } from '../services/kioskUtteranceQueue'
@@ -171,8 +170,8 @@ export function useKioskProcessingCue(processing: MaybeRefOrGetter<boolean>, blo
       acknowledgedLegacyUtterances.clear()
       finishWindow()
     },
-    /** Legacy voice stays silent until service admission; other input keeps immediate feedback. */
-    acknowledge(voice?: { utteranceId: KioskUtterance['id'], recognitionMode: SpeechRecognitionPolicy['mode'], stage: 'capture' | 'service' }) {
+    /** Voice stays silent until service admission; submitted text keeps immediate feedback. */
+    acknowledge(voice?: { utteranceId: KioskUtterance['id'], recognitionMode: 'legacy', stage: 'capture' | 'service' }) {
       if (voice?.recognitionMode === 'legacy') {
         // A capture can produce empty ASR or a later IGNORE decision. Neither
         // establishes customer intent and neither should disturb the visitor.
@@ -181,7 +180,7 @@ export function useKioskProcessingCue(processing: MaybeRefOrGetter<boolean>, blo
         acknowledgedLegacyUtterances.add(voice.utteranceId)
       }
       received += 1
-      // Called after legacy service admission, Falcon capture or accepted text.
+      // Called after voice service admission or accepted text.
       // Every newly accepted utterance gets a receipt, including while earlier
       // work is pending. TTS still owns audible output; update defers its chime.
       processingWindow = true

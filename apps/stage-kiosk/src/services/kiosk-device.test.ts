@@ -89,6 +89,14 @@ describe('createKioskTranscriptionBody', () => {
     expect(body.get('sampleEnd')).toBe('720000')
     expect(body.get('finalChunk')).toBe('true')
   })
+  it('sends capture-time site and observed menu names without client provider settings', () => {
+    const body = createKioskTranscriptionBody(new Blob(['RIFF']), undefined, { serviceId: 'pb-test', menuNames: ['水餃', '魚丸湯'] })
+    expect(body.get('serviceId')).toBe('pb-test')
+    expect(body.get('menuNames')).toBe('["水餃","魚丸湯"]')
+    expect(body.get('prompt')).toBeNull()
+    expect(body.get('model')).toBeNull()
+    expect(createKioskTranscriptionBody(new Blob(['RIFF'])).get('serviceId')).toBeNull()
+  })
   it('labels WAV microphone recordings with their actual container format', () => {
     const recording = new Blob(['RIFF'], { type: 'audio/wav' })
 

@@ -65,7 +65,7 @@ fieldDescriptions:
   serviceMode: 新設定在下一輪訂單生效；目前測試環境的桌號隨機為 a01–a09。
   backgroundSpeechMode: 預設關閉。observe 只保存判斷；enforce 才會攔截背景談話。不影響 VAD 與操作授權。
   performanceProfile: 依硬體能力調整相機畫質、人員偵測速度與錄影上限。一般設備選「一般（建議）」；畫面卡頓時選「省資源」；高規設備才選「高規設備」。
-  mouthDetectionEnabled: 預設關閉。開啟後，一般語音辨識需通過人臉與嘴部動作檢查，目標失效可能取消語句；關閉後不以視覺資格過濾語音。人物迎賓觀測與背景音判斷各自設定；Falcon 的嘴部影像需求不受此開關影響。
+  mouthDetectionEnabled: 預設關閉。開啟後，一般語音辨識需通過人臉與嘴部動作檢查，目標失效可能取消語句；關閉後不以視覺資格過濾語音。人物迎賓觀測與背景音判斷各自設定。
   faceDetectionConfidence: 調低可偵測較遠或較小的人臉，但較容易誤判。預設為 0.60。
   voiceDiagnosticsEnabled: 僅測試時開啟。Kiosk 會顯示語音辨識、Speech Guard 與 turn decision 的即時結果；此資訊不會顯示給一般顧客。
   conversationDiagnosticsEnabled: 僅測試時開啟。對話區會顯示本輪從送出請求到取得最終文字與工具結果的耗時；不包含語音辨識與語音播放。

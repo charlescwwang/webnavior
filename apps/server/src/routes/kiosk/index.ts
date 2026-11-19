@@ -15,7 +15,9 @@ import { createHash, randomInt, randomUUID } from 'node:crypto'
 
 import { browserConversationInstructions, browserConversationSchema, browserToolArguments, browserToolDescription, browserToolParameters } from '@proj-airi/stage-shared/browser-conversation'
 import { conversationContextSchema, handoffSchema, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { orderingSites } from '@proj-airi/stage-shared/ordering-sites'
 import { nativeOrderingToolName, orderingTools } from '@proj-airi/stage-shared/ordering-tools'
+import { pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
@@ -415,34 +417,43 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     }))
   })
 
-  routes.get('/audio/recognition-policy', async (c) => {
-    await resolveAuthenticatedDevice(c, options.kioskService)
-    if (!options.audioGateway)
-      throw createBadRequestError('Kiosk audio gateway is unavailable', 'KIOSK_AUDIO_GATEWAY_UNAVAILABLE')
-    c.header('Cache-Control', 'no-store')
-    return c.json(await options.audioGateway.recognitionPolicy())
-  })
-
-  routes.post('/audio/falcon-transcriptions', async (c) => {
-    await resolveAuthenticatedDevice(c, options.kioskService)
-    if (!options.audioGateway)
-      throw createBadRequestError('Kiosk audio gateway is unavailable', 'KIOSK_AUDIO_GATEWAY_UNAVAILABLE')
-    if (c.req.header('Content-Type')?.split(';')[0].trim() !== 'application/octet-stream')
-      throw createBadRequestError('Falcon requires binary synchronized audio/video.', 'KIOSK_FALCON_INVALID_CLIP')
-    const result = await options.audioGateway.transcribeFalcon(await c.req.arrayBuffer(), c.req.raw.signal)
-    return c.json(result)
-  })
-
   routes.post('/audio/transcriptions', async (c) => {
-    await resolveAuthenticatedDevice(c, options.kioskService)
-    const audio = (await c.req.formData()).get('file')
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const form = await c.req.formData()
+    const audio = form.get('file')
     if (!(audio instanceof File) || audio.size === 0)
       throw createBadRequestError('Kiosk transcription requires a non-empty audio file', 'INVALID_REQUEST')
 
     const modelName = await resolveKioskAudioModel(options.runtimeModelPolicy, 'asr')
     if (!options.audioGateway)
       throw createBadRequestError('Kiosk ASR gateway is unavailable', 'KIOSK_AUDIO_GATEWAY_UNAVAILABLE')
-    const text = await options.audioGateway.transcribe({ audio, modelName })
+    let menuNames: unknown
+    try {
+      menuNames = form.has('menuNames') ? JSON.parse(String(form.get('menuNames'))) : undefined
+    }
+    catch {
+      throw createBadRequestError('Invalid menu transcription context', 'INVALID_REQUEST')
+    }
+    const context = safeParse(object({
+      serviceId: optional(pipe(string(), minLength(1), maxLength(120))),
+      menuNames: optional(pipe(array(pipe(string(), minLength(1), maxLength(100))), maxLength(200))),
+    }), {
+      ...(form.has('serviceId') ? { serviceId: form.get('serviceId') } : {}),
+      ...(menuNames === undefined ? {} : { menuNames }),
+    })
+    if (!context.success || (context.output.menuNames?.length && !context.output.serviceId))
+      throw createBadRequestError('Invalid menu transcription context', 'INVALID_REQUEST')
+    const profile = await options.kioskService.getDeviceProfile(device.id)
+    const site = profile ? orderingSites(profile.snapshot).find(site => site.id === (context.output.serviceId ?? profile.snapshot.interactiveService.id)) : undefined
+    if (context.output.serviceId && !site)
+      throw createBadRequestError('Ordering site is not assigned to this device', 'INVALID_REQUEST')
+    // Published labels own aliases. Current browser-observed names add new menu
+    // terms only as pronunciation hints, never as product/price/write authority.
+    const vocabulary = [
+      ...(context.output.menuNames ?? []).map(pbProductName),
+      ...(site?.catalogLabels ?? []).flatMap(label => [pbProductName(label.name), ...label.aliases]),
+    ]
+    const text = await options.audioGateway.transcribe({ audio, modelName, vocabulary })
     return c.json({ text })
   })
 

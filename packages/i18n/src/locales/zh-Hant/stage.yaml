@@ -31,25 +31,22 @@ kiosk:
     recognizing: 已收音，正在等待語音辨識回覆
     recognized: '語音辨識完成（{mode}）：{seconds} 秒'
     not-admitted: '語音未送入判斷（{mode}）：{seconds} 秒'
-    stage-duration: '{seconds} 秒'
-    stage-unavailable: '未提供'
-    falcon-stages: |-
-      {summary}
-      音訊片段（含靜音補齊）：{audio}
-      Falcon 推論：{inference}
-      ASR：{asr}
-      音檔完成／回傳耗時：未量測
   native-audio:
-    model-bypassed: '測試模式：已略過 UL-UNAS；AEC3、RTF／MVDR 與語音分段仍啟用。'
+    hush-preset: 'Hush 降噪組合'
+    preset-a: '推薦 A：20 dB／30% MVDR 原音'
+    preset-b: '推薦 B：20 dB／10% MVDR 原音'
+    preset-baseline: '原始對照：100 dB／0% MVDR 原音'
+    preset-custom: '自訂參數'
+    preset-description: 'A 優先比較字頭、尾音與小聲語音；B 優先比較吵雜環境的背景漏入。選擇後按「套用音訊設定」才會重啟收音，未完成語句會丟棄；請在安靜時切換。兩組皆須現場比較，並非品質保證。'
+    cpu-ready: 'Hush CPU 執行環境已就緒'
+    cpu-pending: '正在確認 Hush 執行環境'
     input: '原生八聲道麥克風'
     automatic: '自動選取唯一的 UMA-8 RAW 裝置'
     refresh-devices: '重新偵測原生音訊裝置'
-    title: '本機 GPU 音訊處理'
-    description: 'AEC3 → 線上 RTF／MVDR → GPU 降噪 → 語音分段。由 Kiosk 自動管理，下方顯示實際使用的執行引擎。'
-    update-exe: '請更新至 Kiosk 0.6.0 或更新版本，以使用自動追蹤與獨立喇叭設定。'
-    failed: 'GPU 音訊處理無法啟動。'
-    gpu-ready: 'GPU 模型節點執行已確認'
-    gpu-pending: '正在確認 GPU 狀態'
+    title: '原生 Hush CPU 收音'
+    description: '原生麥克風 → 增益 → 線上 RTF／MVDR → Hush CPU → AGC → 語音分段。不使用 AEC 或播放音訊配對；喇叭播放可能被麥克風再次收到。'
+    update-exe: '請更新至配對的 Hush 收音版 Kiosk EXE。'
+    failed: 'Hush 收音無法啟動。'
     gain: '共同輸入增益（dB）'
     apply: '套用音訊設定'
     automatic-tracking: '自動學習並持續追蹤'
@@ -60,9 +57,10 @@ kiosk:
     native-update: '原生 LCMV 收音需要更新至 Kiosk EXE 0.6.3 或更新版本。'
     backend: 'UMA-8 處理管線'
     existing: '既有收音方式（LCMV／Spatial Mask）'
-    native-gpu: '線上 RTF／MVDR＋GPU（測試中）'
+    native-hush: '線上 RTF／MVDR＋Hush CPU'
     applyBackend: '套用收音方式'
-    backendDescription: '既有方式可供日常使用；GPU 管線尚在測試。切換會重啟收音並丟棄未完成語句，請在沒有顧客說話時套用。'
+    backendDescription: '可選既有陣列處理或原生 Hush CPU。切換會重啟收音並丟棄未完成語句，請在沒有顧客說話時套用。'
+    backendRetired: '原先儲存的收音方案已移除，請重新選擇並套用收音方式。'
     metrics: '延遲 {lag} ms · 播放參考 {reference} frames · RMS {input} → {output} dBFS · 限幅 {limited}%'
     algorithm: '舊 ASR 陣列演算法'
     lcmv: 'LCMV（現有方式）'
@@ -72,13 +70,12 @@ kiosk:
     maskGainDb: 'Spatial Mask 輸入增益（dB，0–80）'
     apply: '套用演算法與 AEC3 設定'
     applyDescription: '套用會重新啟動收音並丟棄未完成的半句與辨識。請在未說話時調整；增益預設 15 dB，需現場校準。嘴部放行規則維持現行設定。'
-    maskInactive: 'Spatial Mask 設定僅適用舊 ASR 的 UMA-8 路徑；Falcon 維持 AEC3／LCMV，一般麥克風維持瀏覽器處理。'
     title: 'UMA-8 收音處理'
     mode: '麥克風處理方式'
     auto: '自動辨識 UMA-8'
     uma8: 'UMA-8 多聲道'
     standard: '一般麥克風（瀏覽器處理）'
-    description: 'UMA-8 預設使用 AEC3 → LCMV → 增益 → VAD；舊 ASR 可另選 Spatial Mask 並設定 AEC3。仰角以陣列平面為 0°，正上方為 90°；可設定 0–85°。變更會重新啟動收音，請在未說話時調整。Falcon 使用 AEC3 後映射第 6 路，並套用獨立的 Falcon 輸入增益。'
+    description: 'UMA-8 預設使用 AEC3 → LCMV → 增益 → VAD；ASR 可另選 Spatial Mask 並設定 AEC3。仰角以陣列平面為 0°，正上方為 90°；可設定 0–85°。變更會重新啟動收音，請在未說話時調整。'
     frontElevationDeg: '顧客仰角（度）'
     suppress1ElevationDeg: '左側抑制仰角（度）'
     suppress2ElevationDeg: '右側抑制仰角（度）'
@@ -90,8 +87,6 @@ kiosk:
     suppress2Deg: '右側抑制方位角（度）'
     radiusMm: '陣列半徑（mm）'
     loading: 'LCMV 穩定係數'
-    falconGainDb: 'Falcon 輸入增益（dB，0–30）'
-    falconGainDescription: '僅調整 UMA-8 送進 Falcon 前的音訊，與 VAD 增益分開；預設 0 dB。套用峰值限幅，並保留影音時間對齊。變更會重新啟動收音，請在未說話時調整。'
     raw-unavailable: '尚未取得 UMA-8 的 8 路原始聲道。請確認選擇正確的 UMA-8 裝置，並按重新偵測與連接；本次未改用其他麥克風。'
   media-devices:
     raw-hint: '目前要求 8 聲道原始收音。若裝置或 Windows 音效設定無法提供，可先改用一般麥克風收音；這會停用陣列處理。'
@@ -162,15 +157,15 @@ kiosk:
   service-policy:
     off-topic: 這台機台只協助餐點與菜單，無法處理這項需求。想點什麼餐點呢？
     food-safety: 食品安全與過敏疑慮需要現場服務人員協助確認，我無法保證安全。請直接向現場人員說明；機台尚未替您通知或呼叫人員。
-    promotion-policy: 目前價格以畫面標示的售價為準，這台機台尚不支援優惠券，也無法另行折價。
+    promotion-policy: 目前無法確認額外優惠，活動與售價以店家公告、畫面標示為準。這台機台尚不支援優惠券或另行折價。
     unsupported-budget: 這台機台目前不支援依總預算自動配餐，不能替您決定整套餐點。您可以指定想吃的餐點，或查詢單品價格。
     unsupported-delivery: 這台機台目前不支援安排外送，只協助現場點餐。
     unsupported-taxi: 這台機台無法呼叫計程車，請自行使用叫車服務，或向現場人員詢問。
     menu-unavailable: 目前菜單沒有找到這道餐點，機台不能自行創造餐點或決定價格。請從畫面上的餐點選擇。
     unsupported-permission: 這台機台無法修改網站售價、標記付款或略過確認。價格與付款狀態以商家網站實際資料為準。
   checkout-guidance:
-    empty: 購物車目前沒有餐點。選好餐點後，再依點餐網頁的提示結帳。
-    ready: 請先核對畫面上的餐點、份數與金額，再依點餐網頁的提示完成結帳。
+    empty: 購物車目前沒有餐點，想點什麼？請告訴我餐點和份數。
+    ready: 目前這個入口尚未提供代操作結帳，這一步需要依畫面提示完成；尚未送出訂單。
   product-presentation:
     title: 正在介紹的餐點
     completed: 已核對完成
@@ -463,6 +458,9 @@ websocket-status:
   open-settings: 開啟連線設定
 
 kiosk-agent:
+  previous-answer: 上一則回覆（展開／收合）
+  previous-conversation: 查看先前對話
+  current-conversation: 只看本次對話
   retry-stale: 畫面或訂單已變更，請重新說明您目前的需求。
   retry-busy: 目前仍有語句正在處理，請稍後再試。
   context-unavailable: 菜單資料暫時無法取得，這句尚未完成，請確認連線後再說一次。
@@ -475,11 +473,6 @@ kiosk-agent:
   audio-failed: 這次語音未能完整辨識，尚未執行，請再說一次。
   voice-capture-mouth: 說話期間未能持續確認同一個嘴部目標，這句尚未執行。請面向鏡頭，再說一次。
   voice-capture-incomplete: 這句超過收音上限或收音不完整，尚未執行。請分次說明。
-  falcon-capture-duration: 這句超過收音上限或收音不完整，尚未執行。請稍後分次說明。
-  falcon-capture-mouth: 說話期間未能持續取得清楚的嘴部影像，這句尚未執行。請面向鏡頭，再說一次。
-  falcon-capture-timing: 嘴部影像與聲音的時間未對齊，這句尚未執行。請稍候再說一次。
-  falcon-capture-busy: 上一句仍在辨識，這句尚未執行。請等辨識完成再說。
-  falcon-capture-failed: 這句影音未完整對齊、超過收音上限，或上一句還在辨識。這句尚未執行，請面向鏡頭，稍候再分次說明。
   service-connecting: 正在連接助手操作功能，您也可直接操作服務畫面。
   service-manual: 助手目前無法代操作此服務，請直接操作服務畫面；結果以該畫面為準。
   service-browser-unsupported: 此瀏覽器不支援助手代操作，請直接操作服務畫面。
@@ -508,7 +501,7 @@ kiosk-agent:
   queued-cancelled: 這句尚未執行，已取消。
   unstarted-replaced: 已停止先前尚未執行的處理，改為處理這次需求。
   unstarted-combined: 已收到補充，將合併處理尚未執行的需求。
-  meaning-unresolved: 目前仍無法理解這項需求，尚未執行操作，您可以直接使用畫面選餐。
+  meaning-unresolved: 目前還沒聽懂這項需求，尚未執行。請再說一次想點的餐點或要調整的內容。
   decision-uncertain: 剛才沒有理解清楚，請再說一次您的需求。
 
 system-one:

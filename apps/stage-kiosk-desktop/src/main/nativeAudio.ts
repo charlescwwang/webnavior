@@ -33,11 +33,12 @@ export class NativeAudio {
     entry: string
     model: string
     stateDirectory: string
-    /** CPU is explicit development/test mode; packaged builds select OpenVINO GPU. */
-    provider: 'openvino' | 'cpu'
     /** Raw input transport never initializes a model or the native RTF pipeline. */
     captureOnly?: boolean
   }) {}
+
+  /** Port owners can retire this process while the document remains open. */
+  get isClosed() { return this.closed }
 
   private launch() {
     if (this.closed)
@@ -46,14 +47,14 @@ export class NativeAudio {
       throw this.failure
     if (this.child)
       return this.child
-    const child = spawn(this.options.executable, ['-B', '-u', this.options.entry, '--state-dir', this.options.stateDirectory, '--model', this.options.model, '--provider', this.options.provider, ...(this.options.captureOnly ? ['--capture-only'] : [])], { windowsHide: true, stdio: 'pipe' })
+    const child = spawn(this.options.executable, ['-B', '-u', this.options.entry, '--state-dir', this.options.stateDirectory, '--model', this.options.model, ...(this.options.captureOnly ? ['--capture-only'] : [])], { windowsHide: true, stdio: 'pipe' })
     this.child = child
     const decoder = new AudioFrameDecoder()
     child.stderr.on('data', (data: Buffer) => this.stderr = (this.stderr + data.toString('utf8')).slice(-4096))
     child.once('error', error => this.fail(errorMessageFrom(error) ?? 'Native audio could not start.'))
     child.once('exit', () => {
       if (!this.closed)
-        this.fail(`Native GPU audio stopped. ${this.stderr.trim().slice(-1200) || 'Check administrator audio diagnostics.'}`)
+        this.fail(`Native Hush audio stopped. ${this.stderr.trim().slice(-1200) || 'Check administrator audio diagnostics.'}`)
     })
     child.stdin.on('error', error => this.fail(errorMessageFrom(error) ?? 'Native audio input closed.'))
     child.stdout.on('data', (data: Buffer) => {
@@ -110,12 +111,33 @@ export class NativeAudio {
     const samples = (request.kind === 'block' || request.kind === 'poll') ? request.samples : new Float32Array()
     const metadata = (request.kind === 'block' || request.kind === 'poll') ? { ...request, samples: undefined, id } : { ...request, id }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.fail('Native GPU audio request timed out.'), (request.kind === 'block' || request.kind === 'poll') ? 5000 : 180000)
+      const timer = setTimeout(() => this.fail('Native Hush audio request timed out.'), (request.kind === 'block' || request.kind === 'poll' || request.kind === 'read') ? 5000 : 180000)
       this.pending.set(id, { resolve, reject, timer })
       child.stdin.write(encodeFrame(metadata, samples), (error) => {
         if (error)
           this.fail(errorMessageFrom(error) ?? 'Native audio publish failed.')
       })
+    })
+  }
+
+  /** Await native process exit before another owner opens its physical device. */
+  async release() {
+    const child = this.child
+    if (!child || child.exitCode !== null || child.signalCode !== null) {
+      this.dispose()
+      return
+    }
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        child.removeListener('exit', exited)
+        reject(new Error('Native audio did not release its device before replacement.'))
+      }, 5000)
+      function exited() {
+        clearTimeout(timer)
+        resolve()
+      }
+      child.once('exit', exited)
+      this.dispose()
     })
   }
 

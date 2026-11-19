@@ -3,14 +3,14 @@ from collections import deque
 import numpy as np
 from .aec import Aec3Bank, AEC3_CAPTURE_DELAY
 from .beamforming import NearFieldMvdr
-from .denoise import UlUnas
+from .hush import Model, FRAME
 from .spectral import Analysis, Synthesis, HOP, NFFT
 from .segment import TargetSegmenter, SpeechActivity
 from .gain import TargetGain
 
 
 class Frontend:
-    """Synchronous stream API: push exactly 160 samples, get zero or more 256-sample hops.
+    """Synchronous stream API: push exactly 160 samples, get source-aligned PCM and length-tagged telemetry.
 
     Call only from an audio worker, never a hardware callback. Each stream owns
     independent AEC/model/MVDR/VAD state. Output length is variable while buffering.
@@ -18,14 +18,15 @@ class Frontend:
     def __init__(self, config, stage_callback=None, *, denoiser=None):
         config.validate()
         self.cfg = config
-        self.aec = Aec3Bank(7, delay_ms=config.aec_delay_ms, enabled=config.aec_enabled)
+        self.aec = Aec3Bank(7, delay_ms=config.aec_delay_ms) if config.aec_enabled else None
         self.beam = NearFieldMvdr(config)
-        self.denoise = denoiser if denoiser is not None else UlUnas(
-            config.model, floor_db=config.denoise_floor_db, enabled=config.denoise_enabled,
-            provider=config.provider, device_id=config.device_id)
+        self.model = Model(config.model) if denoiser is None else None
+        self.denoise = denoiser if denoiser is not None else self.model.session(config.hush_attenuation_db, config.hush_dry_mix_percent)
+        self.hush_pending = np.zeros(0, np.float32)
+        self.hush_evidence = deque()
+        self.hush_discard = self.denoise.delay_samples
         self.analysis = Analysis(7)
         self.synthesis = Synthesis()
-        self.beam_synthesis = Synthesis() if stage_callback else None
         self.stage_callback = stage_callback
         self.cleaned_samples = 0
         self.segmenter = TargetSegmenter(config)
@@ -52,47 +53,67 @@ class Frontend:
         self._emit("level", amplified)
         return amplified
 
+    def close(self):
+        """Retire generation-owned native state before releasing shared weights."""
+        self.denoise.close()
+        if self.model is not None:
+            self.model.close()
+
     def _spectra(self, frames, max_samples=None):
         audio, events, telemetry = [], [], []
         for spectrum in frames:
             y, info = self.beam.process(spectrum, speech_present=self.speech_present,
                                         playback_active=self.playback_hold_samples > 0)
-            beam_out = self.beam_synthesis.push(y) if self.beam_synthesis else None
-            y = self.denoise.process(y)
             self.evidence.append(info)
             out = self.synthesis.push(y)
-            # Each overlap-add hop uses two analysis windows. Retain target evidence
-            # from either window, allowing soft consonants at the turn boundary.
             if not len(out):
                 continue
+            # OLA combines two adjacent windows. Their evidence describes this
+            # source hop, before Hush adds its own independent buffering/delay.
             infos = list(self.evidence)
             aligned = dict(infos[0])
             aligned["target_present"] = any(i["target_present"] for i in infos)
             aligned["spatial_score"] = max(i["spatial_score"] for i in infos)
             aligned["target_candidate"] = any(i["target_candidate"] for i in infos)
             self.evidence.popleft()
-            denoised = out.copy()
-            out, gain_info = self.gain.process(out, aligned["target_present"])
-            aligned.update(gain_info)
-            if max_samples is not None:
-                out = out[:max(0, max_samples - sum(len(block) for block in audio))]
-                if not len(out):
-                    break
-            self._emit("mvdr", beam_out[:len(out)] if beam_out is not None else np.zeros(0))
-            self._emit("denoise", denoised[:len(out)])
-            self._emit("agc", out)
-            audio.append(out)
-            self.output_samples += len(out)
-            events.extend(self.segmenter.push(out, aligned["target_present"],
-                                              candidate_present=aligned["target_candidate"]))
-            telemetry.append(aligned)
+            self._emit("mvdr", out)
+            self.hush_pending = np.concatenate((self.hush_pending, out))
+            self.hush_evidence.append((len(out), aligned))
+            while len(self.hush_pending) >= FRAME:
+                frame, self.hush_pending = self.hush_pending[:FRAME], self.hush_pending[FRAME:]
+                enhanced = self.denoise.process(frame)
+                discard = min(self.hush_discard, len(enhanced))
+                self.hush_discard -= discard
+                enhanced = enhanced[discard:]
+                # Evidence is consumed with output SOURCE samples, not when an
+                # input frame enters Hush. Splitting at evidence boundaries keeps
+                # AGC/VAD exact across 256-sample OLA and 160-sample model frames.
+                while len(enhanced):
+                    count, evidence = self.hush_evidence.popleft()
+                    take = min(count, len(enhanced))
+                    if max_samples is not None:
+                        take = min(take, max(0, max_samples-sum(len(x) for x in audio)))
+                    if not take:
+                        self.hush_evidence.appendleft((count, evidence))
+                        return (np.concatenate(audio) if audio else np.zeros(0, np.float32)), events, telemetry
+                    chunk, enhanced = enhanced[:take], enhanced[take:]
+                    if count > take:
+                        self.hush_evidence.appendleft((count-take, evidence))
+                    self._emit("denoise", chunk)
+                    chunk, gain_info = self.gain.process(chunk, evidence["target_present"])
+                    self._emit("agc", chunk)
+                    self.output_samples += len(chunk)
+                    audio.append(chunk)
+                    telemetry.append(dict(evidence, **gain_info, length=len(chunk)))
+                    events.extend(self.segmenter.push(chunk, evidence["target_present"],
+                                                       candidate_present=evidence["target_candidate"]))
         return (np.concatenate(audio) if audio else np.zeros(0, np.float32)), events, telemetry
 
     def push(self, capture, render=None):
         if self.finished:
             raise RuntimeError("Stream has already been flushed")
         tic = time.perf_counter()
-        cleaned = self.aec.process(capture, render)
+        cleaned = self.aec.process(capture, render) if self.aec is not None else capture.copy()
         self.playback_hold_samples = max(0, self.playback_hold_samples-len(capture))
         if render is not None and np.max(np.abs(render), initial=0) > 1e-6:
             # Freeze through the immediate acoustic tail as well as playback.
@@ -129,4 +150,8 @@ class Frontend:
             item.audio = item.audio[:keep]
             if len(item.audio):
                 valid.append(item)
+        # Finalize is terminal: padded samples/evidence have no future owner.
+        self.hush_pending = np.zeros(0, np.float32)
+        self.hush_evidence.clear()
+        self.evidence.clear()
         return out, valid, telemetry

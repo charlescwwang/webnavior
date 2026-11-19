@@ -1,8 +1,10 @@
+import { Buffer } from 'node:buffer'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import { createKioskAudioGateway } from '.'
-import { createConfigKVService } from '../../adapters/config-kv'
 import { createEnvelopeCrypto } from '../../../utils/envelope-crypto'
+import { createConfigKVService } from '../../adapters/config-kv'
 
 describe('createKioskAudioGateway', () => {
   it('forwards the configured TTS voice and preserves binary audio responses', async () => {
@@ -51,6 +53,29 @@ describe('createKioskAudioGateway', () => {
     )
     expect(response.headers.get('Content-Type')).toBe('audio/mpeg')
     await expect(response.arrayBuffer()).resolves.toEqual(new Uint8Array([0x49, 0x44, 0x33]).buffer)
+  })
+
+  it('sends bounded menu vocabulary as an ASR prompt and preserves the original transcript', async () => {
+    const store = new Map<string, string>()
+    const configKV = createConfigKVService({ get: vi.fn(async key => store.get(key) ?? null), set: vi.fn(async (key, value) => {
+      store.set(key, value)
+    }) } as any)
+    await configKV.set('WEBNAVIOR_AUDIO_CONFIG', { asr: { modelName: 'restaurant-asr', upstreamModel: 'kitchen-asr-v0.4', baseURL: 'https://asr.example.com/' } })
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = init?.body as FormData
+      expect(body.get('model')).toBe('kitchen-asr-v0.4')
+      expect(body.get('file')).toBeInstanceOf(File)
+      const prompt = String(body.get('prompt'))
+      expect(prompt).toContain('周氏水餃')
+      expect(prompt).toContain('排骨飯')
+      expect(prompt.match(/周氏水餃/g)).toHaveLength(1)
+      expect(prompt.length).toBeLessThanOrEqual(2000)
+      expect(prompt).not.toContain('不存在的超長詞'.repeat(30))
+      return Response.json({ text: '不要排骨飯，十顆水餃兩份' })
+    })
+    const gateway = createKioskAudioGateway({ configKV, envelopeCrypto: createEnvelopeCrypto({ masterKey: Buffer.alloc(32) }), fetchImpl })
+    expect(await gateway.transcribe({ audio: new File(['audio'], 'order.wav'), modelName: 'restaurant-asr', vocabulary: ['周氏水餃', '排骨飯', '周氏水餃', '不存在的超長詞'.repeat(30), ...Array.from({ length: 200 }, (_, index) => `第${index}種餐點`)] })).toBe('不要排骨飯，十顆水餃兩份')
+    expect(fetchImpl).toHaveBeenCalledOnce()
   })
 
   it('records a bounded ASR upstream failure without exposing its credential', async () => {

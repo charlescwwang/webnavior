@@ -3,7 +3,6 @@ import type { InferOutput } from 'valibot'
 
 import { errorMessageFrom } from '@moeru/std'
 import { chatResponseModeSchema } from '@proj-airi/stage-shared/ai-provider'
-import { defaultFalconSettings, falconSettingsSchema } from '@proj-airi/stage-shared/falcon-settings'
 import { any, array, boolean, check, integer, maxValue, minValue, nonEmpty, number, object, optional, parse, picklist, pipe, record, regex, string } from 'valibot'
 
 import { createServiceUnavailableError } from '../../utils/error'
@@ -223,8 +222,6 @@ const ConfigEntrySchemas = {
   // Webnavior's direct OpenAI-compatible speech integrations deliberately do
   // not share AIRI's unspeech adapter configuration.
   WEBNAVIOR_AUDIO_CONFIG: webnaviorAudioConfigSchema,
-  // Separate draft: applying the existing ASR/TTS bindings must not erase it.
-  FALCON_CONNECTION_CONFIG: optional(object({ ...falconSettingsSchema.entries, keyCiphertext: optional(string()) }), { ...defaultFalconSettings }),
   WEBNAVIOR_AI_RUNTIME_CONFIG: webnaviorAiRuntimeConfigSchema,
 } as const
 

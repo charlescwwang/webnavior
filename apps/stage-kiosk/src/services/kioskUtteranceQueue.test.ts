@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createKioskUtteranceQueue } from './kioskUtteranceQueue'
 
-it('allows a server-bounded Falcon transcription to finish after the legacy deadline and submits its text once', async () => {
+it('allows a provider-bounded ASR transcription to finish after the legacy deadline and submits its text once', async () => {
   vi.useFakeTimers()
   try {
     const handled: string[] = []
@@ -14,8 +14,8 @@ it('allows a server-bounded Falcon transcription to finish after the legacy dead
       throw new Error('Expected capture to be reserved.')
     await vi.advanceTimersByTimeAsync(20000)
     expect(reservation.signal.aborted).toBe(false)
-    reservation.complete({ text: '水餃一份', recognitionMode: 'falcon' })
-    reservation.complete({ text: '重複回應', recognitionMode: 'falcon' })
+    reservation.complete({ text: '水餃一份', recognitionMode: 'legacy' })
+    reservation.complete({ text: '重複回應', recognitionMode: 'legacy' })
     await queue.idle()
     expect(handled).toEqual(['水餃一份'])
   }

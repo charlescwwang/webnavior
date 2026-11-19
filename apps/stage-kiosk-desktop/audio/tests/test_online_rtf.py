@@ -20,7 +20,7 @@ def scene(tmp_path):
     np.savez(path, rtf=anchor, metadata=json.dumps(dict(
         sample_rate=RATE, nfft=512, hop=HOP, channels=list(range(7)),
         reference_channel=0, aec_enabled=False)))
-    cfg = Config(calibration=str(path), aec_enabled=False, denoise_enabled=False, provider="cpu")
+    cfg = Config(calibration=str(path), aec_enabled=False)
     return cfg, anchor, np.random.default_rng(18)
 
 
@@ -181,14 +181,15 @@ def test_frontend_learns_through_real_prebeam_vad_and_preserves_sample_clock(sce
 
 
 @pytest.mark.skipif(not os.environ.get("UMA8_STRESS_SECONDS"), reason="explicit synthetic stress opt-in")
-def test_long_stream_with_real_aec3_and_model_keeps_bounded_state(scene):
+@pytest.mark.parametrize('hush', [(100, 0), (20, 30), (20, 10)])
+def test_long_stream_with_real_aec3_and_model_keeps_bounded_state(scene, hush):
     cfg, anchor, _ = scene
     seconds = int(os.environ["UMA8_STRESS_SECONDS"])
     assert seconds >= 110
     np.savez(cfg.calibration, rtf=anchor, metadata=json.dumps(dict(
         sample_rate=RATE, nfft=512, hop=HOP, channels=list(range(7)),
         reference_channel=0, aec_enabled=True)))
-    frontend = Frontend(replace(cfg, aec_enabled=True, denoise_enabled=True))
+    frontend = Frontend(replace(cfg, aec_enabled=True, hush_attenuation_db=hush[0], hush_dry_mix_percent=hush[1]))
     t = np.arange(RATE*2)/RATE
     phase = 2*np.pi*(150*t+3*np.sin(2*np.pi*1.1*t))
     voice = (.03*(1+.7*np.sin(2*np.pi*3.7*t))*

@@ -1,23 +1,31 @@
-import type { SpeechRecognitionPolicy } from '@proj-airi/stage-shared/falcon-settings'
+import type { HushSettings } from '@proj-airi/stage-shared/kiosk-native-audio'
 
 import type { ArrayProcessing } from '../audio/captureProtocol'
 
+import { hushSettingsSchema } from '@proj-airi/stage-shared/kiosk-native-audio'
 import { useLocalStorage } from '@vueuse/core'
+import { parse } from 'valibot'
 import { computed } from 'vue'
 
 import { defaultLcmv, validateLcmv } from '../audio/tuning'
 
-/** Local hardware preferences, independent of the Server's ASR/Falcon recognition mode. */
+/** Documented comparison presets; applying one preserves microphone mapping and gain. */
+export const hushPresets = [
+  { id: 'preset-a', attenuationDb: 20, dryMixPercent: 30 },
+  { id: 'preset-b', attenuationDb: 20, dryMixPercent: 10 },
+  { id: 'preset-baseline', attenuationDb: 100, dryMixPercent: 0 },
+] satisfies (HushSettings & { id: string })[]
+
+/** Local hardware preferences, for native and browser capture. */
 export function useKioskMicrophone() {
-  // GPU startup alone does not qualify continuous capture. Opt in explicitly;
+  // Model startup alone does not qualify continuous capture. Opt in explicitly;
   // keep each pipeline's tuning so returning to existing capture is reversible.
-  const processingBackend = useLocalStorage<'existing' | 'native-gpu'>('kiosk/audio/array-backend', 'existing')
+  const processingBackend = useLocalStorage<'existing' | 'native-hush'>('kiosk/audio/array-backend', 'existing')
   const arrayInputDevice = useLocalStorage('kiosk/audio/native-lcmv-input', '')
-  const nativeSelected = computed(() => processingBackend.value === 'native-gpu')
+  const nativeSelected = computed(() => processingBackend.value === 'native-hush')
   const algorithm = useLocalStorage<'lcmv' | 'spatial-mask'>('kiosk/audio/legacy-array-algorithm', 'lcmv')
   const spatialMask = useLocalStorage('kiosk/audio/spatial-mask', { aec3Enabled: true, gainDb: 15 })
-  const falconGainDb = useLocalStorage('kiosk/audio/falcon-input-gain-db', 0)
-  const nativeSettings = useLocalStorage('kiosk/audio/native-rtf', { channelMap: '0,1,2,3,4,5,6', gainDb: 30, inputDevice: '' }, { mergeDefaults: true })
+  const nativeSettings = useLocalStorage('kiosk/audio/native-hush', { channelMap: '0,1,2,3,4,5,6', gainDb: 30, inputDevice: '', hush: { attenuationDb: 100, dryMixPercent: 0 } }, { mergeDefaults: true })
   const settings = useLocalStorage('kiosk/audio/microphone-processing', {
     inputMode: 'auto' as 'auto' | 'uma8' | 'standard',
     channelMap: '0,1,2,3,4,5,6',
@@ -25,13 +33,17 @@ export function useKioskMicrophone() {
     gainDb: 15,
     ...defaultLcmv,
   })
+  // Array selections require explicit apply; standard microphones are an
+  // independent hardware choice and never load an array backend.
+  const backendAvailable = computed(() => settings.value.inputMode === 'standard' || processingBackend.value === 'existing' || processingBackend.value === 'native-hush')
   return {
     /** Desktop acquisition policy; standard and Mask keep their existing sources. */
-    usesNativeLcmv(mode: SpeechRecognitionPolicy['mode'] | undefined, array: boolean) {
-      return array && !nativeSelected.value && (mode === 'falcon' || algorithm.value === 'lcmv')
+    usesNativeLcmv(array: boolean) {
+      return array && processingBackend.value === 'existing' && algorithm.value === 'lcmv'
     },
     arrayInputDevice,
     processingBackend,
+    backendAvailable,
     nativeSelected,
     settings,
     nativeSettings,
@@ -42,9 +54,8 @@ export function useKioskMicrophone() {
         || !Number.isFinite(value.gainDb) || value.gainDb < 0 || value.gainDb > 40) {
         throw new Error('Native UMA-8 requires seven physical channels and gain between 0 and 40 dB.')
       }
-      return { channels, gainDb: value.gainDb, inputDevice: value.inputDevice ?? '' }
+      return { channels, gainDb: value.gainDb, inputDevice: value.inputDevice ?? '', hush: parse(hushSettingsSchema, value.hush) }
     },
-    falconGainDb,
     algorithm,
     spatialMask,
     /** Save a complete new configuration; the Scene replaces its capture generation. */
@@ -56,10 +67,9 @@ export function useKioskMicrophone() {
     isArray(label: string) {
       return settings.value.inputMode === 'uma8' || (settings.value.inputMode === 'auto' && /uma[\s_-]*8|miniDSP.*micArray/i.test(label))
     },
-    configuration(mode: SpeechRecognitionPolicy['mode'] = 'legacy') {
+    configuration() {
       const value = settings.value
-      // Falcon retains LCMV even when a legacy Mask preference is saved.
-      const selected = mode === 'falcon' ? 'lcmv' : algorithm.value
+      const selected = algorithm.value
       let processing: ArrayProcessing
       let gainDb: number
       if (selected === 'spatial-mask') {
@@ -79,9 +89,7 @@ export function useKioskMicrophone() {
         throw new Error('UMA-8 requires seven distinct mapped channels (0–7).')
       if (!Number.isFinite(value.radiusMm) || value.radiusMm < 10 || value.radiusMm > 100 || !Number.isFinite(value.gainDb) || value.gainDb < 0 || value.gainDb > 30)
         throw new Error('Invalid UMA-8 radius or input gain.')
-      if (!Number.isFinite(falconGainDb.value) || falconGainDb.value < 0 || falconGainDb.value > 30)
-        throw new Error('Falcon input gain must be between 0 and 30 dB.')
-      return { processing, channelMap, radiusMm: value.radiusMm, gainDb, falconGainDb: falconGainDb.value }
+      return { processing, channelMap, radiusMm: value.radiusMm, gainDb }
     },
   }
 }

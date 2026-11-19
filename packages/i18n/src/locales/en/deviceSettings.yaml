@@ -65,7 +65,7 @@ fieldDescriptions:
   serviceMode: Applies to the next order round. Test tables are randomly assigned a01–a09.
   backgroundSpeechMode: Off by default. Observe records decisions; enforce may reject background speech. VAD and operation authorization remain independent.
   performanceProfile: Adjusts camera quality, people-detection speed, and recording limits for this device. Choose General for most devices, Resource-saving if it stutters, and High-spec only for powerful hardware.
-  mouthDetectionEnabled: Off by default. When enabled, ordinary ASR requires face and mouth-motion evidence, and losing the target may cancel speech. When disabled, visual evidence does not filter ordinary speech. Proactive observation and background-speech judgement remain separate. Falcon still requires mouth images.
+  mouthDetectionEnabled: Off by default. When enabled, ordinary ASR requires face and mouth-motion evidence, and losing the target may cancel speech. When disabled, visual evidence does not filter ordinary speech. Proactive observation and background-speech judgement remain separate.
   faceDetectionConfidence: 'Lower values detect smaller or more distant faces, but can create more false positives. Default: 0.60.'
   voiceDiagnosticsEnabled: Enable only while testing. The kiosk shows ASR, Speech Guard, and turn-decision results; ordinary visitors never see this information.
   conversationDiagnosticsEnabled: Enable only while testing. The conversation shows the time from sending a request to receiving final text and browser-tool results; it excludes ASR and speech playback.

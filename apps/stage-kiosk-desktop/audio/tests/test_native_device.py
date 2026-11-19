@@ -1,10 +1,12 @@
 """Exercise the real PortAudio boundary without requiring a physical UMA-8."""
 import json
+from pathlib import Path
 import numpy as np
 import pytest
 from uma8_frontend.native_device import Capture, devices
 
 class PortAudio:
+    PortAudioError = RuntimeError
     def __init__(self):
         self.closed = False
         self.active = True
@@ -69,15 +71,15 @@ def test_real_worker_native_input_starts_without_calibration_or_speaker(tmp_path
     from uma8_frontend.worker import Worker
     api = PortAudio()
     monkeypatch.setattr(native_device, 'portaudio', lambda: api)
-    model = Path(__file__).resolve().parents[1] / 'models/ulunas_stream.onnx'
-    worker = Worker(tmp_path, model, 'cpu')
-    worker.handle(dict(kind='start', generation='listen', channels=list(range(7)), gainDb=0), b'')
+    model = Path(__file__).resolve().parents[1] / 'hush'
+    worker = Worker(tmp_path, model)
+    worker.handle(dict(kind='start', generation='listen', channels=list(range(7)), gainDb=0, hush=dict(attenuationDb=20, dryMixPercent=30)), b'')
     worker.handle(dict(kind='open', generation='listen', inputDevice=''), b'')
     emitted = 0
     for tick in range(40):
         if (tick+1)*384//480 > tick*384//480:
             api.options['callback'](np.zeros((480, 8), np.float32), 480, None, False)
-        reply, pcm = worker.handle(dict(kind='poll', generation='listen', offsetFrames=tick*384), np.zeros(768, np.float32).tobytes())
+        reply, pcm = worker.handle(dict(kind='read', generation='listen'), b'')
         emitted += sum(frame['length'] for frame in reply['frames'])
         assert np.isfinite(pcm).all()
     assert emitted > 2000
@@ -198,13 +200,13 @@ def test_short_reference_delivery_pause_retains_every_microphone_block_until_ref
 
 
 # Report: this chat, 2026-11-18 — batch delivery must work through the actual Worker, not only Capture.
-def test_bypassed_worker_keeps_processing_during_repeated_input_and_reference_bursts(tmp_path, monkeypatch):
+def test_hush_worker_drains_microphone_bursts_without_any_playback_reference(tmp_path, monkeypatch):
     from uma8_frontend import native_device
     from uma8_frontend.worker import Worker
     api = PortAudio()
     monkeypatch.setattr(native_device, 'portaudio', lambda: api)
-    worker = Worker(tmp_path, tmp_path/'missing.onnx', 'openvino', denoise_enabled=False)
-    worker.handle(dict(kind='start', generation='burst', channels=list(range(7)), gainDb=0), b'')
+    worker = Worker(tmp_path, Path(__file__).resolve().parents[1] / 'hush')
+    worker.handle(dict(kind='start', generation='burst', channels=list(range(7)), gainDb=0, hush=dict(attenuationDb=20, dryMixPercent=30)), b'')
     worker.handle(dict(kind='open', generation='burst'), b'')
     callback = api.options['callback']
     signal = np.random.default_rng(7).normal(0, .01, (192000, 8)).astype(np.float32)
@@ -219,8 +221,9 @@ def test_bypassed_worker_keeps_processing_during_repeated_input_and_reference_bu
                 start = tick//25*9600 + (4800 if tick % 25 == 12 else 0)
                 for offset in range(start, start+4800, 480):
                     callback(signal[offset:offset+480], 480, None, False)
-            reply, pcm = worker.handle(dict(kind='poll', generation='burst', offsetFrames=tick*384), reference)
-            assert reply['renderFrames'] == (tick+1)*384
+            reply, pcm = worker.handle(dict(kind='read', generation='burst'), b'')
+            assert reply['capturedFrames'] >= reply['processedFrames']
+            assert reply['referenceFrames'] == 0
             assert np.isfinite(pcm).all()
             for frame in reply['frames']:
                 assert frame['offsetSamples'] == emitted
@@ -248,3 +251,41 @@ def test_callback_copies_driver_memory_and_waiting_capture_keeps_the_250ms_bound
     with pytest.raises(RuntimeError, match='250 ms backlog'):
         capture.read()
     capture.close()
+
+
+def test_auto_device_can_use_unique_wdm_raw_when_advertised_wasapi_format_fails():
+    class RawAPI(PortAudio):
+        def query_hostapis(self):
+            return [dict(name='Windows WASAPI'), dict(name='Windows WDM-KS')]
+        def query_devices(self):
+            return [dict(name='UMA-8', hostapi=0, max_input_channels=8, max_output_channels=0),
+                    dict(name='miniDSP micArray RAW', hostapi=1, max_input_channels=8, max_output_channels=0)]
+        def check_input_settings(self, **options):
+            if options['device'] == 0:
+                raise self.PortAudioError('Unsupported WASAPI RAW format')
+    api = RawAPI()
+    capture = Capture('', api)
+    assert json.loads(capture.input_id) == ['Windows WDM-KS', 'miniDSP micArray RAW']
+    capture.close()
+    selected = devices(api)[0]['id']
+    with pytest.raises(RuntimeError, match='Unsupported WASAPI'):
+        Capture(selected, api)
+
+
+# Report: this chat, 2026-11-20 — remove Hush AEC and playback pairing entirely.
+def test_unpaired_capture_reads_microphone_without_render_or_artificial_delay():
+    api = PortAudio()
+    capture = Capture('', api=api, paired=False)
+    try:
+        source = np.arange(480*8, dtype=np.float32).reshape(480, 8) / 48000
+        api.options['callback'](source, 480, None, False)
+        result = capture.read()
+        np.testing.assert_array_equal(result, source)
+        assert result.shape == (480, 8)
+        assert capture.captured_frames == 0
+        assert len(capture.microphone_delay) == 0
+        assert capture.read().shape == (0, 8)
+        with pytest.raises(ValueError, match='reference'):
+            capture.render(np.zeros((384, 2), np.float32))
+    finally:
+        capture.close()

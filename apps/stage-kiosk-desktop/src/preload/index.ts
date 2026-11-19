@@ -34,7 +34,7 @@ if (location.protocol === 'http:' || location.protocol === 'https:') {
   }
   contextBridge.exposeInMainWorld('airiKioskDesktop', bridge)
   const audio: KioskNativeAudioBridge = {
-    version: 3,
+    version: 9,
     request: async input => parse(nativeAudioResultSchema, await defineInvoke(transport.context, invokeNativeAudio)(
       parse(nativeAudioRequestSchema, input),
       { signal: AbortSignal.timeout((input.kind === 'block' || input.kind === 'poll') ? 6000 : 182000) },

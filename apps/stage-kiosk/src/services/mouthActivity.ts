@@ -23,7 +23,7 @@ export function readMouthGeometry(width: number, height: number, faces: readonly
   if (!left || !right || !upper || !lower || [left, right, upper, lower].some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y)))
     return undefined
   // Scale both axes to video pixels so aspect ratio and face translation cannot
-  // turn closed lips into an apparent opening. Eight pixels is the existing Falcon minimum.
+  // turn closed lips into an apparent opening. Require at least eight pixels for a measurable mouth width.
   const widthPx = Math.hypot((left.x - right.x) * width, (left.y - right.y) * height)
   if (widthPx < 8)
     return undefined

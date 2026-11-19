@@ -1,3 +1,5 @@
+import type { NativeAudioResult } from '@proj-airi/stage-shared/kiosk-native-audio'
+
 import type { LcmvTuning } from './tuning'
 
 import { createContext, defineEventa } from '@moeru/eventa'
@@ -26,6 +28,10 @@ export type CaptureRequest = {
   processing: ArrayProcessing
   wasmUrl?: string
 } | {
+  type: 'native-input'
+  generation: string
+  input: MessagePort
+} | {
   type: 'native-ports'
   generation: string
   input: MessagePort
@@ -40,6 +46,15 @@ export type CaptureRequest = {
   inputFrames: number
 }
 export type CaptureResponse = CaptureBlock | {
+  type: 'native-ready'
+  /** Absolute performance clock; excludes renderer scheduling and device-open delay. */
+  startedAtMs: number
+} | {
+  type: 'native-result'
+  result: NativeAudioResult
+  inputFrames: number
+  roundTripMs: number
+} | {
   type: 'ready'
 } | {
   type: 'error'
@@ -72,9 +87,11 @@ export function createCaptureContext(port: AudioPort, side: 'client' | 'processo
     const body = event.body
     if (!body)
       return
-    const arrays = body.type === 'block' ? [...body.channels, ...body.render] : body.type === 'pcm' ? [body.packet.raw, body.packet.mask] : []
+    const arrays = body.type === 'native-result' ? [body.result.samples] : body.type === 'block' ? [...body.channels, ...body.render] : body.type === 'pcm' ? [body.packet.raw, body.packet.mask] : []
     const transfer: Transferable[] = []
-    if (body.type === 'native-ports')
+    if (body.type === 'native-input')
+      transfer.push(body.input)
+    else if (body.type === 'native-ports')
       transfer.push(body.input, body.render)
     else if (body.type === 'reference-port')
       transfer.push(body.port)

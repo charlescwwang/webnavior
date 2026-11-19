@@ -1,0 +1,12 @@
+Hush CPU audio runtime
+
+Upstream: https://github.com/pulp-vision/Hush
+Native ABI: native/weya_nc_build/weya_nc (MIT declaration in Cargo.toml).
+DeepFilter runtime: MIT OR Apache-2.0; see retained license files.
+Model: https://huggingface.co/weya-ai/hush (Apache-2.0 model card).
+CPU inference uses Tract. Original Hush DLL/model are unmodified.
+
+Webnavior integration adds source-clock alignment, frame buffering, native error
+checking and explicit silence-clock advancement around the native library.
+The pinned library skips state advancement when input mean-square energy is
+below 1e-7; see uma8_frontend/hush.py for the documented Nyquist-floor adaptation.

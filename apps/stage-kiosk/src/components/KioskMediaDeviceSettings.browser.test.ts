@@ -111,7 +111,7 @@ it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('shows a rejected channel la
 
 // Report: this chat, 2026-11-18 — exact-eight-channel getUserMedia fails on UMA-8.
 it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('keeps desktop LCMV native when switching from GPU and restores browser capture only for standard input', async () => {
-  localStorage.setItem('kiosk/audio/array-backend', 'native-gpu')
+  localStorage.setItem('kiosk/audio/array-backend', 'native-hush')
   localStorage.setItem('kiosk/audio/microphone-processing', JSON.stringify({ inputMode: 'uma8' }))
   vi.stubGlobal('airiKioskDesktop', {})
   vi.stubGlobal('airiKioskAudio', { version: 3, request: vi.fn().mockResolvedValue({ devices: [], samples: new Float32Array() }) })

@@ -5,9 +5,9 @@ from scipy.signal import firwin, lfilter
 
 class Decimator:
     """48 kHz to 16 kHz FIR with bounded history and no independent channel clocks."""
-    def __init__(self):
+    def __init__(self, channels=8):
         self.b = firwin(97, .95/3)
-        self.state = np.zeros((96, 8))
+        self.state = np.zeros((96, channels))
         self.offset = 0
 
     def push(self, samples):

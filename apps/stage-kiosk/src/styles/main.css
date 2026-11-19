@@ -1,4 +1,6 @@
 :root {
+  /* Kiosk surfaces stay dark even when the operating system prefers light. */
+  color-scheme: dark;
   color: #f9f6f0;
   background: #101719;
   font-family: ui-rounded, "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
@@ -9,3 +11,27 @@ body,
 #app { width: 100%; min-width: 100%; height: 100%; min-height: 100%; margin: 0; overflow: hidden; }
 
 button { font: inherit; }
+
+/* Pair both colors at the application boundary. Select portals live under body,
+   and must not inherit a white menu from a global/OS theme with light Kiosk text. */
+html[data-kiosk-theme="dark"] [role="combobox"],
+html[data-kiosk-theme="dark"] [role="listbox"] {
+  color: #f9f6f0;
+  background-color: #182c30;
+  border-color: #4d6c73;
+}
+
+html[data-kiosk-theme="dark"] [role="combobox"] *,
+html[data-kiosk-theme="dark"] [role="option"] {
+  color: #f9f6f0;
+}
+
+html[data-kiosk-theme="dark"] [role="option"][data-highlighted],
+html[data-kiosk-theme="dark"] [role="option"][data-state="checked"] {
+  color: #ffffff;
+  background-color: #304b51;
+}
+
+html[data-kiosk-theme="dark"] [role="option"][data-disabled] {
+  color: #bdcbd1;
+}

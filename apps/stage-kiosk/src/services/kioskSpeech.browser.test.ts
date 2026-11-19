@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { render } from 'vitest-browser-vue'
 import { page } from 'vitest/browser'
-import { effectScope } from 'vue'
+import { effectScope, h, shallowRef } from 'vue'
+
+import KioskActivityGlow from '../components/KioskActivityGlow.vue'
 
 import { useKioskInteractionTurn } from '../composables/useKioskInteractionTurn'
 import { createGreetingDelivery } from './fixedGreetings'
@@ -187,4 +190,35 @@ it('discards late old synthesis without clearing or aborting the replacement spe
   expect(newSignal!.aborted).toBe(true)
   finishNew(silence())
   expect(await next).toBe('cancelled')
+})
+
+// Report: this chat, Nov19 — actual TTS playback must illuminate the avatar frame in text mode too.
+it('illuminates the avatar frame during real media playback without requiring voice mode', async () => {
+  const active = shallowRef(false)
+  const screen = render({ setup: () => () => h('section', { style: 'position:relative;width:300px;height:250px;background:#24352d;border-radius:18px' }, [h(KioskActivityGlow, { active: active.value, mode: 'speaking' })]) })
+  const player = createSpeechPlayer({ synthesize: async () => silence(16000), onPlaying: () => active.value = true, onStopped: () => active.value = false, onSource: (audio) => {
+    audio!.muted = true
+    return undefined
+  } })
+  const button = document.createElement('button')
+  button.textContent = '播放文字模式回覆'
+  document.body.append(button)
+  let playing: ReturnType<typeof player.play> | undefined
+  button.onclick = () => playing = player.play({ text: '有炸雞腿便當和炸排骨便當。', locale: 'zh-TW', signal: new AbortController().signal })
+  try {
+    await page.getByRole('button', { name: button.textContent }).click()
+    await expect.poll(() => screen.container.querySelector('.is-speaking.is-active') !== null).toBe(true)
+    const glow = screen.container.querySelector<HTMLElement>('.activity-glow')!
+    expect(getComputedStyle(glow).borderTopWidth).toBe('4px')
+    expect(getComputedStyle(glow).pointerEvents).toBe('none')
+    await page.screenshot({ path: '__screenshots__/tts-frame-text-mode.png' })
+    player.stop()
+    expect(await playing).toBe('cancelled')
+    await expect.poll(() => active.value).toBe(false)
+  }
+  finally {
+    player.stop()
+    screen.unmount()
+    button.remove()
+  }
 })

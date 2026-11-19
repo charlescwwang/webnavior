@@ -7,7 +7,15 @@ const generation = pipe(string(), minLength(1), maxLength(128))
 const natural = pipe(number(), integer(), minValue(0))
 const pcm = pipe(instance(Float32Array), check(data => data.length <= 500_000 && data.every(Number.isFinite), 'Invalid native PCM'))
 const channels = pipe(array(pipe(number(), integer(), minValue(0), maxValue(7))), check(data => data.length === 7 && new Set(data).size === 7, 'Seven physical channels required'))
+/** Hush limits apply to one continuous capture session, after MVDR PCM reconstruction. */
+export const hushSettingsSchema = strictObject({
+  attenuationDb: pipe(number(), finite(), minValue(0), maxValue(100)),
+  dryMixPercent: pipe(number(), finite(), minValue(0), maxValue(100)),
+})
+export type HushSettings = InferOutput<typeof hushSettingsSchema>
+
 const start = {
+  hush: hushSettingsSchema,
   generation,
   channels,
   gainDb: pipe(number(), finite(), minValue(0), maxValue(40)),
@@ -20,8 +28,10 @@ export const nativeAudioRequestSchema = variant('kind', [
   strictObject({ kind: literal('status') }),
   strictObject({ kind: literal('devices') }),
   strictObject({ kind: literal('open'), generation, inputDevice: pipe(string(), maxLength(2048)) }),
+  strictObject({ kind: literal('read'), generation }),
   strictObject({ kind: literal('poll'), generation, offsetFrames: natural, samples: pipe(pcm, check(data => data.length === 768 && data.every(value => Math.abs(value) <= 1.001), 'Expected stereo planar 384-frame playback')) }),
   strictObject({ kind: literal('start'), ...start }),
+  strictObject({ kind: literal('connect'), ...start, inputDevice: pipe(string(), maxLength(2048)) }),
   strictObject({ kind: literal('stop'), generation }),
   strictObject({ kind: literal('block'), generation, offsetFrames: natural, samples: pipe(pcm, check(data => data.length === 3840 && data.every(value => Math.abs(value) <= 1.001), 'Expected ten planar 384-frame channels')) }),
 ])
@@ -39,16 +49,16 @@ export const nativeAudioResultSchema = object({
   state: optional(string()),
   phraseActive: optional(boolean()),
   runtime: optional(string()),
-  runtime_version: optional(string()),
+  hush: optional(hushSettingsSchema),
+  aecEnabled: optional(boolean()),
+  sampleRate: optional(natural),
+  frameLength: optional(natural),
+  modelDelaySamples: optional(natural),
   device_name: optional(string()),
-  precision: optional(string()),
   requested_provider: optional(string()),
   active_providers: optional(array(string())),
   available_providers: optional(array(string())),
-  gpu_verified: optional(boolean()),
-  gpu_nodes: optional(natural),
-  cpu_nodes: optional(natural),
-  device_id: optional(natural),
+  capturedFrames: optional(natural),
   processedFrames: optional(natural),
   processingMs: optional(pipe(number(), finite(), minValue(0))),
   frames: optional(array(object({ offsetSamples: natural, length: natural, pcmStart: natural, speech: boolean(), rtfState: picklist(['acquiring', 'tracking', 'holding', 'frozen', 'disabled']), rtfUpdates: natural }))),
@@ -59,11 +69,11 @@ export type NativeAudioResult = InferOutput<typeof nativeAudioResultSchema>
 
 /** Application-owned audio worker, automatically launched and stopped by Electron. */
 export interface KioskNativeAudioBridge {
-  /** Independent native microphone plus browser playback reference; requires the matching EXE. */
-  version: 3
+  /** Independent native microphone plus browser playback reference; requires the matching Hush EXE. */
+  version: 9
   request: (input: NativeAudioRequest) => Promise<NativeAudioResult>
 }
-export const invokeNativeAudio = defineInvokeEventa<NativeAudioResult, NativeAudioRequest>('airi:kiosk:native-audio:v3')
+export const invokeNativeAudio = defineInvokeEventa<NativeAudioResult, NativeAudioRequest>('airi:kiosk:native-audio:v9')
 
 declare global {
   interface Window {

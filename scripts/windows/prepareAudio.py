@@ -55,8 +55,9 @@ def prepare(python_zip, wheel_directory, output, vc_redist, bsdtar):
     for path, expected in downloads:
         if digest(path) != expected:
             raise ValueError(f'Pinned runtime SHA256 mismatch: {path.name}')
-    if digest(SOURCE / 'models/ulunas_stream.onnx') != manifest['modelSha256']:
-        raise ValueError('Pinned UL-UNAS model SHA256 mismatch')
+    for name, expected in manifest['hush'].items():
+        if digest(SOURCE / 'hush' / name) != expected:
+            raise ValueError(f'Pinned Hush asset SHA256 mismatch: {name}')
     # A nonempty output is never removed implicitly: accidental paths stay safe.
     if output.exists() and any(output.iterdir()):
         raise ValueError('Choose a new or empty audio output directory')
@@ -77,7 +78,7 @@ def prepare(python_zip, wheel_directory, output, vc_redist, bsdtar):
             raise ValueError(f'PortAudio runtime asset is missing: {name}')
     # The signed Microsoft redistributable contains WiX-attached cabinets.
     # The pinned archive/hash fixes their offsets and names; only the x64 CRT
-    # DLLs needed by OpenVINO are copied. Nothing is installed system-wide.
+    # DLLs used by native numerical/audio packages are copied. Nothing is installed system-wide.
     vc = manifest['visualCpp']
     archive = vc_redist.read_bytes()
     offset = vc['attachedCabOffset']
@@ -101,23 +102,22 @@ def prepare(python_zip, wheel_directory, output, vc_redist, bsdtar):
     (runtime / 'Microsoft-Visual-Cpp-LICENSE.rtf').write_bytes(license_data)
     (runtime / 'python313._pth').write_text('python313.zip\n.\nLib/site-packages\n../src\nimport site\n', encoding='ascii')
     shutil.copytree(SOURCE / 'src', output / 'src', ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-    shutil.copytree(SOURCE / 'models', output / 'models')
+    (output / 'hush').mkdir()
+    for name in manifest['hush']:
+        shutil.copy2(SOURCE / 'hush' / name, output / 'hush' / name)
     shutil.copy2(SOURCE / 'windowsRuntime.json', output)
     shutil.copy2(SOURCE / 'README.md', output)
     # Native packages must be Windows x64 PE files, including every transitive
-    # numerical library and OpenVINO plugins. This is structural, not execution proof.
-    binaries = list(runtime.rglob('*.pyd')) + list(runtime.rglob('*.dll')) + list(runtime.glob('*.exe'))
+    # numerical library and Hush runtime. This is structural, not execution proof.
+    binaries = list(runtime.rglob('*.pyd')) + list(output.rglob('*.dll')) + list(runtime.glob('*.exe'))
     for path in binaries:
         data = path.read_bytes()
         offset = struct.unpack_from('<I', data, 0x3c)[0]
         if data[:2] != b'MZ' or data[offset:offset+4] != b'PE\0\0' or struct.unpack_from('<H', data, offset+4)[0] != 0x8664:
             raise ValueError(f'Not a Windows x64 binary: {path}')
-    for name in ('openvino.dll', 'openvino_intel_gpu_plugin.dll', 'openvino_intel_cpu_plugin.dll', 'openvino_onnx_frontend.dll'):
-        if not list(runtime.rglob(name)):
-            raise ValueError(f'OpenVINO runtime asset is missing: {name}')
-    if list(runtime.rglob('DirectML.dll')) or (runtime / 'Lib/site-packages/onnxruntime').exists():
-        raise ValueError('The OpenVINO package must not contain ONNX Runtime/DirectML')
-    result = dict(provider='OpenVINO', device='GPU.0', windowsPhysicalValidation=False,
+    if any('openvino' in str(path.relative_to(output)).lower() or path.name.lower() == 'directml.dll' for path in output.rglob('*')):
+        raise ValueError('Retired GPU inference assets must not enter the Hush package')
+    result = dict(provider='Hush / Tract', device='CPU', windowsPhysicalValidation=False,
                   source=manifest, nativeBinaries=len(binaries),
                   files={str(p.relative_to(output)): digest(p) for p in sorted(output.rglob('*')) if p.is_file()})
     (output / 'AUDIO-MANIFEST.json').write_text(json.dumps(result, indent=2)+'\n')

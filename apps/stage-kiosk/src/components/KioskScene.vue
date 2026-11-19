@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { DeviceSettingsSnapshot, DeviceSettingsValues, KioskVoiceVadSettings, PresenceCandidate } from '@proj-airi/kiosk-proactive'
 import type { BrowserConversation } from '@proj-airi/stage-shared/browser-conversation'
-import type { FalconTiming } from '@proj-airi/stage-shared/falcon-audio'
 import type { InteractionLifecycleMessage } from '@proj-airi/stage-shared/interaction-lifecycle'
 import type { VADEvents } from '@proj-airi/stage-ui/libs/audio/vad'
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
@@ -45,6 +44,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
 import BrowserCartHandoff from './browserCartHandoff.vue'
+import KioskActivityGlow from './KioskActivityGlow.vue'
 import KioskAdminAccess from './KioskAdminAccess.vue'
 import KioskAdminPanel from './KioskAdminPanel.vue'
 import KioskAgentControl from './KioskAgentControl.vue'
@@ -78,7 +78,6 @@ import { useKioskMicrophone } from '../composables/useKioskMicrophone'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
 import { useKioskProcessingCue } from '../composables/useKioskProcessingCue'
 import { useKioskServiceRecovery } from '../composables/useKioskServiceRecovery'
-import { useKioskSpeechRecognition } from '../composables/useKioskSpeechRecognition'
 import { useKioskStreamingReply } from '../composables/useKioskStreamingReply'
 import { useKioskVoiceTest } from '../composables/useKioskVoiceTest'
 import { setKioskLocale } from '../modules/i18n'
@@ -91,11 +90,10 @@ import { createBrowserOrderingTools } from '../services/browserOrderingTools'
 import { createBrowserPresentation } from '../services/browserPresentation'
 import { offerCheckout } from '../services/checkoutInvitation'
 import { requestMessageId } from '../services/conversationMessages'
-import { createFalconCapture, FalconCaptureError } from '../services/falconCapture'
 import { createFixedGreetings, createGreetingDelivery, readGreetingPhase } from '../services/fixedGreetings'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
-import { createKioskVadRecording, transcribeKioskUtterance } from '../services/kiosk-audio'
-import { admitBrowserPlan, decideBrowserAnswer, decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, synthesizeKioskSpeech, transcribeFalconAudio, transcribeKioskAudio } from '../services/kiosk-device'
+import { transcribeKioskUtterance } from '../services/kiosk-audio'
+import { admitBrowserPlan, decideBrowserAnswer, decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
 import { conversationDecisionStateFrom, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../services/kiosk-fast-path'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
@@ -173,13 +171,12 @@ const fixedGreetings = createFixedGreetings(synthesizeKioskSpeech)
 const greetingDelivery = createGreetingDelivery()
 const { enabled, stream, selectedAudioInput, audioInputs } = storeToRefs(settingsAudioDeviceStore)
 const microphone = useKioskMicrophone()
-const recognition = useKioskSpeechRecognition(() => Boolean(props.device) && props.voiceConversationOnly)
 const arrayMicrophone = computed(() => microphone.isArray(audioInputs.value.find(device => device.deviceId === selectedAudioInput.value)?.label || stream.value?.getAudioTracks()[0]?.label || ''))
 const nativeArrayMicrophone = computed(() => desktopHost && microphone.settings.value.inputMode !== 'standard' && microphone.nativeSelected.value)
-const nativeLcmvMicrophone = computed(() => desktopHost && microphone.usesNativeLcmv(recognition.policy.value?.mode, arrayMicrophone.value))
+const nativeLcmvMicrophone = computed(() => desktopHost && microphone.usesNativeLcmv(arrayMicrophone.value))
 const nativeHardwareMicrophone = computed(() => nativeArrayMicrophone.value || nativeLcmvMicrophone.value)
-watch([arrayMicrophone, nativeHardwareMicrophone], ([array, native]) => {
-  settingsAudioDeviceStore.browserCaptureEnabled = !native
+watch([arrayMicrophone, nativeHardwareMicrophone, microphone.backendAvailable], ([array, native]) => {
+  settingsAudioDeviceStore.browserCaptureEnabled = !native && microphone.backendAvailable.value
   settingsAudioDeviceStore.inputConstraints = array && !native
     ? { channelCount: { exact: 8 }, sampleRate: { ideal: 48000 }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     : undefined
@@ -197,7 +194,7 @@ const arrayDiagnostics = shallowRef<{ inputDb: number, outputDb: number, peak: n
 let arrayLevels = { inputDb: -Infinity, outputDb: -Infinity, peak: 0, limited: 0, samples: 0 }
 const arrayProcessingLabel = computed(() => {
   if (nativeArrayMicrophone.value && audioInputStarted.value)
-    return 'GPU · RTF / MVDR'
+    return 'Hush CPU · RTF / MVDR'
   const processing = activeArrayProcessing.value
   if (!processing)
     return undefined
@@ -207,11 +204,8 @@ const arrayProcessingLabel = computed(() => {
 })
 let audioCaptureController: AbortController | undefined
 let audioCaptureAttempt = 0
-const falconMode = computed(() => !nativeArrayMicrophone.value && recognition.policy.value?.mode === 'falcon')
-const mouthAssistanceEnabled = computed(() => !falconMode.value && (props.deviceSettings?.mouthDetectionEnabled ?? defaultDeviceSettingsValues.mouthDetectionEnabled))
-const visualSpeechRequired = computed(() => falconMode.value || mouthAssistanceEnabled.value)
-let falconCapture = createFalconCapture(15, 3000)
-let falconOverflow = false
+const mouthAssistanceEnabled = computed(() => props.deviceSettings?.mouthDetectionEnabled ?? defaultDeviceSettingsValues.mouthDetectionEnabled)
+const visualSpeechRequired = computed(() => mouthAssistanceEnabled.value)
 let discardSpeechUntilBoundary = false
 let captureRecognitionSignal: AbortSignal | undefined
 // Include the configured silence tail so a normal end-of-sentence closure is
@@ -236,12 +230,6 @@ function resetVisualSpeech() {
   speechInterruption.reset()
   interruptionDiagnostic.value = speechInterruption.snapshot()
 }
-watch([recognition.policy, () => props.voiceVadSettings.speechPadMs], () => {
-  falconCapture.reset()
-  falconOverflow = false
-  const maximum = recognition.policy.value?.maxUtteranceSeconds ?? 15
-  falconCapture = createFalconCapture(maximum, Math.min(maximum * 1000, props.voiceVadSettings.speechPadMs + 1000))
-})
 const { askPermission: requestMicrophonePermission } = settingsAudioDeviceStore
 const chatSessionStore = useChatSessionStore()
 const { audioContext } = useAudioContext()
@@ -498,13 +486,16 @@ watch(interactiveServiceClient.availability, (availability) => {
 // Native operations hold restart until their receipts settle. Model IO alone
 // does not: an explicit restart cancels its turn before admitting a new visitor.
 // operationId correlates completion; sessionId isolates late diagnostic events.
-const activeServiceOperations = shallowReactive(new Map<string, { sessionId: string | undefined, utteranceId: number | undefined, started: number }>())
+const activeServiceOperations = shallowReactive(new Map<string, { sessionId: string | undefined, utteranceId: number | undefined, started: number, toolName: string }>())
 // Replaced connections can discard their late completion events. Retire those
 // owners here so an old document cannot keep the next reception's button locked.
 watch([interactiveServiceClient.availability, () => interactiveServiceClient.getDocumentId(), interactionRecording.visitorSessionId], () => activeServiceOperations.clear(), { flush: 'sync' })
+// Read-only state polling stays quiet; activity reflects actual page controls
+// and item presentation, correlated with their in-flight operation owners.
+const pageOperating = computed(() => [...activeServiceOperations.values()].some(operation => !['browser_cart_get', 'browser_state_get', 'browser_recovery_context', 'browser_observe'].includes(operation.toolName)))
 const stopToolDiagnostics = interactiveServiceClient.onExecution((event) => {
   if (event.phase === 'called') {
-    activeServiceOperations.set(event.operationId, { sessionId: interactionRecording.visitorSessionId.value, utteranceId: currentAgentRequest()?.decisionEntryId ?? fastPathProgress.value?.utteranceId, started: performance.now() })
+    activeServiceOperations.set(event.operationId, { sessionId: interactionRecording.visitorSessionId.value, utteranceId: currentAgentRequest()?.decisionEntryId ?? fastPathProgress.value?.utteranceId, started: performance.now(), toolName: event.tool.name })
   }
   const owner = activeServiceOperations.get(event.operationId)
   if (event.phase !== 'called')
@@ -709,16 +700,14 @@ const presenceIdleProtection = computed(() => {
 const mouthTrackingRequired = computed(() => mouthAssistanceEnabled.value && props.voiceConversationOnly && enabled.value && !adminPanelOpen.value)
 const proactiveVision = useKioskProactiveVision({
   detectionConfidence: () => props.deviceSettings?.faceDetectionConfidence ?? defaultDeviceSettingsValues.faceDetectionConfidence,
-  detectionEnabled: () => localObservationRequired.value || falconMode.value || mouthTrackingRequired.value,
+  detectionEnabled: () => localObservationRequired.value || mouthTrackingRequired.value,
   mouthTrackingEnabled: () => mouthTrackingRequired.value,
-  mouthEnabled: () => falconMode.value && enabled.value && !adminVoiceTestActive.value,
   onMouthObservation: (timeMs, mouth) => {
     mouthActivity.observe(timeMs, mouth)
     mouthStartAllowed.value = mouthActivity.allowsStart(timeMs)
   },
   onTargetChange: resetVisualSpeech,
   onTarget: target => customerTarget.value = target,
-  onMouthFrame: (timeMs, image) => falconCapture.push(timeMs, image),
   detectionZone: () => proactiveSettings.value.observation.detectionZone,
   interactionZone: () => presenceSettings.interactionRoi,
   performance: () => performanceSettings.value,
@@ -741,14 +730,12 @@ const proactiveVision = useKioskProactiveVision({
   onPresenceCandidate: candidate => handlePresenceCandidate(candidate),
   onDiagnostics: diagnostics => presenceDiagnostics.value = diagnostics,
 })
-const cameraRequired = computed(() => falconMode.value || mouthTrackingRequired.value || localObservationRequired.value || effectiveMediaCaptureMode.value !== 'off')
+const cameraRequired = computed(() => mouthTrackingRequired.value || localObservationRequired.value || effectiveMediaCaptureMode.value !== 'off')
 function voiceBlockReason(): string | undefined {
   if (adminPanelOpen.value)
     return adminVoiceTestActive.value ? undefined : 'admin-paused'
   if (!props.voiceConversationOnly)
     return 'text-mode'
-  if (props.device && !recognition.policy.value)
-    return 'preparing'
   if (customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
     return 'reception-reset'
   if (!allowsObservedVoice(visualSpeechRequired.value))
@@ -756,8 +743,6 @@ function voiceBlockReason(): string | undefined {
 }
 function allowsObservedVoice(requireVisualPresence = true) {
   if (adminPanelOpen.value || !props.voiceConversationOnly)
-    return false
-  if (props.device && !recognition.policy.value)
     return false
   if (customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
     return false
@@ -811,26 +796,21 @@ const voiceEvents = {
     }
     if (!allowsObservedVoice(visualSpeechRequired.value))
       return
-    if (!falconMode.value) {
-      activeMouthLease = mouthActivity.begin(performance.now())
-      if (activeMouthLease === undefined)
-        return
-    }
+    activeMouthLease = mouthActivity.begin(performance.now())
+    if (activeMouthLease === undefined)
+      return
     // Retiring audio settings cancels unsubmitted ASR as well as its partial
     // capture; already accepted queue entries keep their ordering ownership.
-    captureRecognitionSignal = AbortSignal.any([recognition.captureSignal.value, ...(mouthAssistanceEnabled.value ? [targetCaptureController.signal] : []), ...(audioCaptureController ? [audioCaptureController.signal] : [])])
-    if (falconMode.value)
-      falconCapture.begin()
+    captureRecognitionSignal = AbortSignal.any([...(mouthAssistanceEnabled.value ? [targetCaptureController.signal] : []), ...(audioCaptureController ? [audioCaptureController.signal] : [])])
     // Enforce retains semantic admission. Off/observe may stop only playback
     // through local VAD evidence, without cancelling this Agent/tool turn.
     activeVoiceCandidate = interactionTurn.beginCustomerVoiceCandidate()
-    if (!falconMode.value)
-      speechInterruption.begin(activeVoiceCandidate.id)
+    speechInterruption.begin(activeVoiceCandidate.id)
   },
   onSpeechProbability: (probability: number, timeMs: number) => {
     if (nativeArrayMicrophone.value)
       nativeProbability.value = probability
-    if (falconMode.value || adminVoiceTestActive.value)
+    if (adminVoiceTestActive.value)
       return
     const interrupt = speechInterruption.observe(activeVoiceCandidate?.id, timeMs, probability, props.voiceVadSettings.threshold, !discardSpeechUntilBoundary && !voiceBlockReason() && mouthActivity.complete(activeMouthLease, timeMs), backgroundSpeechMode.value)
     interruptionDiagnostic.value = speechInterruption.snapshot()
@@ -846,7 +826,6 @@ const voiceEvents = {
   },
   onSpeechReady: (event: VADEvents['speech-ready']) => {
     const { buffer } = event
-    falconCapture.end()
     if (discardSpeechUntilBoundary) {
       discardSpeechUntilBoundary = event.truncated === true
       return
@@ -873,7 +852,7 @@ const voiceEvents = {
     }
     const mouthLease = activeMouthLease
     activeMouthLease = undefined
-    if (!falconMode.value && (!mouthActivity.complete(mouthLease, performance.now()) || event.truncated)) {
+    if (!mouthActivity.complete(mouthLease, performance.now()) || event.truncated) {
       // A lost/replaced target revokes the entire phrase, even if that target
       // reappears before ASR. Truncated tails cannot become another order.
       discardSpeechUntilBoundary = event.truncated === true
@@ -884,63 +863,29 @@ const voiceEvents = {
       speechInterruption.release(candidate.id)
       return
     }
-    let falconPacket: ArrayBuffer | undefined
-    if (falconMode.value) {
-      const discard = falconOverflow || event.truncated
-      falconOverflow = event.truncated === true
-      try {
-        if (discard)
-          throw new FalconCaptureError('duration', { samples: buffer.length })
-        // Freeze this utterance's audio and mouth frames before another capture
-        // changes the ring. The bounded utterance FIFO owns admission/order;
-        // an earlier network request must not discard this independent clip.
-        const prepared = falconCapture.prepare(event)
-        falconPacket = prepared.packet
-        if (voiceDiagnosticsEnabled.value && interactionRecording.visitorSessionId.value)
-          void interactionRecording.append('service_event', JSON.stringify({ reason: 'admitted', ...prepared.diagnostics }), { source: 'falcon_capture' })
-      }
-      catch (cause) {
-        const reason = cause instanceof FalconCaptureError ? cause.reason : 'failed'
-        // Closed-mouth background captures are not customer turns. Keep the
-        // current reply/receipt intact and record only numeric admin evidence.
-        if (reason === 'inactive') {
-          updateVoiceDiagnostic(captureDiagnosticId ?? startVoiceDiagnostic(), { status: 'ignored' })
-        }
-        else {
-          const message = t(`stage.kiosk-agent.falcon-capture-${reason}`)
-          updateVoiceDiagnostic(captureDiagnosticId ?? startVoiceDiagnostic(), { status: 'failed', text: message })
-          pendingTranscript.value = message
-        }
-        if ((reason === 'inactive' || voiceDiagnosticsEnabled.value) && interactionRecording.visitorSessionId.value) {
-          void interactionRecording.append('service_event', JSON.stringify({ reason, ...(cause instanceof FalconCaptureError ? cause.diagnostics : {}) }), { source: 'falcon_capture' })
-        }
-        interactionTurn.completeVoiceCandidate(candidate)
-        return
-      }
-    }
-    const reservation = utteranceQueue.reserve('asr', falconMode.value ? recognition.policy.value!.timeoutMs + 1000 : undefined)
+    const reservation = utteranceQueue.reserve('asr')
     if (reservation.kind === 'OVERLOADED') {
       speechInterruption.release(candidate.id)
       interactionTurn.completeVoiceCandidate(candidate)
       pendingTranscript.value = '目前語句太多，請稍後再說一次。'
       return
     }
-    void processVoiceCandidate(buffer, candidate, reservation, captureDiagnosticId, falconPacket, captureRecognitionSignal)
+    void processVoiceCandidate(buffer, candidate, reservation, captureDiagnosticId, captureRecognitionSignal)
   },
 }
 const { dispose, inferenceError, init, loaded, start, processAudio, isSpeech: vadIsSpeech, isSpeechProb: vadProbability } = useVAD(workletUrl, {
   externalPCM: arrayMicrophone,
-  // Only legacy customer ASR uses visual onset admission. Falcon and the
-  // administrator's microphone test keep their existing VAD paths. A discarded
+  // Customer ASR uses optional visual onset admission; the administrator's
+  // microphone test bypasses it. A discarded
   // tail still runs VAD until silence, but can never create a customer candidate.
-  canStartSpeech: () => falconMode.value || adminVoiceTestActive.value || discardSpeechUntilBoundary || (!voiceBlockReason() && mouthActivity.allowsStart(performance.now())),
+  canStartSpeech: () => adminVoiceTestActive.value || discardSpeechUntilBoundary || (!voiceBlockReason() && mouthActivity.allowsStart(performance.now())),
   threshold: computed(() => props.voiceVadSettings.threshold),
   minSpeechDurationMs: computed(() => props.voiceVadSettings.minSpeechDurationMs),
-  maxSpeechDurationS: computed(() => falconMode.value ? recognition.policy.value!.maxUtteranceSeconds : props.voiceVadSettings.maxSpeechDurationS),
+  maxSpeechDurationS: computed(() => props.voiceVadSettings.maxSpeechDurationS),
   minSilenceDurationMs: computed(() => props.voiceVadSettings.minSilenceDurationMs),
   // Two 10 fps visual observations can arrive after audio onset. Keep at least
   // 400 ms of source PCM, while preserving a larger operator-configured pad.
-  speechPadMs: computed(() => falconMode.value || adminVoiceTestActive.value ? props.voiceVadSettings.speechPadMs : Math.max(400, props.voiceVadSettings.speechPadMs)),
+  speechPadMs: computed(() => adminVoiceTestActive.value ? props.voiceVadSettings.speechPadMs : Math.max(400, props.voiceVadSettings.speechPadMs)),
   ...voiceEvents,
 })
 const isSpeech = computed(() => nativeArrayMicrophone.value ? nativeIsSpeech.value : vadIsSpeech.value)
@@ -970,11 +915,9 @@ const isAudioListening = computed(() => enabled.value && audioInputStarted.value
 // device identifiers. An existing visitor session owns each persisted snapshot.
 watch([interactionRecording.visitorSessionId, () => JSON.stringify({
   enabled: enabled.value,
-  mode: recognition.policy.value?.mode,
-  processing: nativeArrayMicrophone.value ? 'native-rtf-mvdr-gpu' : arrayMicrophone.value ? activeArrayProcessing.value : 'browser-vad',
-  requestedLegacyAlgorithm: arrayMicrophone.value && !nativeArrayMicrophone.value && !falconMode.value ? microphone.algorithm.value : undefined,
-  falconGainDb: arrayMicrophone.value && falconMode.value ? microphone.falconGainDb.value : undefined,
-  policyLoaded: Boolean(recognition.policy.value),
+  mode: 'asr',
+  processing: nativeArrayMicrophone.value ? 'native-rtf-mvdr-hush' : arrayMicrophone.value ? activeArrayProcessing.value : 'browser-vad',
+  requestedLegacyAlgorithm: arrayMicrophone.value && !nativeArrayMicrophone.value ? microphone.algorithm.value : undefined,
   vadLoaded: nativeArrayMicrophone.value ? audioInputStarted.value : loaded.value,
   listening: isAudioListening.value,
   microphoneTracks: stream.value?.getAudioTracks().map(track => ({ state: track.readyState, muted: track.muted })) ?? [],
@@ -997,13 +940,15 @@ async function startAudioInteraction() {
   const input = stream.value
   audioStartupError.value = undefined
   try {
+    if (!microphone.backendAvailable.value)
+      throw new Error(t('stage.kiosk.array-audio.backendRetired'))
     if (controller.signal.aborted || attempt !== audioCaptureAttempt || (!nativeHardwareMicrophone.value && (!input || input !== stream.value)) || !enabled.value || (!props.voiceConversationOnly && !adminVoiceTestActive.value))
       return
     if (nativeArrayMicrophone.value) {
       const bridge = window.airiKioskAudio
       if (!bridge)
-        throw new Error('GPU audio requires the updated Kiosk executable.')
-      const capture = await createNativeCapture(audioContext, {
+        throw new Error('Hush audio requires the matching Kiosk executable.')
+      const capture = await createNativeCapture({
         bridge,
         signal: controller.signal,
         ...microphone.nativeConfiguration(),
@@ -1057,9 +1002,8 @@ async function startAudioInteraction() {
       // A pending VueUse reacquisition will trigger another startup for its stream.
       if (!nativeLcmvMicrophone.value && (!actual || actual.channelCount !== 8 || actual.echoCancellation !== false))
         throw new Error(t('stage.kiosk.array-audio.raw-unavailable'))
-      const config = microphone.configuration(falconMode.value ? 'falcon' : 'legacy')
+      const config = microphone.configuration()
       const gain = new InputGain()
-      const falconGain = new InputGain()
       const bridge = window.airiKioskArrayInput
       if (nativeLcmvMicrophone.value && !bridge)
         throw new Error(t('stage.kiosk.array-audio.native-update'))
@@ -1086,12 +1030,7 @@ async function startAudioInteraction() {
           arrayLevels.peak = peak
           arrayLevels.limited += result.clippedSamples
           arrayLevels.samples += scaled.length
-          // Separate limiter histories keep a loud VAD/LCMV block from
-          // attenuating Falcon's aligned AEC channel, or vice versa.
-          const recording = falconMode.value && !adminVoiceTestActive.value
-            ? falconGain.process(packet.raw, config.falconGainDb).samples
-            : scaled
-          await processAudio(scaled, endTimeMs, recording)
+          await processAudio(scaled, endTimeMs, scaled)
         },
         onError: (reason) => {
           if (attempt === audioCaptureAttempt) {
@@ -1126,7 +1065,6 @@ async function processVoiceCandidate(
   candidate: NonNullable<ReturnType<typeof interactionTurn.beginCustomerVoiceCandidate>>,
   reservation: Extract<KioskUtteranceReservation, { kind: 'ACCEPTED' }>,
   captureId?: number,
-  falconPacket?: ArrayBuffer,
   recognitionSignal?: AbortSignal,
 ) {
   if (buffer.length === 0 || !allowsObservedVoice(visualSpeechRequired.value)) {
@@ -1141,34 +1079,22 @@ async function processVoiceCandidate(
   let submitted = false
   const startedAt = performance.now()
   const sessionId = interactionRecording.visitorSessionId.value
+  const serviceId = scenarioRegistry.activeScenario.value?.id
+  const transcriptionContext = serviceId ? { serviceId, menuNames: productPresentation.menuNames() } : undefined
   let requestMs: number | undefined
-  let falconTiming: FalconTiming | undefined
-  // Legacy capture remains silent until semantic service admission: an empty
-  // ASR response or background IGNORE must never produce a receipt or music.
-  // Falcon retains its existing immediate capture acknowledgement.
+  // Capture stays silent until semantic admission. Empty ASR and background
+  // IGNORE results must never produce a receipt or waiting music.
   transcriptionCount.value++
-  processingCue.acknowledge({ utteranceId: reservation.id, recognitionMode: falconPacket ? 'falcon' : 'legacy', stage: 'capture' })
   if (sessionId)
-    void interactionRecording.append('service_event', 'voice_recognition_started', { utteranceId: reservation.id, source: falconPacket ? 'falcon' : 'legacy' })
+    void interactionRecording.append('service_event', 'voice_recognition_started', { utteranceId: reservation.id, source: 'asr' })
   try {
     const signal = AbortSignal.any([candidate.signal, reservation.signal, ...(recognitionSignal ? [recognitionSignal] : [])])
-    let result: { recording: Blob, text: string }
-    if (falconPacket) {
-      const { text, timing } = await transcribeFalconAudio(falconPacket, signal)
-      falconTiming = timing
-      requestMs = performance.now() - startedAt
-      signal.throwIfAborted()
-      result = { recording: createKioskVadRecording(buffer), text }
-    }
-    else {
-      result = await transcribeKioskUtterance(buffer, {
-        signal,
-        onChunkTranscribed: reservation.markTranscriptionProgress,
-        transcribe: transcribeKioskAudio,
-      })
-      requestMs = performance.now() - startedAt
-    }
-    const { recording, text } = result
+    const { recording, text } = await transcribeKioskUtterance(buffer, {
+      signal,
+      onChunkTranscribed: reservation.markTranscriptionProgress,
+      transcribe: (recording, signal, chunk) => transcribeKioskAudio(recording, signal, chunk, transcriptionContext),
+    })
+    requestMs = performance.now() - startedAt
     signal.throwIfAborted()
     if (!allowsObservedVoice(visualSpeechRequired.value)) {
       updateVoiceDiagnostic(diagnosticId, { status: 'ignored' })
@@ -1182,8 +1108,8 @@ async function processVoiceCandidate(
     if (!interactionTurn.isCurrentVoiceCandidate(candidate))
       return
     if (sessionId && sessionId === interactionRecording.visitorSessionId.value)
-      void interactionRecording.recordTranscript({ id: reservation.id, text, source: 'asr', recognitionMode: falconPacket ? 'falcon' : 'legacy' })
-    reservation.complete({ recording, text, recognitionMode: falconPacket ? 'falcon' : 'legacy' })
+      void interactionRecording.recordTranscript({ id: reservation.id, text, source: 'asr', recognitionMode: 'legacy' })
+    reservation.complete({ recording, text, recognitionMode: 'legacy' })
     submitted = true
     pendingTranscript.value = undefined
   }
@@ -1202,7 +1128,7 @@ async function processVoiceCandidate(
     if (sessionId && sessionId === interactionRecording.visitorSessionId.value) {
       // This clock covers the ASR request, separately from the existing
       // decision/tool clock. No customer audio or text is added to this event.
-      void interactionRecording.append('service_event', JSON.stringify({ kind: 'voice_recognition_timing', mode: falconPacket ? 'falcon' : 'legacy', elapsedMs: performance.now() - startedAt, requestMs, audioMs: buffer.length / 16, packetBytes: falconPacket?.byteLength, falconTiming, submitted }), { source: 'voice_recognition_timing', utteranceId: reservation.id })
+      void interactionRecording.append('service_event', JSON.stringify({ kind: 'voice_recognition_timing', mode: 'asr', elapsedMs: performance.now() - startedAt, requestMs, audioMs: buffer.length / 16, submitted }), { source: 'voice_recognition_timing', utteranceId: reservation.id })
     }
     reservation.cancel()
     if (!submitted)
@@ -1973,7 +1899,7 @@ async function acknowledgePresentedReply(content: string, isCurrent: () => boole
   // Text mode has no playback callback: begin optional cues only after this
   // reply has been appended. Voice mode cues follow actual playback segments.
   if (!props.voiceConversationOnly)
-    void productPresentation.speak(content)
+    void productPresentation.speak(content, { revealMenu: true })
   const tool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_dialogue_presented')
   if (tool) {
     // Presentation bookkeeping must not hide an already completed reply.
@@ -2045,8 +1971,6 @@ function cancelReceptionWork() {
   activeMouthLease = undefined
   processingCue.reset()
   discardSpeechUntilBoundary = false
-  falconCapture.reset()
-  falconOverflow = false
   // Completion/reset closes all customer work immediately, before merchant
   // cleanup awaits. ASR/Jev/Main/TTS callbacks retain their old turn/ticket.
   receptionGeneration++
@@ -2124,7 +2048,7 @@ const speechPlayer = createSpeechPlayer({
 })
 
 async function speakAssistantReply(text: string, turn: ReturnType<typeof interactionTurn.begin>, preparedAudio?: Blob, signal = turn.signal, channel: 'progress' | 'reply' = 'reply'): Promise<'completed' | 'cancelled' | 'failed' | 'blocked'> {
-  if (!falconMode.value && backgroundSpeechMode.value !== 'enforce' && speechInterruption.blocksPlayback())
+  if (backgroundSpeechMode.value !== 'enforce' && speechInterruption.blocksPlayback())
     return 'blocked'
   if (turn.kind === 'proactive' && (isSpeech.value || activeVoiceCandidate || transcriptionCount.value > 0))
     return 'blocked'
@@ -2182,15 +2106,14 @@ function stopAudioInteraction() {
   nativeProbability.value = 0
   arrayDiagnostics.value = undefined
   arrayLevels = { inputDb: -Infinity, outputDb: -Infinity, peak: 0, limited: 0, samples: 0 }
-  falconCapture.reset()
   dispose()
   audioInputStarted.value = false
 }
 
 // A changed mode starts a fresh bounded VAD processor. If a person is already
 // speaking, discard through the next silence rather than ordering from a tail.
-watch([recognition.policy, mouthAssistanceEnabled], ([next, assisted], [previous, previouslyAssisted]) => {
-  if (!previous || (next?.mode === previous.mode && next?.maxUtteranceSeconds === previous.maxUtteranceSeconds && assisted === previouslyAssisted))
+watch(mouthAssistanceEnabled, (assisted, previouslyAssisted) => {
+  if (assisted === previouslyAssisted)
     return
   discardSpeechUntilBoundary = props.voiceConversationOnly && isSpeech.value
   if (activeVoiceCandidate)
@@ -2206,8 +2129,8 @@ watch(nativeHardwareMicrophone, () => {
   stopAudioInteraction()
 }, { flush: 'sync' })
 
-watch([enabled, () => props.voiceConversationOnly, adminVoiceTestActive, () => recognition.policy.value ? `${recognition.policy.value.mode}:${recognition.policy.value.maxUtteranceSeconds}` : undefined, stream, () => JSON.stringify([microphone.settings.value, microphone.nativeSettings.value, microphone.arrayInputDevice.value]), nativeArrayMicrophone, nativeLcmvMicrophone, arrayMicrophone, () => arrayMicrophone.value && !falconMode.value ? JSON.stringify([microphone.algorithm.value, microphone.spatialMask.value]) : undefined, () => arrayMicrophone.value && falconMode.value ? microphone.falconGainDb.value : undefined, mouthAssistanceEnabled], async ([isEnabled, voiceConversationOnly, testing, policy]) => {
-  if (isEnabled && ((voiceConversationOnly && (!props.device || policy)) || testing)) {
+watch([enabled, () => props.voiceConversationOnly, adminVoiceTestActive, stream, microphone.backendAvailable, () => JSON.stringify([microphone.settings.value, microphone.nativeSettings.value, microphone.arrayInputDevice.value]), nativeArrayMicrophone, nativeLcmvMicrophone, arrayMicrophone, () => arrayMicrophone.value ? JSON.stringify([microphone.algorithm.value, microphone.spatialMask.value]) : undefined, mouthAssistanceEnabled], async ([isEnabled, voiceConversationOnly, testing]) => {
+  if (isEnabled && (voiceConversationOnly || testing)) {
     await startAudioInteraction().catch((error) => {
       audioStartupError.value = errorMessageFrom(error) ?? 'Microphone startup failed.'
       console.error('Failed to start kiosk audio interaction:', error)
@@ -2223,8 +2146,11 @@ watch([enabled, () => props.voiceConversationOnly, adminVoiceTestActive, () => r
 let microphonePreparation = 0
 async function prepareMicrophone() {
   const attempt = ++microphonePreparation
-  if (props.device && props.voiceConversationOnly && !adminVoiceTestActive.value && !recognition.policy.value)
+  if (!microphone.backendAvailable.value) {
+    settingsAudioDeviceStore.stopStream()
+    initialMicrophonePermission.settle()
     return
+  }
   if (!props.voiceConversationOnly && !adminVoiceTestActive.value) {
     // A profile can change from voice-only to text mode while this browser
     // retains its previous local preference. Keep that stale preference from
@@ -2267,13 +2193,7 @@ async function prepareMicrophone() {
   }
 }
 
-watch([() => props.voiceConversationOnly, adminVoiceTestActive, recognition.policy, nativeHardwareMicrophone], () => void prepareMicrophone(), { immediate: true })
-watch(recognition.error, (failed) => {
-  if (failed && !recognition.policy.value) {
-    initialMicrophonePermission.settle()
-    pendingTranscript.value = t('stage.kiosk-agent.audio-failed')
-  }
-})
+watch([() => props.voiceConversationOnly, adminVoiceTestActive, nativeHardwareMicrophone, microphone.backendAvailable], () => void prepareMicrophone(), { immediate: true })
 
 watch(language, locale => setKioskLocale(locale), { immediate: true })
 
@@ -2315,7 +2235,7 @@ async function syncProactiveVision() {
     await proactiveVision.start(proactiveCamera.value)
 }
 
-watch([cameraRequired, localObservationRequired, mouthTrackingRequired, falconMode, () => JSON.stringify([
+watch([cameraRequired, localObservationRequired, mouthTrackingRequired, () => JSON.stringify([
   props.deviceSettings?.faceDetectionConfidence,
   props.deviceSettings?.presenceVisionMode,
   performanceSettings.value.camera,
@@ -2410,8 +2330,8 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
 }
 
 function handlePresenceCandidate(candidate: Omit<PresenceCandidate, 'greetingRoiHit' | 'interactionRoiHit'> | undefined) {
-  // Falcon may borrow the camera while proactive observation is disabled.
-  // Its face processing must not silently re-enable greetings or idle policy.
+  // Optional mouth assistance can use the camera while proactive observation
+  // is disabled; it must not re-enable greetings or idle policy.
   if (!localObservationRequired.value)
     return
   voicePresence.observe(performance.now(), candidate, proactiveSettings.value.observation.detectionZone)
@@ -2565,8 +2485,8 @@ useIntervalFn(() => {
 }, 500)
 
 // Without observation there is no presence edge to trigger an enabled welcome.
-// Welcome once when an idle entry is admitted; never borrow Falcon's camera to
-// silently re-enable observation or welcome over an unresolved previous cart.
+// Welcome once when an idle entry is admitted; optional camera use must not
+// re-enable observation or welcome over an unresolved previous cart.
 let entryWelcomeRunning = false
 watch([isAudioListening, localObservationRequired, () => props.deviceSettings?.greetingEnabled, interactiveServiceClient.availability, serviceRecoveryBlocked, customerSessionState, adminPanelOpen], () => {
   if (entryWelcomeRunning || !isAudioListening.value || localObservationRequired.value || !props.deviceSettings?.greetingEnabled || interactiveServiceClient.availability.value !== 'ready' || serviceRecoveryBlocked.value || customerSessionState.value !== 'standby' || adminPanelOpen.value)
@@ -2801,7 +2721,7 @@ async function sendConversationMessage(
   // turn's question; subsequent results replace an earlier operational offer.
   let questionReceipt: ReturnType<typeof questionReceiptFrom>
   let operationReply: string | undefined
-  const menuReply = createMenuReplyWindow()
+  const menuReply = createMenuReplyWindow({ sourceUtterance: text })
   const taskTool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_agent_task')
   const taskId = `agent:${turn.id}`
   let taskBound = false
@@ -3406,7 +3326,6 @@ onUnmounted(() => {
         v-model:paused="paused"
         :device="props.device"
         :text-only-mode="!props.voiceConversationOnly"
-        :recognition-mode="recognition.policy.value?.mode"
         :session-ending="customerSessionState === 'resetting'"
         @test-speech="adminVoiceTest.play()"
         @close="closeAdminPanel"
@@ -3437,7 +3356,9 @@ onUnmounted(() => {
     </aside>
 
     <section :class="['service-hero', `is-${orientation}`]" :style="stageBackgroundStyle">
+      <KioskActivityGlow :active="isAudioListening && isSpeech" mode="listening" />
       <section :class="['stage-region', `is-${assistantPresence.mode}`]" aria-label="虛擬服務員">
+        <KioskActivityGlow :active="processingSpeechActive || adminVoiceTest.speaking.value" mode="speaking" />
         <WidgetStage
           v-model:state="avatarState"
           class="stage-model"
@@ -3491,7 +3412,7 @@ onUnmounted(() => {
         v-if="adminPanelOpen && isKioskAdminSessionActive && voiceDiagnosticsEnabled"
         :entries="voiceDiagnosticEntries"
         :mode="adminVoiceTestActive ? 'admin' : props.voiceConversationOnly ? 'customer' : 'text'"
-        :microphone="enabled && audioInputStarted && !!stream"
+        :microphone="enabled && audioInputStarted"
         :capturing="isSpeech"
         :probability="isSpeechProb"
         :processing="arrayProcessingLabel"
@@ -3501,7 +3422,7 @@ onUnmounted(() => {
         :output-db="arrayDiagnostics?.outputDb"
         :limited-percent="arrayDiagnostics?.limitedPercent"
         :blocked-reason="voiceBlockReason()"
-        :error="settingsAudioDeviceStore.inputError?.message || inferenceError || audioStartupError"
+        :error="(nativeHardwareMicrophone ? undefined : settingsAudioDeviceStore.inputError?.message || inferenceError) || audioStartupError"
         :target="customerTarget"
         :interruption="interruptionDiagnostic"
         :background-speech-mode="backgroundSpeechMode"
@@ -3509,7 +3430,7 @@ onUnmounted(() => {
     </section>
 
     <div v-if="desktopHost && !props.voiceConversationOnly" v-show="!textConsoleFloating" id="kiosk-text-console-dock" :class="['native-text-console']" />
-    <ScenarioSurface :presentation="productPresentation.current.value" :listening="isAudioListening" :occluded="adminPanelOpen" :class="['menu-region']" @activity="!productPresentation.introducing.value && recordCustomerActivity('manual')" />
+    <ScenarioSurface :operating="pageOperating" :presentation="productPresentation.current.value" :listening="isAudioListening" :occluded="adminPanelOpen" :class="['menu-region']" @activity="!productPresentation.introducing.value && recordCustomerActivity('manual')" />
     <KioskAgentControl
       v-if="agentOrderOwner"
       :releasing="manualControlPending"
@@ -3563,13 +3484,13 @@ onUnmounted(() => {
 
 <style scoped>
 .kiosk-scene { display: grid; box-sizing: border-box; width: 100vw; height: 100dvh; grid-template-columns: minmax(0, 1fr); padding: 1.25rem; overflow: hidden; background: radial-gradient(circle at 12% 0%, rgb(59 79 63 / 24%), transparent 38%), linear-gradient(135deg, #111a17, #15211d); row-gap: 1rem; }
-.kiosk-scene.is-landscape { grid-template-rows: minmax(0, .32fr) minmax(0, .68fr); }
-.kiosk-scene.is-portrait { grid-template-rows: minmax(0, .36fr) minmax(0, .64fr); }
-.kiosk-scene.has-native-console.is-landscape { grid-template-rows: minmax(120px, .32fr) auto minmax(180px, .68fr); }
-.kiosk-scene.has-native-console.is-portrait { grid-template-rows: minmax(120px, .36fr) auto minmax(180px, .64fr); }
+.kiosk-scene.is-landscape { grid-template-rows: minmax(0, .25fr) minmax(0, .75fr); }
+.kiosk-scene.is-portrait { grid-template-rows: minmax(0, .25fr) minmax(0, .75fr); }
+.kiosk-scene.has-native-console.is-landscape { grid-template-rows: minmax(120px, .25fr) auto minmax(180px, .75fr); }
+.kiosk-scene.has-native-console.is-portrait { grid-template-rows: minmax(120px, .25fr) auto minmax(180px, .75fr); }
 .native-text-console { position: relative; z-index: 60; min-width: 0; min-height: 0; grid-column: 1; grid-row: 2; }
 .has-native-console .menu-region { grid-row: 3; }
-.service-hero { position: relative; display: grid; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 10%); border-radius: 1.125rem; background: radial-gradient(ellipse at 24% 16%, rgb(238 205 148 / 10%), transparent 25%), linear-gradient(105deg, #24352d 0%, #1a2922 43%, #101a16 100%); grid-column: 1; grid-row: 1; }.service-hero.is-landscape { grid-template-columns: minmax(14rem, .37fr) minmax(0, .63fr); }.service-hero.is-portrait { grid-template-columns: minmax(10rem, .40fr) minmax(0, .60fr); }
+.service-hero { position: relative; display: grid; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 10%); border-radius: 1.125rem; background: radial-gradient(ellipse at 24% 16%, rgb(238 205 148 / 10%), transparent 25%), linear-gradient(105deg, #24352d 0%, #1a2922 43%, #101a16 100%); grid-column: 1; grid-row: 1; }.service-hero.is-landscape { grid-template-columns: minmax(5.5rem, .24fr) minmax(0, .76fr); }.service-hero.is-portrait { grid-template-columns: minmax(5.5rem, .24fr) minmax(0, .76fr); }
 .stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: transparent; transition: box-shadow .2s ease; }.stage-region.is-hearing-speech, .stage-region.is-listening { box-shadow: inset 0 0 1.4rem rgb(50 201 181 / 7%); }.stage-region.is-processing, .stage-region.is-transcribing { box-shadow: inset 0 0 1.6rem rgb(255 180 76 / 8%); }.stage-region.is-speaking { box-shadow: inset 0 0 1.6rem rgb(117 157 255 / 8%); }
 /* Keep the upper-body gestures prominent in the narrow hero column. Scaling from
    the bottom and shifting down together keeps the face at the same height while
@@ -3587,6 +3508,6 @@ onUnmounted(() => {
 
 @media (max-width: 700px) {
   .kiosk-scene { padding: .6rem; row-gap: .6rem; }
-  .service-hero.is-landscape { grid-template-columns: minmax(7rem, .37fr) minmax(0, .63fr); }
+  .service-hero.is-landscape { grid-template-columns: minmax(5rem, .24fr) minmax(0, .76fr); }
 }
 </style>

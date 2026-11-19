@@ -1,10 +1,8 @@
-import type { SpeechRecognitionPolicy } from '@proj-airi/stage-shared/falcon-settings'
-
 export interface KioskUtterance {
   capturedAt: number
   id: number
   recording?: Blob
-  recognitionMode?: SpeechRecognitionPolicy['mode']
+  recognitionMode?: 'legacy'
   source: 'asr' | 'simulation'
   text: string
 }

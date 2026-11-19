@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import type { SpeechRecognitionPolicy } from '@proj-airi/stage-shared/falcon-settings'
-
 import type { KioskDevice } from '../services/kiosk-device'
 
 import { useBuildInfo } from '@proj-airi/stage-ui/composables/use-build-info'
@@ -18,7 +16,6 @@ const props = defineProps<{
   device?: KioskDevice
   sessionEnding: boolean
   textOnlyMode?: boolean
-  recognitionMode?: SpeechRecognitionPolicy['mode']
 }>()
 
 const emit = defineEmits<{
@@ -82,7 +79,7 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
       <slot name="device-settings" />
       <MenuSimulationPanel v-if="development" :bridge="interactiveServiceClient" />
       <KioskCameraPreviewSettings v-model="cameraPreviewEnabled" />
-      <KioskMediaDeviceSettings :text-only-mode="props.textOnlyMode" :recognition-mode="props.recognitionMode" />
+      <KioskMediaDeviceSettings :text-only-mode="props.textOnlyMode" />
 
       <section :class="['admin-section']">
         <h3>{{ t('deviceSettings.localDiagnostics.title') }}</h3>
@@ -130,7 +127,7 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
         </p>
         <FieldRange
           v-model="conversationFontSize"
-          :default-value="20"
+          :default-value="28"
           :max="40"
           :min="20"
           :step="1"

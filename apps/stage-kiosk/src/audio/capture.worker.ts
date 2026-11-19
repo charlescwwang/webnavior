@@ -124,6 +124,8 @@ transport.context.on(transport.request, ({ body }) => {
         // Electron port audit. Clone this 3 KiB render packet across processes;
         // transfer ownership only on the browser Worker/Worklet ports.
         // https://www.electronjs.org/docs/latest/api/message-port-main
+        // NOTICE: clone PCM at the Electron boundary; transferring an ArrayBuffer
+        // makes MessagePortMain receive null: https://github.com/electron/electron/issues/34905.
         input.postMessage({ ...arrayInputRequest, body: { generation, offsetFrames: block.offsetFrames, samples } })
       }
       input.onmessage = ({ data }) => {

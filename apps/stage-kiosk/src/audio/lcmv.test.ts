@@ -45,7 +45,7 @@ it('keeps mapped channel 6 and LCMV sample clocks identical across irregular chu
   expect(a.processed.some(sample => Math.abs(sample) > 0.00001)).toBe(true)
 })
 
-it('gains and limits only the VAD branch without altering Falcon reference samples or sample count', () => {
+it('gains and limits only the VAD branch without altering reference samples or sample count', () => {
   const raw = new Float32Array([0.01, 0.3, -0.4, 0.9])
   const before = raw.slice()
   const gain = new InputGain()

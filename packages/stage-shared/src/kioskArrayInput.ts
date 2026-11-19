@@ -15,7 +15,9 @@ export const arrayInputControlSchema = variant('kind', [
 export const arrayInputPortSchema = object({ generation })
 export const arrayInputPortChannel = 'airi:kiosk:array-input:port:v1'
 export const arrayInputRequest = defineEventa<{ generation: string, offsetFrames: number, samples: Float32Array }>('airi:kiosk:array-input:request:v1')
-export const arrayInputResponse = defineEventa<{ generation: string, result?: NativeAudioResult, error?: string }>('airi:kiosk:array-input:response:v1')
+export const arrayInputRead = defineEventa<{ generation: string }>('airi:kiosk:array-input:read:v1')
+export const arrayInputOpen = defineEventa<{ generation: string }>('airi:kiosk:array-input:open:v1')
+export const arrayInputResponse = defineEventa<{ generation: string, opened?: boolean, result?: NativeAudioResult, error?: string }>('airi:kiosk:array-input:response:v1')
 export const invokeArrayInput = defineInvokeEventa<NativeAudioResult, InferOutput<typeof arrayInputControlSchema>>('airi:kiosk:array-input:control:v1')
 
 /** Native eight-channel input for the original array DSP, independently of OpenVINO. */

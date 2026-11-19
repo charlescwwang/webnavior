@@ -1,6 +1,4 @@
 import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
-import type { FalconTranscription } from '@proj-airi/stage-shared/falcon-audio'
-import type { SpeechRecognitionPolicy } from '@proj-airi/stage-shared/falcon-settings'
 import type { KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
 import type { ContextReply, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
@@ -320,12 +318,22 @@ export async function recordKioskOrderResult(input: {
   })
 }
 
+/** Capture-time site and observed names; provider credentials remain server-owned. */
+export interface KioskTranscriptionContext {
+  serviceId: string
+  menuNames: readonly string[]
+}
+
 /** Builds the multipart request body for the device-authenticated ASR gateway. */
-export function createKioskTranscriptionBody(recording: Blob, chunk?: KioskAudioChunk) {
+export function createKioskTranscriptionBody(recording: Blob, chunk?: KioskAudioChunk, context?: KioskTranscriptionContext) {
   const body = new FormData()
   // useAudioRecorder serializes microphone samples as WAV/PCM. The filename
   // is part of the ASR protocol: providers may choose a decoder from it.
   body.set('file', recording, 'recording.wav')
+  if (context) {
+    body.set('serviceId', context.serviceId)
+    body.set('menuNames', JSON.stringify(context.menuNames))
+  }
   if (chunk) {
     body.set('utteranceId', chunk.utteranceId)
     body.set('chunkIndex', String(chunk.index))
@@ -337,26 +345,10 @@ export function createKioskTranscriptionBody(recording: Blob, chunk?: KioskAudio
 }
 
 /** Sends microphone bytes to the device-authenticated ASR gateway. */
-export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal, chunk?: KioskAudioChunk) {
-  const body = createKioskTranscriptionBody(recording, chunk)
+export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal, chunk?: KioskAudioChunk, context?: KioskTranscriptionContext) {
+  const body = createKioskTranscriptionBody(recording, chunk, context)
   const response = await requestAudio('/api/kiosk/audio/transcriptions', { body, method: 'POST', signal })
   return await response.json() as { text: string }
-}
-
-/** Reads capture policy without exposing the Falcon provider address or credential. */
-export async function fetchSpeechRecognitionPolicy(signal?: AbortSignal): Promise<SpeechRecognitionPolicy> {
-  return request('/api/kiosk/audio/recognition-policy', { cache: 'no-store', signal })
-}
-
-/** Sends one complete synchronized clip through Webnavior; the remote service owns ASR. */
-export async function transcribeFalconAudio(packet: ArrayBuffer, signal: AbortSignal) {
-  const response = await requestAudio('/api/kiosk/audio/falcon-transcriptions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream' },
-    body: packet,
-    signal,
-  })
-  return await response.json() as FalconTranscription
 }
 
 /** Reads live activation without loading credentials, policy or the model. */

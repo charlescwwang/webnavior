@@ -33,7 +33,7 @@ export interface DeviceSettingsValues {
   /** Allows this device to use text input regardless of its shared voice-only Profile. */
   textOnlyMode: boolean
   observationEnabled: boolean
-  /** Opt-in visual admission for legacy ASR. Falcon still requires its audiovisual capture. @default false */
+  /** Opt-in visual admission for ASR. @default false */
   mouthDetectionEnabled: boolean
   greetingEnabled: boolean
   reminderEnabled: boolean

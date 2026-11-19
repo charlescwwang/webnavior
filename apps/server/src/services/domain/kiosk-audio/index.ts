@@ -1,17 +1,12 @@
-import type { FalconTranscription } from '@proj-airi/stage-shared/falcon-audio'
-import type { SpeechRecognitionPolicy } from '@proj-airi/stage-shared/falcon-settings'
-
 import type { EnvelopeCrypto } from '../../../utils/envelope-crypto'
 import type { ConfigKVService } from '../../adapters/config-kv'
 
 import { Buffer as NodeBuffer } from 'node:buffer'
 
 import { useLogger } from '@guiiai/logg'
-import { validateFalconClip } from '@proj-airi/stage-shared/falcon-audio'
 
 import { createBadRequestError, createServiceUnavailableError } from '../../../utils/error'
 import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../adapters/config-kv'
-import { readFalconTranscript } from './falconResponse'
 
 type AudioCapability = 'asr' | 'tts'
 const UPSTREAM_BODY_SNIPPET_MAX = 256
@@ -29,15 +24,13 @@ interface KioskAudioGatewayOptions {
 
 export interface KioskAudioGateway {
   speak: (input: { locale: string, modelName: string, text: string }) => Promise<Response>
-  transcribe: (input: { audio: File, modelName: string }) => Promise<string>
-  recognitionPolicy: () => Promise<SpeechRecognitionPolicy>
-  transcribeFalcon: (packet: ArrayBuffer, signal: AbortSignal) => Promise<FalconTranscription>
+  transcribe: (input: { audio: File, modelName: string, vocabulary?: readonly string[] }) => Promise<string>
 }
 
 /**
  * Dispatches kiosk audio through the server's Webnavior audio configuration.
  *
- * Kiosks send only microphone bytes, text, and locale. The selected Site
+ * Kiosks send microphone bytes, text, locale, and bounded menu context. The selected Site
  * policy is resolved by the device route; provider URL, upstream model, voice,
  * and credential remain in this server-side boundary.
  */
@@ -45,54 +38,26 @@ export function createKioskAudioGateway(options: KioskAudioGatewayOptions): Kios
   const fetchImpl = options.fetchImpl ?? fetch
   const logger = options.logger ?? useLogger('kiosk-audio').useGlobalConfig()
 
-  async function recognitionPolicy(): Promise<SpeechRecognitionPolicy> {
-    const config = await options.configKV.get('FALCON_CONNECTION_CONFIG')
-    return { mode: config.mode, maxUtteranceSeconds: config.maxUtteranceSeconds, timeoutMs: config.timeoutMs }
-  }
-
-  async function transcribeFalcon(packet: ArrayBuffer, signal: AbortSignal) {
-    // Resolve again for every utterance: a late upload cannot opt itself back
-    // into Falcon after an administrator has switched the system to legacy.
-    const config = await options.configKV.get('FALCON_CONNECTION_CONFIG')
-    if (config.mode !== 'falcon')
-      throw createBadRequestError('Recognition mode changed. Reload the kiosk.', 'KIOSK_RECOGNITION_MODE_CHANGED')
-    try {
-      validateFalconClip(packet, config.maxUtteranceSeconds)
-    }
-    catch {
-      throw createBadRequestError('Invalid synchronized Falcon clip.', 'KIOSK_FALCON_INVALID_CLIP')
-    }
-    const key = config.keyCiphertext
-      ? options.envelopeCrypto.decryptKey(config.keyCiphertext, { modelName: 'webnavior-falcon', keyEntryId: 'default' })
-      : undefined
-    const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(config.timeoutMs)])
-    try {
-      const response = await fetchImpl(new URL(config.path, config.baseURL), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream', 'X-Falcon-Precision': config.precision, ...(key ? { Authorization: `Bearer ${key.toString('utf8')}` } : {}) },
-        body: packet,
-        signal: requestSignal,
-        redirect: 'error',
-      })
-      // SSE is parsed here as a reserved upstream interface. Only completed
-      // text is returned to the device; previews never become customer input.
-      return await readFalconTranscript(response, { signal: requestSignal, responseFormat: config.responseFormat })
-    }
-    catch (error) {
-      if (signal.aborted)
-        throw error
-      throw createServiceUnavailableError('Falcon did not return a complete transcript.', 'KIOSK_FALCON_UPSTREAM_ERROR')
-    }
-    finally {
-      key?.fill(0)
-    }
-  }
-
-  async function transcribe(input: { audio: File, modelName: string }) {
+  async function transcribe(input: { audio: File, modelName: string, vocabulary?: readonly string[] }) {
     const config = await resolveCapability('asr', input.modelName)
     const body = new FormData()
     body.set('file', input.audio, input.audio.name || 'recording.webm')
     body.set('model', config.upstreamModel)
+    // The provider accepts vocabulary through prompt, not a replacement pass.
+    // Bound context independently of upload size and retain ASR numbers/negation.
+    const vocabulary: string[] = []
+    let characters = 0
+    for (const raw of input.vocabulary ?? []) {
+      const term = raw.trim()
+      if (!term || term.length > 100 || /[\u0000-\u001F]/.test(term) || vocabulary.includes(term))
+        continue
+      if (vocabulary.length >= 100 || characters + JSON.stringify(term).length + 1 > 1500)
+        break
+      vocabulary.push(term)
+      characters += JSON.stringify(term).length + 1
+    }
+    if (vocabulary.length)
+      body.set('prompt', `以下是菜單名稱與別名，僅供聽音辨識參考；只轉錄實際聽到的內容，不補寫餐點，保留顆數、份數、否定與更正：${JSON.stringify(vocabulary)}`)
     const response = await forward(config, 'audio/transcriptions', { body, method: 'POST' })
     if (!response.ok) {
       const requestUrl = new URL(endpoint(config.baseURL, 'audio/transcriptions'))
@@ -166,7 +131,7 @@ export function createKioskAudioGateway(options: KioskAudioGatewayOptions): Kios
     }
   }
 
-  return { speak, transcribe, recognitionPolicy, transcribeFalcon }
+  return { speak, transcribe }
 }
 
 function endpoint(baseURL: string, path: string) {

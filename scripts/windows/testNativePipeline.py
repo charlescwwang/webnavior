@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -15,7 +16,7 @@ from unittest.mock import patch
 import probeNativePipeline
 
 ROOT = Path(__file__).resolve().parents[2]
-AUDIO = ROOT/'pb-test.local/kiosk-auto-audio-20261118-r1/audio-runtime'
+AUDIO = ROOT/'apps/stage-kiosk-desktop/audio'
 
 
 class InputStream:
@@ -47,6 +48,7 @@ class InputStream:
 
 
 class PortAudio:
+    PortAudioError = RuntimeError
     def query_hostapis(self):
         return [dict(name='Windows WASAPI', default_output_device=-1)]
     def query_devices(self):
@@ -59,14 +61,29 @@ class PortAudio:
 
 @unittest.skipUnless(os.environ.get('KIOSK_AUDIO_TEST_PYTHON'), 'Explicit CPU DSP validation environment required')
 class PipelineDiagnosticTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        global AUDIO
+        source = AUDIO
+        cls.runtime = tempfile.TemporaryDirectory(prefix='hush-diagnostic-')
+        AUDIO = Path(cls.runtime.name)/'audio'
+        shutil.copytree(source, AUDIO, ignore=shutil.ignore_patterns('__pycache__', 'tests', '*.pyc'))
+        files = {str(p.relative_to(AUDIO)): hashlib.sha256(p.read_bytes()).hexdigest()
+                 for p in AUDIO.rglob('*') if p.is_file()}
+        (AUDIO/'AUDIO-MANIFEST.json').write_text(json.dumps(dict(files=files)))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.runtime.cleanup()
+
     def options(self, report):
-        return argparse.Namespace(audio_root=AUDIO, report=report, provider='cpu', input_device='',
+        return argparse.Namespace(audio_root=AUDIO, report=report, input_device='',
                                   channels=list(range(7)), gain_db=0, seconds=.5)
     def test_real_worker_reports_full_pipeline_timings_without_profile_writes(self):
         import sys
         sys.path.insert(0, str(AUDIO/'src'))
         from uma8_frontend import native_device
-        original = {name:hashlib.sha256((AUDIO/name).read_bytes()).hexdigest() for name in probeNativePipeline.EXPECTED_SOURCE}
+        original = json.loads((AUDIO/'AUDIO-MANIFEST.json').read_text())['files']
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory)/'result.json'
             with patch.object(native_device, 'portaudio', return_value=PortAudio()):
@@ -75,10 +92,10 @@ class PipelineDiagnosticTests(unittest.TestCase):
             self.assertEqual(status, 0)
             self.assertTrue(result['success'])
             self.assertEqual(result['stage'], 'completed')
-            self.assertFalse(result['diagnostics']['gpu_verified'])
+            self.assertEqual(result['diagnostics']['requested_provider'], 'CPU')
             self.assertGreaterEqual(result['processedFrames'], 24000)
             self.assertGreater(result['outputSamples'], 5000)
-            for key in ('aec10ms', 'spatial16ms', 'denoise16ms', 'frontend10ms', 'poll8ms'):
+            for key in ('spatial16ms', 'hush10ms', 'frontend10ms', 'read16ms'):
                 self.assertGreater(result['timing'][key]['calls'], 0)
                 self.assertGreater(result['timing'][key]['meanMs'], 0)
             self.assertFalse(result['audioSaved'])
@@ -106,8 +123,8 @@ class PipelineDiagnosticTests(unittest.TestCase):
         import sys
         sys.path.insert(0, str(AUDIO/'src'))
         from uma8_frontend import native_device
-        from uma8_frontend.denoise import UlUnas
-        original = UlUnas.process
+        from uma8_frontend.hush import Session
+        original = Session.process
         # NOTICE: delay the external model boundary but keep real CPU inference,
         # AEC, native callback queue, DSP and error reporting intact.
         def slow(instance, spectrum):
@@ -115,14 +132,14 @@ class PipelineDiagnosticTests(unittest.TestCase):
             return original(instance, spectrum)
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory)/'result.json'
-            with patch.object(native_device, 'portaudio', return_value=PortAudio()), patch.object(UlUnas, 'process', slow):
+            with patch.object(native_device, 'portaudio', return_value=PortAudio()), patch.object(Session, 'process', slow):
                 status = probeNativePipeline.measure(self.options(report))
             result = json.loads(report.read_text())
             self.assertEqual(status, 1)
             self.assertFalse(result['success'])
             self.assertEqual(result['stage'], 'native-pipeline-capture')
-            self.assertGreater(result['timing']['denoise16ms']['maxMs'], 250)
-            self.assertIn('reference underrun', result['error']['message'])
+            self.assertGreater(result['timing']['hush10ms']['maxMs'], 250)
+            self.assertIn('250 ms backlog', result['error']['message'])
 
 
 class PipelineGuardTests(unittest.TestCase):
@@ -140,7 +157,7 @@ class PipelineGuardTests(unittest.TestCase):
     def test_mismatched_installed_source_fails_before_native_capture(self):
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory)/'result.json'
-            args = argparse.Namespace(audio_root=Path(directory), report=report, provider='openvino',
+            args = argparse.Namespace(audio_root=Path(directory), report=report,
                                       input_device='', channels=list(range(7)), gain_db=30, seconds=15)
             self.assertEqual(probeNativePipeline.measure(args), 1)
             result = json.loads(report.read_text())

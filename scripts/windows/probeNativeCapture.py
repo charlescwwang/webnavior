@@ -31,6 +31,7 @@ def main():
             if time.monotonic() > deadline:
                 raise TimeoutError('Native audio did not deliver five seconds before timeout')
             # No application playback is started by this input-only diagnostic.
+            capture.render(np.zeros((384, 2), np.float32))
             raw = capture.read()[:, :8]
             if len(raw):
                 if not np.isfinite(raw).all():

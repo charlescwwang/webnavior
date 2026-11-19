@@ -19,7 +19,7 @@ import traceback
 import numpy as np
 
 from .config import Config
-from .denoise import UlUnas
+from .hush import Model
 from .pipeline import Frontend
 from .resampling import Decimator
 from .native_device import Capture, devices
@@ -118,12 +118,12 @@ class InputWorker:
 
 class Worker:
     """Owns model lifetime independently of the current capture generation."""
-    def __init__(self, directory, model, provider, *, denoise_enabled=True):
+    def __init__(self, directory, model):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.config = Config(calibration=str(self.directory / "target_rtf.npz"), model=str(model),
-                             provider=provider, automatic_rtf=True, denoise_enabled=denoise_enabled)
-        self.denoiser = UlUnas(model, provider=provider, enabled=denoise_enabled)
+                             automatic_rtf=True)
+        self.denoiser = Model(model)
         self.generation = None
         self.frontend = None
         self.offset = 0
@@ -135,12 +135,20 @@ class Worker:
         capture, self.capture = self.capture, None
         if capture is not None:
             capture.close()
+        if self.frontend is not None:
+            self.frontend.close()
+            self.frontend = None
 
     def handle(self, request, payload):
         kind = request.get("kind")
         if kind == "status":
-            return dict(state="automatic",
-                        **self.denoiser.diagnostics), np.zeros(0, np.float32)
+            result = dict(state="automatic", **self.denoiser.diagnostics)
+            if self.frontend is not None:
+                result['aecEnabled'] = self.frontend.cfg.aec_enabled
+                result['modelDelaySamples'] = self.frontend.denoise.delay_samples
+                result['hush'] = dict(attenuationDb=self.frontend.cfg.hush_attenuation_db,
+                                      dryMixPercent=self.frontend.cfg.hush_dry_mix_percent)
+            return result, np.zeros(0, np.float32)
         generation = request.get("generation")
         if not isinstance(generation, str) or not 1 <= len(generation) <= 128:
             raise ValueError("Missing capture generation")
@@ -148,7 +156,13 @@ class Worker:
             channels = request.get("channels")
             if not isinstance(channels, list) or any(type(x) is not int or not 0 <= x < 8 for x in channels):
                 raise ValueError("Invalid physical channel map")
+            hush = request.get('hush')
+            if not isinstance(hush, dict) or set(hush) != {'attenuationDb', 'dryMixPercent'}:
+                raise ValueError('Missing or invalid Hush settings')
             cfg = replace(self.config, channels=channels,
+                          aec_enabled=False,
+                          hush_attenuation_db=hush['attenuationDb'],
+                          hush_dry_mix_percent=hush['dryMixPercent'],
                           input_gain_db=request.get("gainDb", 30),
                           end_silence_ms=request.get("silenceMs", 600),
                           min_speech_ms=request.get("minSpeechMs", 80)).validate()
@@ -156,36 +170,32 @@ class Worker:
             self.generation = None
             self.frontend = None
             self.offset = self.output_offset = 0
-            self.decimator = Decimator()
+            self.decimator = Decimator(7)
             self.resample_discard = 16  # 97-tap FIR group delay: 48/3 output samples.
-            self.pending = np.zeros((0, 8), np.float32)
+            self.pending = np.zeros((0, 7), np.float32)
             self.active_config = cfg
-            self.denoiser.reset()
-            self.frontend = Frontend(cfg, denoiser=self.denoiser)
+            self.frontend = Frontend(cfg, denoiser=self.denoiser.session(cfg.hush_attenuation_db, cfg.hush_dry_mix_percent))
             self.generation = generation
-            return dict(state=kind, **self.denoiser.diagnostics), np.zeros(0, np.float32)
+            return {**self.denoiser.diagnostics, 'state': kind, 'aecEnabled': cfg.aec_enabled, 'hush': hush, 'modelDelaySamples': self.frontend.denoise.delay_samples}, np.zeros(0, np.float32)
         if kind == "open":
             if generation != self.generation or self.capture is not None:
                 raise ValueError("Stale or already open native capture")
-            self.capture = Capture(request.get("inputDevice", ""))
-            self.native_pending = np.zeros((0, 10), np.float32)
-            self.render_offset = 0
+            self.capture = Capture(request.get("inputDevice", ""), paired=False)
+            self.native_pending = np.zeros((0, 8), np.float32)
+            self.captured_frames = 0
             return dict(inputDevice=self.capture.input_id), np.zeros(0, np.float32)
-        if kind == "poll":
+        if kind == "read":
             if generation != self.generation or self.capture is None:
                 raise ValueError("Stale or unopened native capture")
-            render = playback(request, payload, self.render_offset)
-            self.render_offset += 384
-            self.capture.render(render)
             raw = self.capture.read()
+            self.captured_frames += len(raw)
             self.native_pending = np.concatenate((self.native_pending, raw))
             frames, segments, pcm = [], [], []
             cursor = 0
             processing_ms = 0.
             while len(self.native_pending) >= 384:
                 block, self.native_pending = self.native_pending[:384], self.native_pending[384:]
-                result, audio = self.handle(dict(kind="block", generation=generation, offsetFrames=self.offset),
-                                            block.T.astype('<f4').tobytes())
+                result, audio = self.process(block)
                 for key, target in (("frames", frames), ("segments", segments)):
                     for descriptor in result[key]:
                         target.append(dict(descriptor, pcmStart=descriptor["pcmStart"]+cursor))
@@ -193,9 +203,8 @@ class Worker:
                 cursor += len(audio)
                 processing_ms += result['processingMs']
             power = float(np.mean(raw[:, self.active_config.channels]**2)) if len(raw) else 0.
-            reference_frames = int(np.count_nonzero(np.any(abs(raw[:, 8:]) > 1e-6, axis=1)))
-            return dict(processedFrames=self.offset, renderFrames=self.render_offset, frames=frames, segments=segments,
-                        inputPower=power, referenceFrames=reference_frames,
+            return dict(processedFrames=self.offset, capturedFrames=self.captured_frames, frames=frames, segments=segments,
+                        inputPower=power, referenceFrames=0,
                         phraseActive=bool(self.frontend and self.frontend.segmenter.active), processingMs=processing_ms), np.concatenate(pcm) if pcm else np.zeros(0, np.float32)
         if kind == "stop":
             # A late retiring page cannot stop the next page's generation.
@@ -211,23 +220,30 @@ class Worker:
         planar = np.frombuffer(payload, dtype="<f4").reshape(10, 384)
         if not np.isfinite(planar).all() or np.max(abs(planar)) > 1.001:
             raise ValueError("Invalid normalized multichannel PCM")
+        return self.process(planar[:8].T)
+
+    def process(self, microphone):
+        """Advance the continuous Hush stream from one 384-frame physical input block."""
+        if microphone.shape != (384, 8):
+            raise ValueError('Expected eight physical microphone channels')
+        if not np.isfinite(microphone).all() or np.max(abs(microphone)) > 1.001:
+            raise ValueError('Invalid normalized microphone PCM')
         self.offset += 384
-        # The AEC bank owns mono reference. Both actual rendered channels are
-        # downmixed together, then resampled with capture on exactly one clock.
-        paired = np.column_stack((planar[self.active_config.channels].T, np.mean(planar[8:10], axis=0)))
-        paired = self.decimator.push(paired)
-        discard = min(self.resample_discard, len(paired))
+        mapped = microphone[:, self.active_config.channels]
+        resampled = self.decimator.push(mapped)
+        discard = min(self.resample_discard, len(resampled))
         self.resample_discard -= discard
-        self.pending = np.concatenate((self.pending, paired[discard:]))
+        self.pending = np.concatenate((self.pending, resampled[discard:]))
         frames, segments, pcm = [], [], []
         cursor = 0
         tic = time.perf_counter()
         while len(self.pending) >= 160:
             block, self.pending = self.pending[:160], self.pending[160:]
-            audio, events, telemetry = self.frontend.push(block[:, :7], block[:, 7])
-            for start in range(0, len(audio), 256):
-                chunk = audio[start:start+256]
-                info = telemetry[start//256]
+            audio, events, telemetry = self.frontend.push(block)
+            start = 0
+            for info in telemetry:
+                chunk = audio[start:start+info["length"]]
+                start += len(chunk)
                 frames.append(dict(offsetSamples=self.output_offset, length=len(chunk),
                                    speech=bool(info["gain_target_speech"]),
                                    rtfState=info["rtf_state"], rtfUpdates=info["rtf_updates"],
@@ -249,13 +265,8 @@ def main(output):
     """Use entry.py's reserved binary pipe; stdin EOF ends this Electron owner."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--state-dir", required=True)
-    parser.add_argument("--model", required=True)
+    parser.add_argument("--model", required=True, help="Pinned Hush assets directory")
     parser.add_argument("--capture-only", action="store_true")
-    parser.add_argument("--provider", choices=("openvino", "cpu"), default="openvino")
-    # The dedicated launcher scopes this flag to one EXE lifetime. No profile
-    # preference is saved; ordinary startup retains model-enabled behavior.
-    parser.add_argument('--bypass-denoiser', action='store_true',
-                        default=os.environ.get('WEBNAVIOR_TEST_BYPASS_ULUNAS') == '1')
     args = parser.parse_args()
     worker = None
     while True:
@@ -270,7 +281,7 @@ def main(output):
                 result, pcm = dict(devices=devices()), np.zeros(0, np.float32)
             else:
                 if worker is None:
-                    worker = InputWorker() if args.capture_only else Worker(args.state_dir, args.model, args.provider, denoise_enabled=not args.bypass_denoiser)
+                    worker = InputWorker() if args.capture_only else Worker(args.state_dir, args.model)
                 result, pcm = worker.handle(request, payload)
             response = dict(id=request["id"], ok=True, result=result)
         except Exception as error:
@@ -279,7 +290,7 @@ def main(output):
             # one. Only a failed block from the active owner retires its state.
             if worker is None:
                 traceback.print_exc(file=sys.stderr)
-            elif request.get("kind") in ("block", "poll", "open") and request.get("generation") == worker.generation:
+            elif request.get("kind") in ("block", "read", "poll", "open") and request.get("generation") == worker.generation:
                 try:
                     worker.close_capture()
                 except Exception:
@@ -290,9 +301,11 @@ def main(output):
             response, pcm = dict(id=request["id"], ok=False, error=str(error)[:500]), np.zeros(0, np.float32)
         write_frame(output, response, pcm)
         if worker is None and not response["ok"]:
-            # Initialization failure is terminal, with no CPU retry. The
+            # Initialization failure is terminal, with no alternate model retry. The
             # supervisor retires the process and any remaining requests.
             return
 
     if worker is not None:
         worker.close_capture()
+        if isinstance(worker, Worker):
+            worker.denoiser.close()

@@ -27,16 +27,6 @@
       "url": "https://files.pythonhosted.org/packages/5c/cc/a952cbd2980618b3d238cd34227ae99df1a7c78e47f44fd50c592fe654f3/webrtcvad_wheels-2.0.14.post1-cp313-cp313-win_amd64.whl"
     },
     {
-      "file": "openvino-2026.4.1-22982-cp313-cp313-win_amd64.whl",
-      "sha256": "37c270c99d6de23439965e97cb5106389d3c8985f3b8bb90909a6ea0270db3f2",
-      "url": "https://files.pythonhosted.org/packages/35/e2/917952cd8d21351d10bf0ce694421de92a2b14a6269f0ba13d2504fcf6a9/openvino-2026.4.1-22982-cp313-cp313-win_amd64.whl"
-    },
-    {
-      "file": "openvino_telemetry-2025.2.0-py3-none-any.whl",
-      "sha256": "bcb667e83a44f202ecf4cfa49281715c6d7e21499daec04ff853b7f964833599",
-      "url": "https://files.pythonhosted.org/packages/3b/ac/5ab0ca0aa269ad3c73f7bfc3801b10e5f56f75a31bf68c1ae8bd51cf70a4/openvino_telemetry-2025.2.0-py3-none-any.whl"
-    },
-    {
       "file": "sounddevice-0.5.6-py3-none-win_amd64.whl",
       "sha256": "7f4162f514f007b0bf25a3ccfed3f1705bc2ec311888a90232729eec4f57a4f4",
       "url": "https://files.pythonhosted.org/packages/8d/3e/cbc593c31a5f0d817b3fe97e64aa8461bd0f55cb07b67ce1b776296ae336/sounddevice-0.5.6-py3-none-win_amd64.whl"
@@ -52,7 +42,6 @@
       "url": "https://files.pythonhosted.org/packages/b6/ae/315bbeee126a769cbde43cf4908acb4b40408d8bf8bbf334dd7368d8dadf/pycparser-3.12-py3-none-any.whl"
     }
   ],
-  "modelSha256": "c01acec2b279802f4df99d9470624c70b0b4f0d03ecbd77fbbbc0361216e49f5",
   "visualCpp": {
     "url": "https://aka.ms/vs/17/release/vc_redist.x64.exe",
     "resolvedUrl": "https://download.visualstudio.microsoft.com/download/pr/e9604e21-4b79-4096-a4b3-1b63d4b55b4d/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
@@ -73,5 +62,15 @@
     },
     "licenseSource": "u10",
     "licenseSha256": "28f63bad9c2960395106011761993049546607f8a850d344d6a54042176bf03f"
+  },
+  "hush": {
+    "DeepFilter-LICENSE-APACHE.txt": "1eaee808c5fb6b4e895ba30425285a5cdc5dd25bba2cd230f264c2200c331aec",
+    "DeepFilter-LICENSE-MIT.txt": "24e6bb09c928af8d8e56268082f87413247ce36b39dd5d33add2f9893968065e",
+    "Hush-LICENSE.txt": "d2650f8a0a002d02377a5157e60071a39cc710113bf2c19f808db7045edda198",
+    "NOTICE.txt": "023b9cf6e4e0beb98cabf909e846244df8ffee282e3a1ed8b057b5864f9b5329",
+    "advanced_dfnet16k_model_best_onnx.tar.gz": "45632ccaa82b71bb743d6caa7c78e983fe2f2790a3af7f6ec48e6ed7ba085df6",
+    "model-card.md": "e5d41ef3bea68a9c974363afde53b651940c44607eec7d63b33f664960aec045",
+    "weya_nc.dll": "633958ef839c94af6f8f5f9f8fb33c4daedaeec0373cb39a03934fdd7efa6a32",
+    "manifest.json": "f7ce385842efde7634c4bab6fb15966cbd8937db80bf72466313a68fb2488384"
   }
 }

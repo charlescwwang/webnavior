@@ -62,7 +62,7 @@ it('releases a model that finishes loading after its owner has been disposed', a
   expect(model.dispose).toHaveBeenCalledTimes(1)
 })
 
-it('segments using LCMV detection PCM while recording unchanged source-aligned Falcon reference PCM', async () => {
+it('segments using LCMV detection PCM while recording unchanged source-aligned reference PCM', async () => {
   const vad = new VAD({ minSilenceDurationMs: 32, speechPadMs: 32, minSpeechDurationMs: 1 })
   await vad.initialize()
   const ready = vi.fn()

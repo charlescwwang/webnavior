@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import type { FalconSettingsInput } from '@proj-airi/stage-shared/falcon-settings'
-
 import type { AiCapability, AiProviderProfileInput, SystemOnePolicyInput, SystemOneProfile, SystemOneProfileInput, SystemOneRuntimeModel } from '../../composables/useWebnaviorAiControl'
 
 import { Button } from '@proj-airi/ui'
@@ -9,19 +7,15 @@ import { useI18n } from 'vue-i18n'
 
 import AiCapabilityCards from '../../components/Webnavior/AiCapabilityCards.vue'
 import AiProviderProfileDialog from '../../components/Webnavior/AiProviderProfileDialog.vue'
-import FalconSettingsPanel from '../../components/Webnavior/FalconSettingsPanel.vue'
 import SystemOnePolicyPanel from '../../components/Webnavior/SystemOnePolicyPanel.vue'
 import SystemOneProfileDialog from '../../components/Webnavior/SystemOneProfileDialog.vue'
 import SystemOneProfilePanel from '../../components/Webnavior/SystemOneProfilePanel.vue'
 
-import { falconSettingsMessages } from '../../../../../packages/i18n/src/falconSettingsMessages'
-import { useFalconSettings } from '../../composables/useFalconSettings'
 import { useWebnaviorAiControl } from '../../composables/useWebnaviorAiControl'
 import { useWebnaviorNotice } from '../../composables/useWebnaviorNotice'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const aiControl = useWebnaviorAiControl()
-const falconSettings = useFalconSettings()
 const notice = useWebnaviorNotice()
 const isLoaded = shallowRef(false)
 const configuredCapability = shallowRef<AiCapability>()
@@ -236,14 +230,8 @@ async function load() {
     reportFailure('無法載入 AI Provider 設定。')
 }
 
-async function saveFalconSettings(input: FalconSettingsInput) {
-  if (await falconSettings.save(input))
-    notice.success(falconSettingsMessages[locale.value.startsWith('zh') ? 'zh-Hant' : 'en'].saved)
-}
-
 onMounted(() => {
   void load()
-  void falconSettings.load()
 })
 </script>
 
@@ -285,18 +273,7 @@ onMounted(() => {
       :selections="aiControl.selections.value"
       @configure="openCapability"
       @fallback="selectFallback"
-    >
-      <template #asr-settings>
-        <FalconSettingsPanel
-          embedded
-          :busy="falconSettings.busy.value"
-          :snapshot="falconSettings.snapshot.value"
-          :error="falconSettings.error.value"
-          @save="saveFalconSettings"
-          @reload="falconSettings.load"
-        />
-      </template>
-    </AiCapabilityCards>
+    />
 
     <SystemOneProfilePanel
       :busy="aiControl.busy.value"

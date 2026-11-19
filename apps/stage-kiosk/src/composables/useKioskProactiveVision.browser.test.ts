@@ -31,7 +31,6 @@ vi.mock('@mediapipe/tasks-vision', () => ({
 // Report: this chat, 2026-11-17 — legacy visual admission must reuse one model and avoid image capture.
 it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('uses one Face lane without image capture and revokes legacy permission on missing or frozen video', async () => {
   const gate = createMouthActivityGate()
-  const images = vi.fn()
   const observations = vi.fn()
   const video = document.createElement('video')
   video.muted = true
@@ -45,12 +44,10 @@ it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('uses one Face lane without 
     visionMode: () => 'face_only',
     shouldRunFace: () => true,
     mouthTrackingEnabled: () => true,
-    mouthEnabled: () => false,
     onMouthObservation: (time, mouth) => {
       gate.observe(time, mouth)
       observations(mouth)
     },
-    onMouthFrame: images,
     onObservation: () => {},
     onPresenceCandidate: () => {},
   })
@@ -58,14 +55,12 @@ it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('uses one Face lane without 
     await vision.start(video)
     await expect.poll(() => observations.mock.calls.some(([mouth]) => mouth !== undefined)).toBe(true)
     expect(gate.allowsStart(performance.now())).toBe(false)
-    expect(images).not.toHaveBeenCalled()
     face[14].y = 0.54
     await expect.poll(() => gate.allowsStart(performance.now())).toBe(true)
     const lease = gate.begin(performance.now())
     expect(lease).toBeDefined()
     await expect.poll(() => gate.allowsStart(performance.now()), { timeout: 2000 }).toBe(false)
     expect(gate.complete(lease, performance.now())).toBe(true)
-    expect(images).not.toHaveBeenCalled()
     expect(FaceLandmarker.createFromOptions).toHaveBeenCalledOnce()
     faces = [face, face]
     await expect.poll(() => observations.mock.lastCall?.[0]).toBeUndefined()
@@ -126,7 +121,6 @@ it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('keeps a matched face presen
     visionMode: () => 'pose_plus_conditional_face',
     shouldRunFace: () => true,
     mouthTrackingEnabled: () => false,
-    mouthEnabled: () => false,
     onObservation: () => {},
     onPresenceCandidate: (candidate) => {
       candidates(candidate)
@@ -177,7 +171,6 @@ it.runIf(import.meta.env.VITEST_FAKE_MEDIA === '1')('moves legacy mouth admissio
     visionMode: () => 'pose_plus_conditional_face',
     shouldRunFace: () => true,
     mouthTrackingEnabled: () => true,
-    mouthEnabled: () => false,
     onMouthObservation: (time, mouth) => {
       gate.observe(time, mouth)
       observations(mouth)

@@ -31,38 +31,36 @@ kiosk:
     recognizing: Audio received. Waiting for speech recognition.
     recognized: 'Speech recognized ({mode}): {seconds} seconds'
     not-admitted: 'Speech not admitted for processing ({mode}): {seconds} seconds'
-    stage-duration: '{seconds} seconds'
-    stage-unavailable: 'Not provided'
-    falcon-stages: |-
-      {summary}
-      Audio clip (including silence padding): {audio}
-      Falcon inference: {inference}
-      ASR: {asr}
-      Audio ready/delivery duration: Not measured
   native-audio:
-    model-bypassed: 'Test mode: UL-UNAS skipped; AEC3, RTF/MVDR and speech segmentation remain active.'
+    hush-preset: 'Hush noise reduction preset'
+    preset-a: 'Recommended A: 20 dB / 30% MVDR audio'
+    preset-b: 'Recommended B: 20 dB / 10% MVDR audio'
+    preset-baseline: 'Original baseline: 100 dB / 0% MVDR audio'
+    preset-custom: 'Custom parameters'
+    preset-description: 'Compare A for quiet speech and word boundaries; compare B for background leakage in noise. Press Apply audio settings to restart capture; unfinished speech is discarded. Switch while silent. Both presets need on-site comparison and do not guarantee quality.'
+    cpu-ready: 'Hush CPU runtime ready'
+    cpu-pending: 'Checking Hush runtime'
     input: 'Native eight-channel input'
     automatic: 'Detect one UMA-8 RAW device'
     refresh-devices: 'Refresh native devices'
-    title: 'Local GPU audio'
-    description: 'AEC3 → online RTF/MVDR → GPU denoising → utterance segmentation. Managed by Kiosk; the active runtime is shown below.'
-    update-exe: 'Update to Kiosk 0.6.0 or newer for automatic tracking and independent speaker settings.'
-    failed: 'GPU audio could not start.'
-    gpu-ready: 'GPU model kernel execution verified'
-    gpu-pending: 'Checking GPU status'
+    title: 'Native Hush CPU audio'
+    description: 'Native microphone → gain → online RTF/MVDR → Hush CPU → AGC → utterance segmentation. No AEC or playback pairing; speaker audio may be captured again.'
+    update-exe: 'Update the Kiosk executable to the matching Hush audio version.'
+    failed: 'Hush audio could not start.'
     gain: 'Shared input gain (dB)'
     apply: 'Apply audio settings'
     automatic-tracking: 'Automatic learning and continuous tracking'
     independent-output: 'Use the normal speaker selector above. Speakers and microphone are independent and do not need the same host API.'
-    tracking-description: 'Speak as soon as capture starts. No manual five-second recording or anchor file is required. Reliable speech updates spatial tracking; playback, mixed or uncertain evidence pauses learning. This follows a dominant source, not customer identity.'
+    tracking-description: 'Speak as soon as capture starts. No manual five-second recording or anchor file is required. Reliable speech updates spatial tracking; mixed or uncertain evidence pauses learning. This follows a dominant source, not customer identity.'
   array-audio:
     native-description: 'Desktop LCMV uses native eight-channel input with the existing AEC3, LCMV and recognition settings. No GPU model is loaded. Speakers retain the normal output selection.'
     native-update: 'Native LCMV capture requires Kiosk EXE 0.6.3 or newer.'
     backend: 'UMA-8 processing pipeline'
     existing: 'Existing capture (LCMV / Spatial Mask)'
-    native-gpu: 'Online RTF / MVDR + GPU (testing)'
+    native-hush: 'Online RTF/MVDR + Hush CPU'
     applyBackend: 'Apply capture method'
-    backendDescription: 'Use existing capture for daily operation; the GPU pipeline is still being tested. Switching restarts capture and discards unfinished speech. Apply while no customer is speaking.'
+    backendDescription: 'Select existing array processing or native Hush CPU. Switching restarts capture and discards incomplete speech. Apply while silent.'
+    backendRetired: 'This saved audio pipeline has been retired. Select and apply a capture method.'
     metrics: 'Lag {lag} ms · Render {reference} frames · RMS {input} → {output} dBFS · Limited {limited}%'
     algorithm: 'Legacy ASR array algorithm'
     lcmv: 'LCMV (existing)'
@@ -72,13 +70,12 @@ kiosk:
     maskGainDb: 'Spatial Mask input gain (dB, 0–80)'
     apply: 'Apply algorithm and AEC3 settings'
     applyDescription: 'Applying restarts capture and discards partial speech and pending recognition. Adjust while silent. Gain defaults to 15 dB and needs on-site calibration. Current mouth admission rules still apply.'
-    maskInactive: 'Spatial Mask applies only to legacy ASR with UMA-8. Falcon retains AEC3/LCMV; ordinary microphones retain browser processing.'
     title: 'UMA-8 microphone processing'
     mode: 'Microphone processing'
     auto: 'Detect UMA-8 automatically'
     uma8: 'UMA-8 multichannel'
     standard: 'Standard microphone (browser processing)'
-    description: 'UMA-8 defaults to AEC3 → LCMV → gain → VAD; legacy ASR can also select Spatial Mask with optional AEC3. Elevation is measured from the array plane (0°), with 90° overhead; valid range 0–85°. Changes restart capture; adjust while silent. Falcon uses mapped channel 6 after AEC3 with its own Falcon input gain.'
+    description: 'UMA-8 defaults to AEC3 → LCMV → gain → VAD; ASR can also select Spatial Mask with optional AEC3. Elevation is measured from the array plane (0°), with 90° overhead; valid range 0–85°. Changes restart capture; adjust while silent.'
     frontElevationDeg: 'Customer elevation (degrees)'
     suppress1ElevationDeg: 'Left suppression elevation (degrees)'
     suppress2ElevationDeg: 'Right suppression elevation (degrees)'
@@ -90,8 +87,6 @@ kiosk:
     suppress2Deg: 'Right suppression azimuth (degrees)'
     radiusMm: 'Array radius (mm)'
     loading: 'LCMV diagonal loading'
-    falconGainDb: 'Falcon input gain (dB, 0–30)'
-    falconGainDescription: 'Adjusts UMA-8 audio before Falcon independently of VAD gain; defaults to 0 dB. Peak limiting preserves sample timing. Changes restart capture; adjust while silent.'
     raw-unavailable: 'Eight raw UMA-8 channels are not available yet. Select the UMA-8 device and reconnect. Capture has not switched to another microphone.'
   media-devices:
     raw-hint: 'Capture currently requires eight raw channels. If the device or Windows audio settings cannot provide them, use standard microphone capture; this disables array processing.'
@@ -162,15 +157,15 @@ kiosk:
   service-policy:
     off-topic: This kiosk only helps with food and the menu, so I cannot handle that request. What would you like to order?
     food-safety: Please ask staff directly about food safety or allergies. I cannot guarantee safety, and the kiosk has not notified or called anyone.
-    promotion-policy: Current prices are those shown on screen. This kiosk does not support coupons or additional discounts.
+    promotion-policy: I cannot confirm additional promotions. Please refer to the store announcements and displayed prices. This kiosk does not support coupons or additional discounts.
     unsupported-budget: This kiosk cannot plan a complete meal to a total budget. Please choose dishes or ask about individual prices.
     unsupported-delivery: This kiosk does not arrange delivery. It only helps with ordering here.
     unsupported-taxi: This kiosk cannot call a taxi. Please use a taxi service yourself or ask staff.
     menu-unavailable: That dish was not found on the current menu. The kiosk cannot create dishes or set prices. Please choose a listed dish.
     unsupported-permission: This kiosk cannot change website prices, mark payments, or skip confirmations. Prices and payment status come from the merchant website.
   checkout-guidance:
-    empty: Your cart is empty. Choose your items, then follow the ordering page to check out.
-    ready: Please check the items, quantities and amount on screen, then follow the ordering page to check out. No order or payment has been submitted.
+    empty: Your cart is empty. Please tell me the dishes and quantities you want.
+    ready: This entry does not currently provide assisted checkout, so this step requires the on-screen controls. No order or payment has been submitted.
   product-presentation:
     title: Featured products
     completed: Change verified
@@ -459,6 +454,9 @@ websocket-status:
   open-settings: Open connection settings
 
 kiosk-agent:
+  previous-answer: Previous reply (expand/collapse)
+  previous-conversation: Show previous conversation
+  current-conversation: Show current conversation
   retry-stale: The screen or order has changed. Please tell me what you need now.
   retry-busy: Another request is still being processed. Please try again shortly.
   context-unavailable: Menu information is unavailable. This request is unfinished; check the connection and say it again.
@@ -471,11 +469,6 @@ kiosk-agent:
   audio-failed: Your speech could not be fully transcribed. No request was executed; please say it again.
   voice-capture-mouth: The same mouth target could not be tracked throughout this phrase. No action was taken. Face the camera and try again.
   voice-capture-incomplete: This phrase exceeded the capture limit or was incomplete. No action was taken. Please try shorter phrases.
-  falcon-capture-duration: This utterance exceeded the capture limit or was incomplete. No action was taken. Please try shorter sentences.
-  falcon-capture-mouth: A clear mouth image was unavailable during speech. No action was taken. Please face the camera and try again.
-  falcon-capture-timing: Mouth images and audio were out of sync. No action was taken. Please try again shortly.
-  falcon-capture-busy: The previous utterance is still being recognized. No action was taken. Please wait and try again.
-  falcon-capture-failed: The complete audio and mouth video could not be aligned, the duration limit was exceeded, or the previous utterance is still processing. No request was executed. Face the camera and try a shorter turn after a moment.
   service-connecting: Connecting assistant controls. You can also use the service screen directly.
   service-manual: Assistant controls are unavailable for this service. Please use the service screen directly and check the result there.
   service-browser-unsupported: This browser does not support assistant controls. Please use the service screen directly.
@@ -504,7 +497,7 @@ kiosk-agent:
   queued-cancelled: This request was cancelled before execution.
   unstarted-replaced: The previous request was stopped before execution. Processing your new request.
   unstarted-combined: Your additional request was received and will be handled with the pending request.
-  meaning-unresolved: I still could not understand this request. No action was performed. You can order using the screen.
+  meaning-unresolved: I did not understand that request, and no action was performed. Please say the dish or change you want again.
   decision-uncertain: I couldn’t understand your request. Please say it again.
 
 system-one:

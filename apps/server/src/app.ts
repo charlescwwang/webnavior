@@ -41,7 +41,6 @@ import { initLogger, LoggerFormat, LoggerLevel, setGlobalHookPostLog, useLogger 
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { httpInstrumentationMiddleware } from '@hono/otel'
-import { falconAudioLimits } from '@proj-airi/stage-shared/falcon-audio'
 import { kioskAudioLimits } from '@proj-airi/stage-shared/kiosk-audio'
 import { kioskCharacterPackageLimits } from '@proj-airi/stage-shared/kiosk-character-package'
 import { orderEvidenceMaxRequestBytes } from '@proj-airi/stage-shared/order-evidence'
@@ -70,7 +69,6 @@ import { createAdminRoutes } from './routes/admin'
 import { createAdminUiRoutes } from './routes/admin-ui'
 import { createAdminCapabilityAliasRoutes } from './routes/admin/capability-aliases'
 import { createAdminRouterConfigRoutes } from './routes/admin/config/router'
-import { createAdminFalconRoutes } from './routes/admin/falcon'
 import { createAdminFluxGrantsRoutes } from './routes/admin/flux-grants'
 import { createAdminKioskRoutes } from './routes/admin/kiosk'
 import { createAdminProviderCatalogRoutes } from './routes/admin/provider-catalog'
@@ -313,7 +311,6 @@ export async function buildApp(deps: AppDeps) {
     maxSize: kioskAudioLimits.requestBytes,
     onError: c => c.json({ error: 'KIOSK_AUDIO_TOO_LARGE', message: '這段錄音超過上傳大小限制，請分次說明。' }, 413),
   })
-  const falconBodyLimit = bodyLimit({ maxSize: falconAudioLimits.maxClipBytes })
 
   const builtApp = app
     .use('*', sessionMiddleware(deps.auth, deps.env))
@@ -330,8 +327,6 @@ export async function buildApp(deps: AppDeps) {
         return orderEvidenceBodyLimit(c, next)
       if (c.req.path === '/api/kiosk/audio/transcriptions')
         return kioskAudioBodyLimit(c, next)
-      if (c.req.path === '/api/kiosk/audio/falcon-transcriptions')
-        return falconBodyLimit(c, next)
       return defaultBodyLimit(c, next)
     })
     .onError((err, c) => {
@@ -554,7 +549,6 @@ export async function buildApp(deps: AppDeps) {
     .route('/api/admin/config/router', createAdminRouterConfigRoutes(deps.adminRouterConfigService))
 
     /** Webnavior's operator-facing AI connections and capability bindings. */
-    .route('/api/admin/falcon', createAdminFalconRoutes(deps.configKV, deps.envelopeCrypto))
     .route('/api/admin/webnavior-ai', createAdminWebnaviorAiRoutes({
       runtimeService: deps.webnaviorAiRuntimeService,
       service: deps.webnaviorAiControlService,

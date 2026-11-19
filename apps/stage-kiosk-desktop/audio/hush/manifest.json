@@ -1,0 +1,19 @@
+{
+  "upstream": "https://github.com/pulp-vision/Hush",
+  "modelSource": "https://huggingface.co/weya-ai/hush/tree/main/onnx",
+  "runtime": "Hush / Tract",
+  "device": "CPU",
+  "sampleRate": 16000,
+  "frameLength": 160,
+  "modelDelaySamples": 160,
+  "files": {
+    "DeepFilter-LICENSE-APACHE.txt": "1eaee808c5fb6b4e895ba30425285a5cdc5dd25bba2cd230f264c2200c331aec",
+    "DeepFilter-LICENSE-MIT.txt": "24e6bb09c928af8d8e56268082f87413247ce36b39dd5d33add2f9893968065e",
+    "Hush-LICENSE.txt": "d2650f8a0a002d02377a5157e60071a39cc710113bf2c19f808db7045edda198",
+    "NOTICE.txt": "023b9cf6e4e0beb98cabf909e846244df8ffee282e3a1ed8b057b5864f9b5329",
+    "advanced_dfnet16k_model_best_onnx.tar.gz": "45632ccaa82b71bb743d6caa7c78e983fe2f2790a3af7f6ec48e6ed7ba085df6",
+    "libweya_nc.so": "c4a5915c92e9500a49e6cd14804e6e88319277de2ef7d4d5cf6c0ac4456f3bbf",
+    "model-card.md": "e5d41ef3bea68a9c974363afde53b651940c44607eec7d63b33f664960aec045",
+    "weya_nc.dll": "633958ef839c94af6f8f5f9f8fb33c4daedaeec0373cb39a03934fdd7efa6a32"
+  }
+}

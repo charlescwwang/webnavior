@@ -2,7 +2,6 @@ import type { FaceLandmarker, FilesetResolver, NormalizedLandmark, PoseLandmarke
 import type { DetectionZone, PresenceCandidate, PresenceVisionMode } from '@proj-airi/kiosk-proactive'
 
 import type { CustomerTarget } from '../services/customerTarget'
-import type { MouthImage } from '../services/falconCapture'
 import type { KioskPerformanceSettings } from '../services/kiosk-performance'
 import type { MouthGeometry } from '../services/mouthActivity'
 
@@ -11,7 +10,6 @@ import { createAttentionObservation, defaultPresenceSettings } from '@proj-airi/
 import { shallowRef } from 'vue'
 
 import { createCustomerTarget } from '../services/customerTarget'
-import { createMouthCropper } from '../services/falconCapture'
 import { readMouthGeometry } from '../services/mouthActivity'
 
 const faceModelAssetPath = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
@@ -29,11 +27,9 @@ interface Options {
   visionMode: () => PresenceVisionMode
   shouldRunFace: () => boolean
   mouthTrackingEnabled?: () => boolean
-  mouthEnabled?: () => boolean
   onMouthObservation?: (timeMs: number, mouth?: MouthGeometry) => void
   onTargetChange?: () => void
   onTarget?: (target: CustomerTarget) => void
-  onMouthFrame?: (timeMs: number, image?: MouthImage) => void
   onCameraStream?: (stream: MediaStream | undefined) => void
   onFaces?: (faces: Array<{ centre: { x: number, y: number }, facesCamera: boolean }>) => void
   onObservation: (observation: ReturnType<typeof createAttentionObservation>) => void
@@ -62,8 +58,6 @@ export function useKioskProactiveVision(options: Options) {
   let mouthFaces: NormalizedLandmark[][] = []
   let poseHead: { x: number, y: number } | undefined
   let lastMouthFaceAtMs = -Infinity
-  let lastMouthAtMs = -Infinity
-  let cropMouth: ReturnType<typeof createMouthCropper> | undefined
   const customerTarget = createCustomerTarget()
   let targetRevision: number | undefined
   const slowInferenceAt = new Map<string, number>()
@@ -152,8 +146,7 @@ export function useKioskProactiveVision(options: Options) {
     options.onTargetChange?.()
     options.onMouthObservation?.(performance.now(), undefined)
     poseHead = undefined
-    cropMouth = undefined
-    lastMouthAtMs = lastMouthFaceAtMs = -Infinity
+    lastMouthFaceAtMs = -Infinity
     lastFaceAtMs = lastPoseAtMs = boostUntilMs = lastFaceVideoTime = -Infinity
     lastPoseCandidate = undefined
     previousPoseCandidate = undefined
@@ -178,16 +171,7 @@ export function useKioskProactiveVision(options: Options) {
     try {
       if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA)
         return
-      const mouthImagesEnabled = options.mouthEnabled?.() === true
-      const mouthEnabled = mouthImagesEnabled || options.mouthTrackingEnabled?.() === true
-      // Legacy ASR reads geometry only. Falcon crops at 25 fps using the same
-      // 10 fps Face lane; no second model or full-size video history is allocated.
-      if (mouthImagesEnabled && nowMs - lastMouthAtMs >= 40) {
-        lastMouthAtMs = Number.isFinite(lastMouthAtMs) ? Math.max(lastMouthAtMs + 40, nowMs - 40) : nowMs
-        cropMouth ??= createMouthCropper()
-        const image = nowMs - lastMouthFaceAtMs <= 200 ? cropMouth(video, mouthFaces, options.detectionZone()) : undefined
-        options.onMouthFrame?.(performance.now(), image)
-      }
+      const mouthEnabled = options.mouthTrackingEnabled?.() === true
       const mode = options.visionMode()
       if (mode === 'face_only' || options.mouthTrackingEnabled?.()) {
         if (nowMs - lastFaceAtMs >= (mouthEnabled ? 100 : options.performance().detectionIntervalMs))
@@ -245,7 +229,7 @@ export function useKioskProactiveVision(options: Options) {
       return FaceLandmarker.createFromOptions(await ensureVision(), {
         baseOptions: { modelAssetPath: faceModelAssetPath },
         runningMode: 'VIDEO',
-        numFaces: (options.mouthEnabled?.() || options.mouthTrackingEnabled?.()) ? Math.max(2, options.performance().maxFaces) : options.performance().maxFaces,
+        numFaces: options.mouthTrackingEnabled?.() ? Math.max(2, options.performance().maxFaces) : options.performance().maxFaces,
         minFaceDetectionConfidence: options.detectionConfidence(),
         minFacePresenceConfidence: options.detectionConfidence(),
         minTrackingConfidence: options.detectionConfidence(),
@@ -303,7 +287,7 @@ export function useKioskProactiveVision(options: Options) {
     lastFaceAtMs = nowMs
     const model = await ensureFaceLandmarker()
     // Legacy onset admission requires newly decoded video. Do not renew its
-    // permission with timestamps attached to a frozen image; Falcon is unchanged.
+    // permission with timestamps attached to a frozen image.
     if (options.mouthTrackingEnabled?.()) {
       if (!video || video.currentTime === lastFaceVideoTime)
         return
@@ -330,7 +314,7 @@ export function useKioskProactiveVision(options: Options) {
       options.onPresenceCandidate(selected && { attention: selected.facesCamera, bodyScale: selected.bodyScale, centre: selected.centre, poseQuality: 1 })
     }
     else {
-      // Keep the existing Pose-owned mouth crop association for Falcon.
+      // Associate Face evidence with the current Pose for presence confidence.
       mouthFaces = options.visionMode() === 'face_only'
         ? landmarks
         : poseHead ? landmarks.filter(face => face[1] && distance(face[1], poseHead!) <= 0.15) : []
