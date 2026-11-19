@@ -1,5 +1,15 @@
 # Webnavior Kiosk Desktop
 
+## Ordering guidance
+
+This portable test release requires the matching Kiosk frontend and Server policy
+release. It includes table return, menu placement, recommendation tours without
+floating action labels, invoice focus and the LINE Pay-only kiosk policy. The
+frontend provides plain-language dumpling piece questions and a spoken
+“取消這題” escape for unfinished selections. Existing LCMV defaults,
+connection settings and user profiles are preserved. Physical Windows acceptance
+and same-page off-hours submission rejection detection remain unverified.
+
 ## 0.6.3 original LCMV with native input
 
 On the Windows EXE, explicit UMA-8 mode with the existing LCMV algorithm now uses
@@ -7,10 +17,10 @@ physical PortAudio eight-channel input instead of Chromium `getUserMedia` exact-
 constraints. Automatic mode recognizes an already identified UMA-8; select UMA-8
 explicitly if browser enumeration has no device label. A native input selector is
 independent of the normal browser speaker selector. Existing seven-channel mapping,
-AEC3 WASM, LCMV tuning, gain, VAD/Falcon and ASR behavior are retained. Spatial Mask
+AEC3 WASM, LCMV tuning, gain, VAD and ASR behavior are retained. Spatial Mask
 and ordinary browser clients retain their existing acquisition paths.
 
-The input-only Python owner does not load OpenVINO, UL-UNAS or native RTF/MVDR.
+The input-only Python owner does not load Hush or native RTF/MVDR.
 Generation-bound MessagePorts carry render and paired native PCM directly between
 the AudioWorklet, Electron and the original DSP Worker after a one-time preload
 handoff. The renderer UI handles final PCM/recognition, not reference delivery.
@@ -19,49 +29,18 @@ No pending/queue time limits are enlarged. This requires the matching EXE/fronte
 and physical Windows acceptance; no manual five-second calibration is required.
 
 
-## 0.6.2 reference delivery correction
+## Native Hush CPU audio (0.7.5)
 
-Short native callback/browser reference bursts retain all unpaired input until
-real reference PCM arrives, within the existing 250 ms bounds. This replaces the
-callback's immediate reference-underrun failure. No device, model, precision,
-AEC/RTF/VAD, ASR or playback settings change. The existing Eventa v3 frontend works
-with this EXE; no new frontend publication is required. The model bypass launcher
-below remains available to isolate GPU throughput during on-device testing.
+The optional Hush pipeline replaces the retired UL-UNAS GPU audio candidate.
+It retains native eight-channel capture, online RTF/MVDR, AGC and WebRTC
+segmentation, with CPU Hush processing after mono overlap-add. Hush has no AEC
+or playback-reference pairing; existing LCMV/Spatial Mask keep their own AEC. Existing
+LCMV/Spatial Mask remain selectable. Old GPU preferences require explicit
+re-selection. The matching frontend and EXE are required (native bridge v9).
+See [audio/README.md](audio/README.md) for ownership, delay, packaging and physical
+acceptance. GPU qualification and model-bypass launchers are no longer shipped.
 
-## 0.6.1 model bypass trial
-
-Use **Start Without UL-UNAS.cmd** only after closing all Kiosk windows to test the
-same native RTF/MVDR path without UL-UNAS loading/inference. The audio status
-explicitly identifies bypass. Closing it and launching the ordinary EXE restores
-FP32 model inference; no preference is saved. All other processing and controls
-remain as in 0.6.0. See [the trial instructions](audio/README.md#explicit-ul-unas-bypass-trial-061).
-
-## Bundled UMA-8 native audio (0.6.0 OpenVINO candidate)
-
-Windows UMA-8 RAW capture uses sounddevice/PortAudio directly in an Electron-owned Python process, with
-UL-UNAS on OpenVINO for Intel Iris Xe. It starts on demand and stops with the
-Host; operators start no service or Python environment. The matching Kiosk UI
-offers existing LCMV/Spatial Mask capture by default, with an explicit experimental
-GPU pipeline choice under microphone settings. The GPU path uses online RTF/MVDR
-output directly for ASR and automatically learns/tracks reliable speech, without
-a manual five-second recording or a calibration file. The v3 bridge requires
-this EXE and matching frontend. Native input is independent of browser speaker
-selection: PortAudio opens only the microphone; Chromium plays TTS/cues and
-mirrors their PCM into AEC. No same-host speaker is required. Switching back
-preserves existing tuning and stops the previous capture generation; it does not
-silently substitute CPU inference. The previous DirectML pilot exceeded its 16 ms model frame budget. This
-OpenVINO candidate must be measured on the target Windows GPU before continuous
-capture is qualified.
-See [native audio setup, build and validation](audio/README.md). This requires a
-coordinated frontend/EXE update and physical Windows acceptance. Ordinary browser
-and mono-microphone paths are separate.
-
-
-Windows-oriented Electron host for the existing `apps/stage-kiosk` web UI and
-its configured interactive website. This is a local pilot, not a signed Windows
-release. It does not include the pet desktop's windows, widgets or game engine.
-
-## Connection settings (0.4.1, based on 0.4.0 OpenVINO)
+## Connection settings
 
 Every portable launch offers the entries from the operator-owned
 `kiosk.settings.json` beside the EXE. The shipped default is on-site LAN
@@ -102,7 +81,10 @@ the EXE's native adapter. This release does not make PB or model services offlin
   Vendor main-world code receives no preload, raw IPC, Node or arbitrary evaluator.
   Wrong service/document ownership rejects calls. Menu/cart controls stay restricted
   to editor pages; reviewed same-store order result pages allow discovery/inspection
-  and the Host-only `browser_state_get` reader, with no payment or editor writes.
+  and the Host-only `browser_state_get` reader, with no automatic payment or editor writes.
+  The native PB enhancement leaves only same-order LINE Pay links selectable on
+  payment selection. Credit cards are disabled with an inline kiosk-support notice;
+  native cancellation remains available. It never selects or initiates payment.
   Resize/visibility updates do not renew a tool binding or replay an operation.
 - `ScenarioSurface` uses a native `WebContentsView` when that capability exists;
   ordinary browser Kiosk keeps its iframe path.
@@ -453,3 +435,9 @@ Development launches continue using the existing environment settings. See
 [scripts/windows/README.md](../../scripts/windows/README.md) and the plain-language
 [quick start](../../scripts/windows/portableQuickStart.txt). The package has no signing or
 auto-update service; physical Windows validation remains necessary.
+
+Desktop 0.6.11 adds the Host-only `browser_invoice_donation` draft capability for
+confirmed 3–7 digit spoken donation codes. Carrier/citizen selection retains the
+existing native keyboard handoff for keyboard-emulating scanners; no camera QR
+decoder is installed. Use the complete new portable folder when testing this
+capability; updating only the web frontend does not add a native tool.

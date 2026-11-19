@@ -12,8 +12,7 @@ media retention; those are adapters around this small policy boundary.
 `DeviceSettingsValues.mouthDetectionEnabled` is the shared opt-in switch for
 legacy ASR visual admission, defaulting to false. It is independent from
 `observationEnabled` and `backgroundSpeechMode`; the Kiosk adapter owns applying
-it to microphone capture, ASR cancellation and decision admission. Falcon's
-audiovisual requirements remain independent of this switch.
+it to microphone capture, ASR cancellation and decision admission.
 
 The package is deliberately independent from the AIRI vision and chat stores.
 It can therefore be lazy-loaded by the kiosk module host today and kept intact

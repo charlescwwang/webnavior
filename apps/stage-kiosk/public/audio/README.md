@@ -14,7 +14,7 @@ Do not create placeholder or silent replacement files.
 A new processing window starts with a chime; additional captures during existing
 work keep the current music player. Resuming music does not repeat an old receipt. TTS playback,
 reception reset, admin/pause, service faults and disposal stop playback. Normal
-VAD events do not restart the music player. Both legacy ASR and Falcon use this
+VAD events do not restart the music player. ASR uses this
 feedback after a complete admitted capture; no spoken waiting phrases are used.
 Automatic greetings alone do not start a receipt. Missing either file leaves
 feedback disabled and ordinary ordering/TTS usable, with no waiting-TTS fallback.

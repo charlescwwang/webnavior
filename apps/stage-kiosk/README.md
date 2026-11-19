@@ -22,10 +22,9 @@ no customer prompt, loading overlay, retry or forced refresh.
 
 PB Start does not directly initialize a local AI model. The avatar mounts with
 the Kiosk, VAD initializes with the audio pipeline, and camera tasks start after
-microphone permission settles (conditional Face may initialize later). Falcon
-ASR, ordinary ASR and Kiosk TTS use server APIs. Native GPU audio can compile its
-bundled model on its first status/start/open request; capture-only native LCMV
-does not load that model. Character mounting no longer initializes the unused
+microphone permission settles (conditional Face may initialize later).
+ASR and Kiosk TTS use server APIs. Native Hush audio loads its CPU model
+on its first status/start request; capture-only native LCMV does not load it. Character mounting no longer initializes the unused
 DuckDB test database. These are source-level trigger facts, not attribution of
 an intermittent field stall; correlate actual recorder timestamps first.
 
@@ -50,15 +49,14 @@ target changes cannot cancel its ASR. VAD segmentation, background-speech policy
 reception resets and browser-operation guards remain active. Camera observation
 for greetings/reminders remains independently configurable. Saving a change
 restarts unsubmitted audio capture and discards through the next silence rather
-than interpreting a partial phrase. Falcon still requires its audiovisual input.
+than interpreting a partial phrase.
 
 When this setting is on, legacy ASR requires the configured camera target's mouth to move before a new VAD
 phrase can start. MediaPipe reuses the existing Face/Pose lane and reads normalized
 lip geometry only; no mouth images or second model are allocated. A held-open mouth
 or small landmark jitter does not open the gate. This is visual onset admission,
 not active-speaker identification; chewing, simultaneous speakers, camera angle
-and lighting still require on-device acceptance. Falcon retains its original VAD
-and post-capture mouth validation; this legacy onset gate does not apply to it.
+and lighting still require on-device acceptance.
 
 The initial policy requires a lip-gap/width change of at least 0.02 across fresh
 observations, with a current opening above 0.04. Closing the lips immediately blocks new
@@ -88,8 +86,7 @@ clearly better challenger must persist for 400 ms before takeover. Frame array
 order is never an identity; ambiguous matches and evidence gaps over 250 ms revoke
 continuity. Target replacement cancels unsubmitted legacy capture/ASR without
 resetting the visitor or cart. This remains anonymous geometric tracking, not
-biometric or acoustic speaker verification. Falcon retains its existing target
-association.
+biometric or acoustic speaker verification.
 
 For legacy customer speech, the existing **background speech judgement** mode also
 controls TTS interruption. **off** and **observe** stop playback after 250 ms of
@@ -101,74 +98,15 @@ is required to stop playback in these modes. **enforce** keeps post-ASR semantic
 admission before interruption. Observe retains its non-blocking diagnostic role.
 Stopping playback does not cancel the active Agent or a dispatched browser tool;
 new ordering demands still use the normal utterance queue and operation guards.
-Cancelled playback does not automatically resume. Falcon and the administrator's
-microphone test keep their existing interruption paths.
+Cancelled playback does not automatically resume. The administrator's
+microphone test keeps its existing interruption path.
 
-## Falcon audiovisual speech recognition
+## Speech recognition
 
-Administrators select the mode in `/admin/system/models` → **語音辨識** →
-**語音辨識模式與 Falcon 服務**. Legacy microphone/ASR remains the default and
-retains its provider configuration. Updated enrolled kiosks poll the server-owned
-mode within about ten seconds. Provider URLs and keys remain on Webnavior Server.
-
-Falcon mode keeps the existing microphone processing, VAD, TTS interruption and
-proactive-greeting admission. After VAD finishes an utterance, Kiosk uploads one
-16 kHz mono Float32 clip and synchronized 96×96 grayscale mouth images to
-`POST /api/kiosk/audio/falcon-transcriptions`; Webnavior forwards the validated
-binary packet to the configured Falcon+ASR endpoint and receives final text.
-The packet contains a plain uint32 little-endian frame count, all audio, then all
-images: 640 samples and one image per 40 ms, at least 25 frames. No engine flags
-are embedded. JSON `text` is the deployed response; OpenAI JSON/SSE parsing is
-available, with only completed text entering the existing utterance queue/history.
-Recognition mode is recorded alongside the existing transcript metadata.
-When the transcription JSON includes nonnegative finite `inferenceMs` and
-`asrMs`, Webnavior preserves them as optional `timing` values. New device
-`voice_recognition_timing` events retain these as `falconTiming`, separately from
-request RTT and audio duration. Missing/invalid telemetry is unavailable, never
-zero or inferred from total latency. These provider-reported stages do not
-measure WAV readiness, encoding or file delivery; the current service returns
-text rather than an audio file.
-
-The current service origin is `http://192.168.8.64:8767`; update the Falcon
-connection independently of the legacy ASR and TTS providers. A successful health
-check does not prove which GPU execution provider the remote service uses.
-
-VAD reports the non-speech pre-roll sample count separately. If the camera first
-finds the mouth during that pre-roll, earlier non-speech frames use the first
-visible mouth image, as in the reference startup padding. Audio remains intact;
-missing images during actual speech and gaps over 75 ms still reject the clip.
-The same target crop carries its inner-lip gap divided by mouth width in video
-pixels. A complete speech interval whose gap never exceeds 2.5% is silently
-ignored before upload, acknowledgement or transcript admission. Pre-roll and
-synthetic tail frames cannot provide opening evidence for this decision. This is
-a conservative closed-mouth guard, not active-speaker verification: landmark
-jitter, distance, brief openings and simultaneous speakers still require physical
-acceptance. No remote Falcon model or response contract is changed. Ignored
-closed-mouth clips record only numeric `falcon_capture` evidence in the current
-visitor history; accepted-clip values require the existing voice diagnostics flag.
-Diagnostics distinguish mouth loss, clock gaps, duration and a busy previous
-request; timing/count summaries can enter existing diagnostic history without
-retaining audio or images.
-
-Mouth capture reuses the existing camera, MediaPipe models and observed target;
-it does not guarantee the physically frontmost person. Multiple ambiguous faces,
-missing synchronized frames, duration overflow or a busy inference request reject
-the utterance for retry. Camera-only Falcon capture does not enable greetings when
-proactive observation is disabled. Text mode and the administrator's legacy ASR
-diagnostic remain separate.
-
-Only small mouth images are buffered in memory, never full video or persisted
-customer images. Idle history covers the VAD pre-roll plus one second; active
-history is bounded by the configured 1–30 second limit. At the default 15 seconds,
-the image ring is at most about 3.5 MB; the packet and temporary conversion buffers
-add memory during upload. VAD padding counts toward the duration limit. The model
-runtime and camera have their own memory costs. Changing mode cancels old capture
-and releases its models; failure does not automatically replay speech through ASR.
-
-Deploy Server and web assets together. These changes do not change native EXE
-permissions or PB tooling, so an existing compatible Windows host can load the new
-web assets after reopening. Synthetic gateway, browser timing/crop and bounded
-buffer tests do not replace physical microphone/camera/TTS acceptance.
+Completed mono utterances use the configured Server ASR Provider and the existing
+bounded utterance queue. Capture does not poll a recognition-mode endpoint or
+collect synchronized mouth images. Optional mouth-assisted admission and camera
+observation for greetings remain separate device settings.
 
 ## Live LLM replies
 
@@ -179,48 +117,32 @@ never starts TTS or enters durable customer history. Ordering rounds still show
 live operation progress and present their verified final receipt; partial model
 arguments or unverified success claims are not customer-facing text.
 
+## Kiosk appearance
+
+The Kiosk uses fixed dark surfaces. Its HTML declares the dark theme before
+rendering, and the root color scheme is dark so shared form controls and native
+controls use light text even on a light OS theme. Body-level dropdown portals use
+the same theme. Kiosk also declares its own paired dropdown background/text and
+selected/highlight colors under `data-kiosk-theme="dark"`; this palette remains
+dark with light text even if an inherited `.dark` class changes. This is local to
+Kiosk and does not change Stage Web preferences.
+
 ## UMA-8 microphone processing
 
-### Windows Electron native capture (0.5.0 candidate)
+### Windows Electron Hush CPU capture (0.7.5)
 
-On the updated Windows EXE, UMA-8 RAW defaults to the existing processing path.
-Open **本機麥克風與喇叭 → UMA-8 收音處理 → UMA-8 處理管線** to select
-**既有收音方式（LCMV／Spatial Mask）** or explicitly opt into
-**線上 RTF／MVDR＋GPU（測試中）**, then press **套用收音方式**. The choice is local
-to the device. Selecting a draft alone does not initialize GPU audio. Existing
-gain, channel mapping and algorithm settings remain available when switching
-back. Switching retires the capture generation and unfinished recognition;
-adjust while silent. No automatic switch occurs during customer speech.
-
-The optional bundled native frontend uses:
-sounddevice/PortAudio 48 kHz eight-channel capture plus application browser playback reference → AEC3 → common gain → online
-RTF/MVDR → UL-UNAS/OpenVINO → AGC → spatial/WebRTC segmentation → existing ASR
-queue. It bypasses the desktop LCMV/Spatial Mask/Falcon split and a second Silero
-pass. Iris Xe accelerates UL-UNAS; spatial processing remains CPU work and ASR
-retains the Server's model configuration. Ordinary browser and mono input keep
-their existing paths described below.
-
-The 0.6.0 EXE and matching bridge v3 frontend start native listening without a
-manual recording, `target_rtf.npz`, or a five-second limit. A new generation
-immediately uses its reference microphone while reliable speech learns the RTF;
-tracking then adapts continuously, including a changed dominant position.
-Playback and weak/mixed evidence freeze learning. Without an installation anchor,
-there is no fixed service-area exclusion or customer-identity guarantee.
-
-Native settings own only the eight-channel input, channel mapping and common
-gain. Speakers use the normal independent speaker selector and **播放喇叭測試音**,
-including while native capture is active. There is no same-host or stereo-output
-prerequisite for opening the microphone. Browser getUserMedia is not used for
-native input. The browser plays application TTS/cues once and mirrors their PCM
-into AEC; this is not system loopback or hardware-DAC feedback. A bounded queue
-resamples independent clocks, with 100 ms capture delay to keep the delivered
-reference causal. Device/DSP failures retain their original message.
-
-GPU diagnostics show the runtime/device actually reported by the process. The
-previous DirectML pilot measured about 30.5 ms per 16 ms hop before AEC/RTF;
-OpenVINO needs its own physical Windows GPU and continuous-capture qualification.
-See [native audio setup](../stage-kiosk-desktop/audio/README.md) for build inputs
-and the outstanding hardware/acoustic validation.
+Select **Online RTF/MVDR + Hush CPU** explicitly; existing LCMV/Spatial Mask remain
+the default. Hush settings are independent. The microphone panel offers the documented 20 dB /
+30% and 20 dB / 10% MVDR dry-mix presets, plus the original 100 dB / 0% baseline.
+A selection takes effect only after Apply audio settings; switch while silent. Retired GPU preferences require
+explicit re-selection. Native bridge v9 requires the matching EXE and frontend.
+PortAudio captures UMA-8 RAW independently of browser playback. Hush has no AEC
+or playback-reference pairing. Seven mapped channels pass through resampling, common gain,
+online RTF/MVDR, mono OLA, Hush CPU, AGC and WebRTC VAD before existing Server ASR.
+There is no UL-UNAS/OpenVINO audio model, local Whisper or second Silero pass.
+Switching retires incomplete capture/ASR and releases native input ownership.
+See [the native audio guide](../stage-kiosk-desktop/audio/README.md) for clocks,
+Hush silence behavior, limitations, Windows packaging and physical acceptance.
 
 ### Browser processing
 
@@ -228,7 +150,7 @@ Open the Kiosk administrator panel (configured PIN `0000`) → **本機麥克風
 → **UMA-8 收音處理**. Select the actual UMA-8 microphone. **自動辨識 UMA-8**
 uses its device label; choose **UMA-8 多聲道** if the driver uses another name.
 **一般麥克風（瀏覽器處理）** retains the original browser AEC/noise processing.
-This hardware choice is independent of the Server's legacy ASR/Falcon mode.
+This hardware choice is independent of the Server ASR Provider.
 
 If capture has no live track, acquisition has failed before AEC/VAD/ASR. Device
 settings retain the browser error name, message and failed constraint even when
@@ -266,8 +188,7 @@ level. Preferences use `kiosk/audio/legacy-array-algorithm` and
 `kiosk/audio/spatial-mask`; the existing hardware/LCMV JSON is unchanged.
 Applying algorithm/AEC/gain replaces capture and cancels incomplete speech and
 unsubmitted recognition. Already accepted ordering work is not replayed.
-Falcon always retains AEC3/LCMV and its separate recording gain; ordinary
-microphones retain browser processing. Current legacy mouth/presence rules
+Ordinary microphones retain browser processing. Current legacy mouth/presence rules
 remain in force, so this is not a full rollback to November's admission behavior.
 The diagnostic overlay shows the active algorithm/AEC state, processing lag,
 render-reference frames, input/output RMS in dBFS and limited-sample percentage.
@@ -276,17 +197,7 @@ Reference activity confirms wiring, not successful acoustic echo cancellation.
 AEC3 receives the stereo playback reference for customer/admin TTS, receipt
 chimes and waiting music. The array and playback share a 48 kHz AudioContext.
 LCMV's 1024-sample latency is compensated before both branches are resampled.
-In Falcon mode VAD detects using gained LCMV. A separate 16 kHz gain/peak
-limiter processes the aligned AEC3 output at mapped channel 6 before it is
-recorded for Falcon. **Falcon 輸入增益** is adjustable from 0–30 dB in this
-administrator panel, independently of the VAD gain, and defaults to 0 dB.
-It is saved locally under `kiosk/audio/falcon-input-gain-db`; changing it restarts
-capture and discards the partial utterance, so one utterance uses one gain.
-Each branch owns its limiter history, and no samples or delay are added. The
-existing voice diagnostic runtime snapshot reports the configured Falcon gain
-when the UMA-8/Falcon branch is active. Ordinary microphones and administrator
-legacy-ASR diagnostics do not use this gain. Legacy ASR records gained LCMV.
-Microphone hardware choice remains independent of recognition mode and ordering authorization.
+ASR records gained LCMV output. Microphone hardware choice remains independent of ordering authorization.
 
 When AEC3 is enabled, the Worker owns a fixed 16 MB AEC3 WASM heap plus DSP state. Transfer queues are
 bounded to approximately one second at each delivery boundary; a slow pipeline
@@ -460,7 +371,14 @@ its own separate consent. This validates recognized text, not microphone/ASR acc
 PB's verified dumpling extra is named `水餃1顆` (cart editor checked on
 2026-11-16): an eight-piece base serving plus two extras is one ten-piece serving.
 The compiler, finite purchase path, Server plan binding and read-back share that
-option identity. Reapplying an unchanged serving count produces no write or
+option identity. Incomplete dumpling drafts ask for total pieces per serving
+instead of exposing the merchant's “加量” group name. Piece-only answers retain
+previously stated serving counts; explicit serving counts and split configurations
+are kept separately. “正常” means the verified eight-piece base only inside this
+bound question. Unrecognized answers re-ask only the current missing field; repeated failures
+automatically retire the unfinished question and keep the cart. Main's new-request decision also releases the old question.
+The native pointer and frames remain visible without floating action labels;
+operation descriptions remain available in diagnostic receipts. Reapplying an unchanged serving count produces no write or
 success receipt; Main must repair a customization request with the proper tool.
 
 Final detail replies retain the website's meal contents as well as verified
@@ -468,6 +386,31 @@ prices. An `open_menu_item_details` receipt may include the whole rendered
 catalog; only products matching that receipt's current `productDialog` are
 used to answer. A successful detail window must not become a no-query fallback,
 and failed or unrelated dialog data does not establish meal facts.
+
+Promotion inquiries use `reply_to_customer` with `replyType=promotion-policy`,
+not `ask_customer_question`. A malformed question is rejected before any PB read
+or write and returned for bounded model correction. Customer messages do not
+include raw Valibot errors; diagnostic details remain in internal receipts.
+A validation error from website data does not authorize replaying a cart operation.
+Unexpected runtime and transport exceptions also stay in diagnostic receipts;
+explicit domain input errors retain their actionable customer wording. Batch
+failures keep already verified cart changes, without exposing the underlying exception.
+Natural category inquiries such as “有什麼湯” do not invent a configured category:
+a mismatch leaves recommendation criteria intact and returns the current full
+catalog for bounded correction. Main selects actual soup dishes from known facts
+before presentation; keyword matching supplies candidates, not category proof.
+Read-only query recovery preserves its lookup guidance instead of asking which
+order to change. Unconfirmed writes retain their independent recovery rules.
+For pending meal/checkout questions, two consecutive unresolved distinct utterances
+retire the Host question and unfinished drafts without touching the merchant cart,
+form, submitted order or payment. A valid answer clears the counter. The signature
+binds visitor, document, cart and actual question content; a reissued UUID cannot
+restart the counter, and an old in-flight answer cannot retire a newer question.
+Natural refusals and topic changes release their old question too. No special
+cancellation phrase is suggested or required. Release receipts end the current
+model loop so it cannot immediately re-ask. This is dialogue recovery, not an
+Electron process watchdog or automatic application restart.
+
 
 The public tool registry owns names and JSON parameter schemas. The compiler
 exhaustively handles every registry key; new keys require an execution branch.
@@ -679,8 +622,27 @@ resolved before a repeated open-cart tool, so assent does not restart review.
 The website's preselected invoice radio is not a customer choice: entering
 checkout from an already open cart also asks the invoice method before contact
 details. After choosing no carrier, the next step asks for notification contact;
-other methods first collect their required invoice fields. Codes/email may be
-entered on the website; phone drafts must match the current customer text.
+other methods first collect their required invoice fields. Carrier/citizen codes may be scanned directly after method selection with a
+keyboard-emulating scanner, without clicking the merchant input first. Prompts
+explicitly mention barcodes/QR Codes; supported payloads remain the merchant
+carrier/citizen formats, not arbitrary QR URLs or a camera decoder. Donation
+codes accept a complete spoken 3–7 digit number, preserving leading zeroes. Host
+reads the digits back and binds confirmation to the current visitor/document/cart
+and checkout form before invoking `browser_invoice_donation`. This native
+capability is not a model-facing tool and requires Desktop 0.6.11 or later. It
+fills only the selected donation field, then rechecks checkout; no submission
+consent is granted. Email may be entered on the website; phone drafts must match
+the current customer text.
+Checkout recovery compares visitor/document/cart-bound form observations across
+utterances, excluding refreshed confirmation tokens. Two completed answers after
+an unchanged entry prompt rebuild invoice choices, or request a spoken contact
+number; repeated unexplained readiness failures pause the stale completion prompt.
+Two explicit no-effect operation failures rebuild invoice choices from a fresh
+read. Unknown/pending effects never enter this recovery path. `CHECKOUT_RECOVERY`
+receipts record reason, step and count without field values and end the current
+model turn, so Main cannot immediately recreate the old loop. Native fields and
+cart contents are preserved. This is bounded checkout recovery, not a process
+watchdog or a guarantee that missing merchant data can be repaired automatically.
 The final submission question includes meals/options/notes, website total,
 table, invoice and notification details. Its native token is private, expiring,
 one-use and invalidated by any cart/form/manual-interaction change.
@@ -1829,12 +1791,11 @@ capture, transcription and pending service classification. Its first confirmed
 service admission (or accepted final decision) opens feedback once per utterance;
 empty ASR, background IGNORE, incomplete or unavailable decisions never open it.
 Repeated admission progress for the same legacy utterance does not replay its
-receipt. Falcon keeps its immediate pre-upload capture feedback; accepted
-non-empty simulated text also starts feedback. Permission/admission failures and
-incomplete AV captures do not.
+receipt. Accepted non-empty simulated text also starts feedback.
+Permission and admission failures do not.
 
 Once admitted, waiting music continues through remaining decision, tool execution
-and TTS preparation; Falcon also retains waiting music during transcription.
+and TTS preparation.
 Actual TTS playback stops it synchronously; an earlier reply ending does not
 discard a newer pending utterance. Internal work and proactive greetings alone
 never start a receipt. Reset, cancellation, admin/pause, service faults and scene
@@ -1881,8 +1842,7 @@ Customers see only the audio-received indicator and recognized text. Voice,
 decision, idle and presence diagnostics and numeric execution times require the
 local authenticated administrator view. Opening that local view pauses reception;
 use the separate management website to observe a live customer unobtrusively.
-Falcon freezes each synchronized clip independently and uses the same bounded
-utterance queue as regular ASR. Multiple recognition requests may overlap;
+Multiple ASR requests may overlap;
 decisions and browser operations remain serialized in capture order.
 
 The device settings ordering-site selector identifies reviewed PB production,
@@ -2086,7 +2046,7 @@ watchdog and never expires a complete transcript behind earlier ASR or Agent wor
 Accepted utterances retain capture order until processed or the reception resets;
 actual request failures still cancel their own reservation. Capacity remains
 bounded, with explicit overload feedback for a new utterance that cannot be accepted.
-Falcon retains its explicit provider-policy deadline. Every dequeued sentence is
+Every dequeued sentence is
 processed against fresh cart/question state; waiting does not extend order consent.
 The archival recording retains the complete original utterance. ASR413 is shown
 as an upload-size refusal, separately from incomplete recognition/provider failure.
@@ -2098,7 +2058,35 @@ the on-screen keypad. Configure `KIOSK_ADMIN_PIN` or `KIOSK_ADMIN_PIN_FILE` on t
 Server; no PIN is embedded through a frontend `VITE_` variable. Closing the panel
 revokes the local grant. PB's native View hides while a host dialog owns input.
 
-Administrator mode can choose the microphone, adjust the locally stored customer conversation text size, enable or disable voice input, and pause the avatar for calibration. Published Site policy resolves the chat and audio models on the Server; provider credentials and API keys never enter the kiosk bundle or settings surface.
+Administrator mode can choose the microphone, adjust the locally stored customer conversation text size, enable or disable voice input, and pause the avatar for calibration. The initial conversation font size is 28px; existing operator-selected values remain unchanged. Both orientations reserve 75% of the available grid height for the ordering page and 25% for the assistant. Within the assistant row the avatar uses 24% and the conversation 76%, with a smaller avatar minimum width. The conversation shows a three-line expandable previous reply above the current turn and unfinished requests; the previous reply uses 80% of the configured text size while current messages retain the configured size. Its viewport remains scrollable after asynchronous Markdown layout; **查看先前對話** expands retained history without changing model context or audit records.
+
+After the catalog renders, PB initially activates its first native category tab (currently **便當**) to scroll directly to the product area. This retains every category and uses PB’s own sticky-header positioning. This happens once per document; trusted customer interaction or an existing scroll position prevents repositioning. On a 1080×1920 portrait screen the current 13-item merchant menu fits in the enlarged region; smaller screens retain ordinary scrolling. Visible recommendation batches are framed together without per-item dwell or an input lock; optional speech cues never scroll offscreen dishes into view. Requesting a different table uses **return_to_table** to navigate to the approved same-store table page before reading tableChoices. Navigation does not clear a cart, choose a table or start/submit an order. Native menu placement and table navigation require a rebuilt desktop host as well as the frontend.
+
+Activity guidance uses non-interactive CSS gradient frames: actual TTS playback lights the avatar, detected speech while the microphone is listening lights the entire assistant panel, and in-flight page controls/presentations light the ordering panel. Text mode uses the same actual media-playing signal; a stronger 4px speaking edge and inset glow remain visible on the dark avatar background. State polls stay quiet. Native PB content has a permanent 6px frame inset so Electron's native view cannot hide the Host border; activation never resizes, hides or covers the site. Reduced-motion preferences use a static frame and no additional model is loaded.
+
+Speech/text visual cues use longest catalog mention spans: a soup name inside a
+complete combo name does not also point to its standalone card, while a separately
+mentioned soup still does. Positive-only requests cannot append excludedTerms;
+this is a necessary refusal-evidence check, not a complete semantic classifier.
+An existing dish excluded from recommendations returns a repairable purpose
+conflict, allowing explicit information lookup without erasing dietary/budget
+preferences or authorizing an order. General catalog introductions use at most
+three dishes. A failed targeted presentation does not fall back to reading an
+unrelated full catalog or repeating the same failure; verified specific details,
+cart reviews and final submission summaries retain their complete facts.
+
+Ordinary **search_menu_items** inquiries consult the full current catalog. A unique exact product name/alias or an exact configured category can be highlighted directly. Partial keyword matches return candidate evidence only; Main chooses semantically matching dishes and calls **point_to_menu_items** before describing them as presented. Soup inquiries must not turn dumplings or meal sets containing soup into standalone soup matches. Even an explicit “only show this category” request keeps the full menu and highlights the verified selection without filling the native search field; automatic filtering is not exposed. An empty query can still clear a prior manual filter. A missing item leaves the menu usable and supplies concise verified alternative metadata for the assistant, without choosing or ordering a substitute. Main instructions distinguish the newest question from earlier completed topics. Final replies omit unrelated old-topic missing-search receipts while preserving misses explicitly asked in a multi-item question; raw tool diagnostics are retained. Text replies can reveal observed items on an already verified menu before framing them, including after an old filter hid them. They never navigate away from checkout to produce a cue; voice cues still follow playback and preserve the page.
+
+A visible PB recommendation batch keeps all selected cards framed while one hand visits each card in order. Passive cues omit duplicate product-name labels; native cards retain their own names and prices, and operation cues retain their action labels. The optional tour runs after the visible receipt, so it does not delay speech, block customer input or scroll the page. New input or a replaced card retires the old cue. While a recommendation choice is pending, Jev can choose another batch for “還有什麼”; this preserves price/dietary restrictions and does not turn the previous batch into excluded foods.
+
+Spoken guidance prioritizes voice requests and assisted operations. Ordinary table selection, menu recovery, cart confirmation and notification-phone prompts do not advertise manual alternatives. Necessary scanning, phone payment authorization, verified tool failures and genuinely missing capabilities retain brief, explicit manual instructions. The PB LINE Pay entry currently still needs one manual selection because no voice-opening tool is available; this is a known capability gap, not a claim of fully touch-free checkout. Native controls remain usable.
+
+After cart confirmation, the assistant announces the actually selected invoice method as a preselection and asks which method the customer wants. A form default never supplies customer consent. Native invoice focus targets the visible radio label before focusing its input, so Element Plus’s decorative indicator does not count as an obstruction; genuine overlays still block automated steps. A product dialog that naturally finishes closing after an add does not cause the following cart review to fail by trying to close its vanished button.
+
+On PB payment selection, this kiosk supports **LINE Pay only**. Other provider links, including credit cards, are disabled and an inline explanation is shown. The native cancellation control remains available; the assistant never initiates payment. If PB does not offer LINE Pay, it directs the customer to staff. This native enhancement requires rebuilding the Desktop PB bundle; a frontend-only update is insufficient.
+
+Legacy ASR requests include the capture-time ordering service ID and bounded, previously observed menu names. The Server validates that site against the device's assigned published Profile, adds its catalog names/aliases, and forwards up to 100 unique vocabulary terms in the upstream `prompt` (under 2,000 characters). Browser-supplied names are pronunciation context only, never ordering authority. No additional model or post-transcription replacement is used; the original ASR response remains the transcript. These hints need real microphone acceptance testing with the configured ASR provider.
+ Published Site policy resolves the chat and audio models on the Server; provider credentials and API keys never enter the kiosk bundle or settings surface.
 
 In Webnavior's published Kiosk Profile, **僅允許語音對話** hides the customer text composer and starts pre-authorized microphone capture on load. The kiosk visibly indicates whether its microphone is actively listening; it sends audio and reply text only to device-authenticated Server audio endpoints.
 
@@ -2286,7 +2274,7 @@ mode works without browser device enumeration.
 
 `capture.ts` initializes the same AEC3 WASM/LCMV worker, transfers the native port
 and the reference Worklet port into that worker, and leaves final PCM delivery in
-the original VAD/Falcon path. These ports bypass renderer scheduling. The raw native
+the original VAD/ASR path. These ports bypass renderer scheduling. The raw native
 owner performs only capture/reference clock pairing, with the existing 100 ms input
 delay and bounded drift correction; it loads no denoising/RTF model. Source timestamps
 subtract the reported native input delay after the connection is ready. Physical

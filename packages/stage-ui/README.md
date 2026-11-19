@@ -4,8 +4,8 @@ Shared core for stage
 
 The shared Kiosk device-settings editor exposes `mouthDetectionEnabled` in both
 local and management modes. This opt-in switch controls visual admission for
-ordinary ASR; proactive observation and background-speech policy remain separate,
-and Falcon still requires mouth images. It saves through the existing revisioned
+ordinary ASR; proactive observation and background-speech policy remain separate.
+It saves through the existing revisioned
 device-settings API rather than a browser-only preference.
 
 ## Native PB ordering

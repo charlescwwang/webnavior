@@ -11,21 +11,6 @@ network parsing, runtime selection or Kiosk presentation.
 
 ## External ordering conversation
 
-`falcon-settings` owns the neutral connection-draft schema and public snapshot.
-It carries no credential and grants no runtime activation. The Server stores
-the encrypted key separately; the current editor permits legacy mode only.
-
-`falcon-audio` encodes the documented single-second Falcon AP binary window:
-25 as uint32 LE, 16000 finite Float32 LE audio samples, then 25 grayscale 96x96
-mouth frames. `encodeFalconClip` uses the current deployed TypeScript server's
-whole-clip format: a plain frame count, followed by 640 Float32 samples and
-9216 grayscale bytes per frame (audio first, then all mouth frames). Engine
-flags from the older ZIP are rejected; engine selection belongs to the service.
-Synthetic 3-second and 15-second requests were accepted on port 8766. Neither
-encoder invents tail padding or an ASR request protocol. These codecs are
-preparatory; no active Kiosk
-capture or provider routing is changed by importing it.
-
 `pb-journey` owns the reviewed PB origin/store/flow policies shared by native
 admission and the page adapter. Table/menu/cart pages share the canonical menu
 owner key, preserving existing member-site ownership. `invoice-input` shares

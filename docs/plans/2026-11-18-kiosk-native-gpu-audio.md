@@ -1,5 +1,11 @@
 # Kiosk native GPU audio
 
+Superseded implementation plan: retirement of the UL-UNAS GPU audio option and
+its dedicated packaging requirements, with an independent Hush CPU replacement, is documented in
+[`2026-11-19-kiosk-native-hush-audio.md`](2026-11-19-kiosk-native-hush-audio.md).
+It is not implemented yet. GPU startup success in this document does not qualify
+sustained real-time capture; the standalone reports include GPU backlog failures.
+
 User-approved target: Windows x64 / Intel Iris Xe. One Kiosk EXE owns its bundled
 Python process; no separately started service, listening HTTP port, system Python,
 or package installation on the device. This chat coordinates the PB fixes and

@@ -1,154 +1,121 @@
 # Kiosk native audio
 
-This directory owns the Windows UMA-8 frontend using native device capture in Electron 0.6.2.
-Electron starts a private child process on the first audio request and terminates
-it on host reload or application close. No local HTTP service, system Python,
-pip installation, device credentials or ASR client are required here.
+The Hush CPU option is owned by the Kiosk Electron application (0.7.5, native
+bridge v9). Electron starts one bundled Python worker on demand; navigation and
+close retire it. Operators install no system Python, pip package or local HTTP
+service. Use the matching Kiosk frontend and EXE together.
 
-sounddevice 0.5.6 / PortAudio directly opens eight discrete 48 kHz physical
-capture channels. Chromium never acquires the microphone in this mode. Its normal
-speaker output supplies mirrored application PCM as the AEC reference. Seven selected physical microphones pass
-through paired 48→16 kHz resampling, AEC3, common gain, online RTF/MVDR,
-UL-UNAS, AGC and spatial/WebRTC segmentation. Final mono segments enter the
-existing Kiosk ASR queue. AEC, RTF/MVDR and VAD run on CPU; **UL-UNAS runs on
-OpenVINO, explicitly targeting Intel GPU.0**. This does not move remote ASR, TTS or the language model to Iris Xe.
+## Processing and ownership
 
-This is an explicit experimental choice for Windows UMA-8 RAW eight-channel mode;
-the Kiosk frontend defaults to existing LCMV/Spatial Mask processing. Ordinary mono
-microphones and browser-only clients retain their own processing path. The
-matching Kiosk frontend must be released with the new EXE. An older EXE cannot
-provide this capability and must be updated before enabling native array mode.
+PortAudio captures eight physical UMA-8 RAW channels at 48 kHz. Seven mapped
+microphones are resampled on their own source timeline to 16 kHz. There is no
+AEC or playback-reference pairing in Hush. Processing is common input gain → online
+RTF/MVDR → overlap-add mono PCM → Hush CPU → AGC → spatial/WebRTC VAD. Completed
+utterances enter the existing Server ASR queue; there is no second Silero pass,
+local Whisper, UL-UNAS, OpenVINO or GPU audio inference.
 
-## Operator setup
+The `hush/` directory contains immutable native libraries, model bundle, licenses,
+model card and asset hashes. Hush uses native Tract CPU inference; Python calls
+its C ABI. A process owns shared model weights, and each capture generation owns
+a separate Hush session, RTF and VAD state. Sessions run continuously across
+utterances. Stop/replacement discards incomplete speech and releases native state;
+EOF releases shared weights. Errors never select a substitute model.
 
-In the Kiosk microphone settings, select UMA-8 multichannel, choose the experimental
-online RTF/MVDR + GPU pipeline and apply the capture method. The existing pipeline
-remains selectable even if GPU startup fails, with its prior tuning preserved.
-Switch only while silent; switching retires unfinished capture. GPU inference
-does not automatically fall back to CPU. Then check the seven physical
-channel indices and common gain. Select the native input, then apply. Native
-choices are separate from browser microphone IDs. Automatic input selection
-requires a unique UMA-8/micArray with at least eight channels and prefers WASAPI.
-Missing/ambiguous inputs or unsupported input formats fail explicitly. The default
-map is 0–6; verify it against the installed USB firmware. PortAudio opens an
-input-only stream, never a speaker or duplex stream. Speakers use the normal
-Kiosk browser selector, including system default, independently of input host.
+The pinned 16 kHz model has FFT 320, hop 160 and no neural lookahead. Its measured
+waveform delay is 160 samples (10 ms), independent of the STFT delay.
+The former AEC and 100 ms capture-reference delays are absent from Hush. `pipeline.py` compensates that delay and carries
+source evidence by sample intervals across 256-sample OLA and 160-sample model
+frames. Frame descriptors have explicit lengths; inference arrival is not the
+source clock. Finalization drains valid tails without counting padding as input.
+Cancellation never turns a flushed partial utterance into a new order.
 
-The 0.6.0 native worker starts without `target_rtf.npz` and does not record or
-persist a manual installation anchor. It initially uses the reference channel,
-then learns a spatial RTF from independently detected speech with dominance and
-candidate-consistency checks. Tracking continues across dominant position changes;
-playback/tails and mixed or weak evidence freeze updates. There is no fixed
-service-area boundary or speaker identity guarantee without an installation anchor.
-Each generation learns anew; no customer PCM or learned direction is persisted.
-The offline fixed-anchor comparison mode remains available to DSP tests.
+NOTICE: The pinned upstream native runtime skips recurrent/OLA advancement when
+mean-square input energy is below 1e-7. `hush.py` applies a documented -68 dBFS
+Nyquist floor only to those frames, ensuring source-clock progression through
+silence and draining. Native inference errors (-100) are rejected rather than
+accepted as the library's passthrough fallback. Real native regressions cover
+silence, restart determinism and measured delay; physical acoustic acceptance is
+still required.
 
-Browser application audio remains audible through its normal selected output.
-A mirror of its limited stereo mix is delivered over IPC and resampled onto the
-input clock with a bounded 40–50 ms reservoir and ±0.5% drift correction. Capture
-is delayed 100 ms so the render reference precedes the corresponding microphone
-echo despite IPC jitter. This adds latency; AEC estimates remaining output/acoustic
-delay. This is application PCM before the browser DAC, not actual DAC feedback,
-system audio or external website loopback. Since 0.6.2, native callbacks copy
-microphone samples into a bounded queue; the worker pairs a complete input block
-only when its real browser reference is available. Short callback/IPC bursts no
-longer terminate capture merely because the 40–50 ms render reservoir empties.
-Unpaired input is retained in order, not replaced with silence or dropped. The
-reference queue and capture backlog remain bounded at 250 ms; xrun/backlog failure
-stops the generation. The drift controller subtracts waiting input from render
-occupancy so delivery bursts are not treated as independent-clock drift. Real driver
-latency, long-duration drift, double talk and acoustic quality need Windows tests.
+## Operator use
 
-## Capture and playback ownership
+In microphone settings choose UMA-8, then **Online RTF/MVDR + Hush CPU** and apply.
+Choose the native input, confirm seven physical channel indices, and apply gain.
+Hush tuning is stored independently from LCMV/Spatial Mask. The preset selector offers:
 
-The shared Eventa v3 bridge requires the matching 0.6.0 EXE and frontend; old
-executables display an update requirement. `start` prepares DSP, `open`
-resolves native devices, and ordered `poll` requests carry stereo playback and
-return processed speech. Device enumeration does not initialize the GPU model.
-The browser never requests microphone permission for this path; its enabled
-preference still controls native listening. Switching to existing capture restores
-browser ownership. Model startup has a 180-second supervisor budget (182 seconds
-in preload); a failed owner still requires a document reload.
+| Preset | Maximum attenuation | MVDR dry mix | Comparison focus |
+| --- | --- | --- | --- |
+| A | 20 dB | 30% | Quiet speech and word boundaries |
+| B | 20 dB | 10% | Background leakage in noise |
+| Original baseline | 100 dB | 0% | Previous full-model suppression |
 
-Registered Kiosk speech/cue sources retain their browser destination. A silent
-Worklet mirrors the stereo application mix without creating duplicate playback.
-The speaker selector and test chime remain available during native capture.
-Playback lifecycle follows browser media; physical DAC latency still needs
-validation on the chosen output device.
+The default remains the original baseline until explicitly applied. Selection is
+only a draft; **Apply audio settings** saves it and starts the next generation.
+This retires unfinished speech; switch while silent. Hush keeps one continuous
+session across VAD utterances. Compare both recommendations with the same recorded
+input, then with actual store speech; different recordings do not establish a
+preset's quality. The recommendation source is
+`/home/aimax/Downloads/UMA8-Windows-Integration-README.txt` (2026-11-20); it is a
+reference document, not a runtime dependency.
 
-Callbacks only copy microphone PCM; reference pairing/resampling, model inference
-and pipe IO stay outside the callback. A persistent slow model or renderer/IPC
-stall can still exhaust the unchanged 250 ms bounds; this queue correction does
-not certify model throughput or remove the Worklet delivery guard. Capture or render backlog beyond 250 ms and PortAudio
-status errors retire the generation; no capture frames are silently dropped to
-meet model timing. Stop, replacement, stdin EOF and host
-close release the stream and queued audio. Only the active generation may stop it.
+Dry mixing uses unmodified, pre-Hush MVDR PCM delayed by 160 samples, with matching
+source samples mixed before AGC/VAD. Native clipping and the silence-clock floor
+never enter that dry buffer. At 0 dB the supported native bypass has zero model
+delay; the wrapper preserves raw PCM without adding the floor. Changing preset
+never resets a session between words or changes microphone gain/channel mapping.
 
-## Explicit UL-UNAS bypass trial (0.6.1)
+LCMV and Spatial Mask remain selectable and are still the default. Retired GPU selections require
+explicit re-selection; they are not aliases for Hush. Adjust only while silent.
 
-Close all Kiosk windows, then run **Start Without UL-UNAS.cmd** from the portable
-folder. That launcher sets `WEBNAVIOR_TEST_BYPASS_ULUNAS=1` only in its child EXE
-and worker. It skips model loading and inference while preserving native capture,
-AEC3, automatic RTF/MVDR, gain, AGC, segmentation and the normal ASR queue.
-The administrator audio status explicitly says UL-UNAS is skipped; GPU verification
-is false and is not presented as pending. This is not CPU model inference.
+Input is independent from the browser speaker selector. TTS, cues and music use
+normal speakers. Hush never creates an AudioContext/AudioWorklet, subscribes to
+playback reference, or waits for TTS PCM. It has no AEC switch: AEC is removed
+from this option. Speaker audio can therefore be captured and recognized again.
+Native mode never asks Chromium for a microphone. Unique automatic UMA-8
+selection prefers WASAPI and may use the unique miniDSP WDM-KS RAW fallback;
+explicit device selections fail as selected.
 
-Fully close the trial EXE and launch **Webnavior Kiosk.exe** normally to restore
-model-enabled FP32 behavior. No browser preference or profile switch is persisted.
-The worker also accepts explicit `--bypass-denoiser` for developer trials.
-Ordinary model initialization failures still propagate; there is no automatic
-bypass or CPU retry. The model, precision, other controls and timing bounds are
-unchanged. This isolates the model stage; it does not certify Windows capture,
-echo quality, recognition, long-duration scheduling or complete reception.
+Native callbacks only copy bounded microphone PCM. A dedicated browser Worker
+opens the input through a generation-owned MessagePort, then issues one read at
+a time, waiting 16 ms after completion. Each read drains actual microphone frames;
+timer jitter changes batch sizes, not sample offsets. Resampling and DSP stay out
+of callbacks. There is no 8 ms reference RPC or playback acknowledgment clock.
+The native microphone queue and an in-flight read retain a 250 ms processing
+bound. Overload or discontinuity stops capture rather than silently dropping PCM.
+Switching pipelines releases the old owner before a new one opens the device.
+
+Automatic RTF starts without a calibration file, initially using its reference
+channel, then learns dominant speech. Mixtures and weak evidence freeze learning. There is no playback-reference
+hold because this Hush option no longer observes speaker PCM. This does not identify a customer or enforce a fixed service
+region. No learned direction or customer PCM is persisted by the DSP worker.
 
 ## Build and validation
 
-`windowsRuntime.json` pins the official CPython embeddable archive and Windows
-wheels, including their official download URLs and SHA256. Obtain those exact
-assets on the build host, then run:
+`windowsRuntime.json` pins CPython, CPU/audio wheels, Microsoft CRT and Hush assets.
+Use verified local downloads with `scripts/windows/prepareAudio.py`, then build
+the desktop and use `scripts/windows/packagePortable.py`. The Windows bundle
+contains only its Windows Hush library, model and notices; the Linux library is
+for development tests. Target machines perform no installation or download.
+
+Create an isolated Python environment using `requirements-dev.txt`, then run:
 
 ```sh
-python3 scripts/windows/prepareAudio.py --python-zip /path/python.zip \
-  --wheel-dir /path/wheels --vc-redist /path/vc_redist.x64.exe \
-  --output-dir /path/new-audio-runtime
-python3 scripts/windows/packagePortable.py --runtime-zip /path/electron.zip \
-  --audio-runtime-dir /path/new-audio-runtime --output-dir /path/release
-```
-
-Preparation uses libarchive `bsdtar` to read the pinned Microsoft redistributable
-cabinets without installing them. It verifies hashes, retains licenses, isolates Python's module search
-path, checks Windows x64 PE headers, and writes a per-file manifest. Packaging
-rechecks the manifest and current Python source. Both steps use local assets;
-the target downloads no model or dependencies. Python source and model licenses
-are included in the portable distribution. The UL-UNAS model provenance is in
-`models/manifest.json`.
-
-For explicit Linux development only, set `KIOSK_AUDIO_PYTHON` and
-`KIOSK_AUDIO_PROVIDER=cpu`. Packaged builds always request OpenVINO GPU. Run Python
-tests in an isolated development environment from this directory:
-
-```sh
-python -m pip install -r requirements-dev.txt
 PYTHONPATH=src python -m pytest tests -q
+UMA8_STRESS_SECONDS=120 PYTHONPATH=src python -m pytest tests/test_online_rtf.py -k long_stream -q
 ```
 
-Windows/Iris Xe execution, driver compatibility, USB channel layout, sustained
-real-time performance, acoustic double talk and live ordering require physical
-acceptance. Linux tests and PE/hash verification do not establish those results.
+Set `KIOSK_AUDIO_PYTHON` to that Python for Linux desktop development. Use
+`KIOSK_AUDIO_TEST_PYTHON` for actual child-process Vitest integration. There is no
+provider override or model-bypass launcher. `Test Hush Audio.cmd` is an optional
+standalone microphone-only diagnostic; it does not test Chromium or ASR. `Test Native Eight Channel.cmd` only checks physical input.
 
-## Original LCMV input-only owner (0.6.3)
+Windows USB channel mapping, microphone gain, TTS suppression, double talk,
+background speakers, full ASR/ordering and at least 30 minutes of actual kiosk
+operation require on-device acceptance. Linux synthetic tests, PE checks and ZIP
+hash verification do not establish those results.
 
-`--capture-only` selects `InputWorker`, which opens the same real eight-channel
-PortAudio capture and returns planar eight-channel microphone plus stereo reference
-PCM at 48 kHz. It never constructs the native Frontend or loads OpenVINO/UL-UNAS.
-The original browser DSP Worker remains responsible for seven-channel AEC3 WASM,
-LCMV, resampling and downstream recognition. Raw PCM offsets, render offsets and
-capture generations are checked independently; stale stop requests cannot close a
-replacement. The existing microphone delay is reported for source timestamps.
-
-The renderer transfers an Electron input port and a Worklet reference port into
-the original DSP Worker. PCM delivery thereafter bypasses the UI event loop and
-the model-bearing native worker. Hardware enumeration owns a separate process.
-All capture/render/pending limits remain unchanged; no reference is invented and
-no microphone frames are dropped to recover from overload. Device loss and invalid
-PCM stop the owner. The GPU RTF candidate remains a separate, unchanged selection.
+The original LCMV capture-only owner remains separate: it supplies raw paired
+48 kHz PCM to the browser AEC3/LCMV Worker and does not load Hush or native RTF.
+Generation-bound MessagePorts keep that PCM off the renderer UI loop; enumeration
+uses a separate short-lived process. Spatial Mask and standard microphones keep
+their browser acquisition paths.

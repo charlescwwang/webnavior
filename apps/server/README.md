@@ -262,33 +262,6 @@ HTTPException statuses are retained instead of being converted to500. Other
 JSON/media/asset limits remain separate. Clients split long final utterances into
 bounded WAV uploads and must not execute partial transcription results.
 
-### Falcon integration preparation
-
-`services/domain/kiosk-audio/falconResponse.ts` provides a bounded OpenAI Chat
-Completions JSON/SSE transcript reader and an explicit `transcription-json`
-profile for the deployed `{text: string}` response. Formats are not guessed.
-Streaming deltas are previews only;
-the function returns a transcript only after normal completion (`stop` plus
-`[DONE]` for SSE). Abort, tool calls, truncation, upstream errors, oversized
-bodies and multiple choices reject the result. It owns no history writes or
-Agent dispatch. Existing ASR routes and provider settings are unchanged.
-
-The separate Falcon+ASR service is reachable at `http://192.168.8.64:8766`.
-The updated TypeScript deployment accepts a plain frame-count header followed by
-synchronized audio and mouth frames; old ZIP engine flags are rejected (422).
-Synthetic 3-second and 15-second clips returned HTTP 200 JSON `{text: string}`
-with matching audio sample counts. Health still lists `frames: [25]`, which is
-not its actual whole-clip limit. `format: "wav"` is metadata, not the response
-body format. These synthetic checks do not validate real AV recognition quality.
-Engine selection belongs to the remote service, not bits in the upload header.
-
-Admin GET/PUT `/api/admin/falcon` stores `FALCON_CONNECTION_CONFIG` independently
-of active ASR/TTS bindings. It validates settings, encrypts keys and never
-returns key material. This is a connection draft, not activation: both UI and
-Server reject enabling AV mode. The reserved utterance memory limit does not
-change existing VAD. Whole-utterance capture, forwarding and history integration
-remain pending. Initial results are JSON; SSE is reserved, not activated.
-
 ## Local Kiosk administrator access
 
 Set `KIOSK_ADMIN_PIN` or `KIOSK_ADMIN_PIN_FILE` on the Server. The enrolled device
