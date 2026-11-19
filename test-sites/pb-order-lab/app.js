@@ -5,6 +5,7 @@ import { basePath, categories, products, revision, tables } from './catalog.js'
 import { runCompatibilityCheck } from './contractCheck.js'
 import { pageSnapshot, routeRegistry, sessionSchemaVersion } from './fixtureProtocol.js'
 import { abandonPayment, invoiceError, pay, selection, setCartQuantity, submit } from './order.js'
+import { installQuantityControls } from './quantityControls.js'
 
 const assets = import.meta.glob('./assets/*', { eager: true, query: '?url', import: 'default' })
 
@@ -25,6 +26,8 @@ let searchTimer
 let restoreFocus
 let sessionRevision = 0
 let syncQueue = Promise.resolve()
+const pendingCartQuantities = new Set()
+const quantityControls = installQuantityControls(changeQuantity)
 const renderToken = uuid().slice(0, 8)
 
 // The simulator owns the browser-profile session; sessionStorage is a reload/
@@ -80,7 +83,63 @@ const now = () => ({ id: uuid(), now: new Date().toISOString() })
 const button = (label, action, attrs = '') => `<button type="button" data-action="${action}" ${attrs}>${label}</button>`
 const icon = name => `<img class="icon" src="${assets[`./assets/${name}.svg`]}" alt="" aria-hidden="true">`
 const image = product => product.image ? `<img src="${assets[`.${product.image}`]}" alt="${escape(product.name)}">` : '<div class="no-image">無圖片</div>'
-const stepper = (name, value, min, max, label) => `<div class="stepper"><span role="button" tabindex="0" data-action="step" data-field="${name}" data-delta="-1" aria-label="減少${label}">${icon('minus')}</span><input type="number" id="${name}" name="${name}" data-testid="${name}" aria-label="${label}" min="${min}" max="${max}" step="1" value="${value}"><span role="button" tabindex="0" data-action="step" data-field="${name}" data-delta="1" aria-label="增加${label}">${icon('plus')}</span></div>`
+const quantityButton = (action, delta, label, attrs, disabled = false) => `<span role="button" tabindex="0" class="el-input-number__${delta > 0 ? 'increase' : 'decrease'}${disabled ? ' is-disabled' : ''}" aria-disabled="${disabled}" data-action="${action}" data-delta="${delta}" aria-label="${delta > 0 ? '增加' : '減少'}${label}" ${attrs}>${icon(delta > 0 ? 'plus' : 'minus')}</span>`
+const stepper = (name, value, min, max, label) => `<div class="stepper el-input-number">${quantityButton('step', -1, label, `data-field="${name}"`, value <= min)}<input type="number" id="${name}" name="${name}" data-testid="${name}" aria-label="${label}" min="${min}" max="${max}" step="1" value="${value}">${quantityButton('step', 1, label, `data-field="${name}"`, value >= max)}</div>`
+
+function updateQuantityState(wrapper, pending = false) {
+  const input = wrapper.querySelector('input[type="number"]')
+  for (const control of wrapper.querySelectorAll('[data-delta]')) {
+    const disabled = pending || (Number(control.dataset.delta) < 0 ? Number(input.value) <= Number(input.min) : Number(input.value) >= Number(input.max))
+    control.classList.toggle('is-disabled', disabled)
+    control.setAttribute('aria-disabled', String(disabled))
+  }
+}
+
+// Persisted cart quantities and local product drafts have different lifetimes:
+// a cart row is disabled until its real fixture response, then replaced. An
+// obsolete response may not rerender a newer route or dialog.
+async function changeCartQuantity(lineId, amount) {
+  if (pendingCartQuantities.has(lineId))
+    return
+  const row = Array.from(document.querySelectorAll('.produce-item')).find(row => row.dataset.lineId === lineId)
+  const wrapper = row?.querySelector('.line-actions')
+  if (!wrapper)
+    return
+  pendingCartQuantities.add(lineId)
+  wrapper.querySelectorAll('input, button').forEach(control => control.disabled = true)
+  updateQuantityState(wrapper, true)
+  try {
+    setCartQuantity(state, lineId, amount)
+    await save()
+  }
+  catch (error) {
+    notify(error.message)
+  }
+  finally {
+    pendingCartQuantities.delete(lineId)
+    if (row.isConnected)
+      renderCheckout()
+  }
+}
+
+async function changeQuantity(control) {
+  if (control.dataset.action === 'line-quantity') {
+    const line = state.cart.find(line => line.lineId === control.dataset.lineId)
+    if (line)
+      await changeCartQuantity(line.lineId, line.quantity + Number(control.dataset.delta))
+    return
+  }
+  const input = document.getElementById(control.dataset.field)
+  if (!input || input.disabled)
+    return
+  input.value = Math.max(Number(input.min), Math.min(Number(input.max), Number(input.value) + Number(control.dataset.delta)))
+  // Vue flushes draft quantity/price updates after the event handler; preserve
+  // that ordering rather than treating dispatch as a verified form update.
+  queueMicrotask(() => {
+    if (control.isConnected)
+      updateSelection()
+  })
+}
 
 function notify(message) {
   clearTimeout(noticeTimer)
@@ -110,12 +169,14 @@ function showModal(content, className = '') {
 }
 
 function closeModal() {
+  quantityControls.stop()
   modalRoot.querySelector('dialog')?.close()
   modalRoot.replaceChildren()
   restoreFocus?.focus()
 }
 
 function render() {
+  quantityControls.stop()
   app.setAttribute('data-page', JSON.stringify(pageSnapshot(state, location.href)))
   clearTimeout(searchTimer)
   query = ''
@@ -196,6 +257,7 @@ function openProduct(productId, lineId) {
 }
 
 function updateSelection() {
+  document.querySelectorAll('.stepper').forEach(wrapper => updateQuantityState(wrapper))
   const target = modalRoot.querySelector('[data-action="add"]')
   if (!target)
     return
@@ -212,11 +274,12 @@ function updateSelection() {
 }
 
 function renderCheckout() {
+  quantityControls.stop()
   if (!state.cart.length) {
     app.innerHTML = `<section class="empty order-create"><h2>購物車是空的</h2><p>先逛逛菜單，把喜歡的品項加入購物車吧！</p>${button('立即點餐', 'menu', 'class="primary"')}</section>`
     return
   }
-  app.innerHTML = `<section class="checkout order-create"><div class="panel"><div class="panel-title"><h3>確認訂單</h3><a href="${basePath}/menu" data-action="menu">繼續點餐</a></div><div class="panel-title"><span>查看細節（${state.cart.length}個品項）</span>${button('清空', 'clear', 'data-testid="clear-cart"')}</div>${state.cart.map(line => `<article class="cart-row produce-item" data-line-id="${line.lineId}" data-product-id="${line.productId}">${image(products.find(item => item.id === line.productId))}<div class="line-body"><h3>${escape(line.name)} <span>(${money(line.unitPrice)})</span></h3><div class="product-attr"><div><div class="ml-4">${line.extra ? `<span>水餃1顆${line.extra > 1 ? ` X${line.extra}` : ''}</span>` : ''}</div></div><div class="ml-4">${escape(line.note)}</div></div><div class="line-actions">${button(icon('minus'), 'line-quantity', `data-line-id="${line.lineId}" data-delta="-1" aria-label="減少${escape(line.name)}份數"`)}<input type="number" data-action-field="line-quantity" data-line-id="${line.lineId}" data-testid="line-quantity" min="0" max="${Number.MAX_SAFE_INTEGER}" value="${line.quantity}" aria-label="${escape(line.name)}份數">${button(icon('plus'), 'line-quantity', `data-line-id="${line.lineId}" data-delta="1" aria-label="增加${escape(line.name)}份數"`)}${button(icon('edit'), 'edit', `class="is-circle" aria-label="編輯${escape(line.name)}" data-line-id="${line.lineId}"`)}${button(icon('delete'), 'remove', `class="is-circle" aria-label="刪除${escape(line.name)}" data-line-id="${line.lineId}"`)}</div></div><div class="line-total">小計 <b>${money(line.subtotal)}</b></div></article>`).join('')}<div class="total-row"><b>小計</b><strong>${money(total())}</strong></div></div><div class="panel"><h3>內用</h3>桌號：${escape(state.table)}</div><div class="panel"><details open><summary>開立發票</summary><div class="invoice-options">${Object.entries(invoiceLabels).map(([value, label]) => `<label class="el-radio"><input type="radio" name="invoiceType" data-method="${value}" value="${({ none: 5, citizen: 2, carrier: 3, tax: 4, donation: 6 })[value]}" data-testid="invoice-${value}" ${state.invoice.type === value ? 'checked' : ''}>${label}<span data-code-host="${value}"></span></label>`).join('')}</div><div id="invoice-code-field"></div><b>發票通知（請擇一填寫）</b><div class="two-col"><div class="field"><label for="phone">手機號碼</label><input type="tel" id="phone" name="phone" value="${escape(state.invoice.phone)}" placeholder="手機號碼" data-testid="invoice-phone" autocomplete="off"></div><div class="field"><label for="email">E-mail</label><input type="email" id="email" name="email" value="${escape(state.invoice.email)}" placeholder="E-mail" data-testid="invoice-email" autocomplete="off"></div></div><small class="muted">測試可填 0912345678 或 tester@example.test；請勿填寫真實個資。</small></details></div><div class="panel"><details><summary>訂單備註</summary><div class="field"><textarea id="order-note" name="orderNote" data-testid="order-note" aria-label="訂單備註">${escape(state.note)}</textarea></div></details></div><div class="panel"><h3>訂單說明</h3><p>時間若有更動，將撥打手機通知，請務必保留行動電話。</p><p class="muted">原站取消規則：付款後店家會立即接單，無法自行取消訂單，如需取消請聯絡店家。<br>此測試站不會接單、扣款、通知或開立發票。</p></div><div id="checkout-error" role="alert"></div></section><div class="sticky-bar"><span class="price">總金額 <b data-testid="order-total">${money(total())}</b></span>${button('送出訂單', 'submit', 'class="primary" data-testid="submit-order"')}</div>`
+  app.innerHTML = `<section class="checkout order-create"><div class="panel"><div class="panel-title"><h3>確認訂單</h3><a href="${basePath}/menu" data-action="menu">繼續點餐</a></div><div class="panel-title"><span>查看細節（${state.cart.length}個品項）</span>${button('清空', 'clear', 'data-testid="clear-cart"')}</div>${state.cart.map(line => `<article class="cart-row produce-item" data-line-id="${line.lineId}" data-product-id="${line.productId}">${image(products.find(item => item.id === line.productId))}<div class="line-body"><h3>${escape(line.name)} <span>(${money(line.unitPrice)})</span></h3><div class="product-attr"><div><div class="ml-4">${line.extra ? `<span>水餃1顆${line.extra > 1 ? ` X${line.extra}` : ''}</span>` : ''}</div></div><div class="ml-4">${escape(line.note)}</div></div><div class="line-actions el-input-number">${quantityButton('line-quantity', -1, `${escape(line.name)}份數`, `data-line-id="${line.lineId}"`)}<input type="number" data-action-field="line-quantity" data-line-id="${line.lineId}" data-testid="line-quantity" min="0" max="${Number.MAX_SAFE_INTEGER}" value="${line.quantity}" aria-label="${escape(line.name)}份數">${quantityButton('line-quantity', 1, `${escape(line.name)}份數`, `data-line-id="${line.lineId}"`)}${button(icon('edit'), 'edit', `class="is-circle" aria-label="編輯${escape(line.name)}" data-line-id="${line.lineId}"`)}${button(icon('delete'), 'remove', `class="is-circle" aria-label="刪除${escape(line.name)}" data-line-id="${line.lineId}"`)}</div></div><div class="line-total">小計 <b>${money(line.subtotal)}</b></div></article>`).join('')}<div class="total-row"><b>小計</b><strong>${money(total())}</strong></div></div><div class="panel"><h3>內用</h3>桌號：${escape(state.table)}</div><div class="panel"><details open><summary>開立發票</summary><div class="invoice-options">${Object.entries(invoiceLabels).map(([value, label]) => `<label class="el-radio"><input type="radio" name="invoiceType" data-method="${value}" value="${({ none: 5, citizen: 2, carrier: 3, tax: 4, donation: 6 })[value]}" data-testid="invoice-${value}" ${state.invoice.type === value ? 'checked' : ''}>${label}<span data-code-host="${value}"></span></label>`).join('')}</div><div id="invoice-code-field"></div><b>發票通知（請擇一填寫）</b><div class="two-col"><div class="field"><label for="phone">手機號碼</label><input type="tel" id="phone" name="phone" value="${escape(state.invoice.phone)}" placeholder="手機號碼" data-testid="invoice-phone" autocomplete="off"></div><div class="field"><label for="email">E-mail</label><input type="email" id="email" name="email" value="${escape(state.invoice.email)}" placeholder="E-mail" data-testid="invoice-email" autocomplete="off"></div></div><small class="muted">測試可填 0912345678 或 tester@example.test；請勿填寫真實個資。</small></details></div><div class="panel"><details><summary>訂單備註</summary><div class="field"><textarea id="order-note" name="orderNote" data-testid="order-note" aria-label="訂單備註">${escape(state.note)}</textarea></div></details></div><div class="panel"><h3>訂單說明</h3><p>時間若有更動，將撥打手機通知，請務必保留行動電話。</p><p class="muted">原站取消規則：付款後店家會立即接單，無法自行取消訂單，如需取消請聯絡店家。<br>此測試站不會接單、扣款、通知或開立發票。</p></div><div id="checkout-error" role="alert"></div></section><div class="sticky-bar"><span class="price">總金額 <b data-testid="order-total">${money(total())}</b></span>${button('送出訂單', 'submit', 'class="primary" data-testid="submit-order"')}</div>`
   renderInvoiceCode()
 }
 
@@ -302,16 +365,7 @@ document.addEventListener('change', async (event) => {
   if (event.target.id === 'quantity' || event.target.id === 'extra')
     updateSelection()
   if (event.target.dataset.actionField === 'line-quantity') {
-    const line = state.cart.find(line => line.lineId === event.target.dataset.lineId)
-    try {
-      setCartQuantity(state, line.lineId, Number(event.target.value))
-      await save()
-      renderCheckout()
-    }
-    catch (error) {
-      event.target.value = line.quantity
-      notify(error.message)
-    }
+    await changeCartQuantity(event.target.dataset.lineId, Number(event.target.value))
   }
   if (event.target.name === 'invoiceType') {
     state.invoice.type = event.target.dataset.method
@@ -326,7 +380,7 @@ document.addEventListener('change', async (event) => {
 })
 
 document.addEventListener('keydown', (event) => {
-  const card = event.target.closest('.menu-card, .stepper [role="button"], [role="option"]')
+  const card = event.target.closest('.menu-card, [role="option"]')
   if (card && ['Enter', ' '].includes(event.key)) {
     event.preventDefault()
     card.click()
@@ -398,11 +452,6 @@ document.addEventListener('click', async (event) => {
     else if (action === 'product') {
       openProduct(target.dataset.productId)
     }
-    else if (action === 'step') {
-      const input = document.getElementById(target.dataset.field)
-      input.value = Math.max(Number(input.min), Math.min(Number(input.max), Number(input.value) + Number(target.dataset.delta)))
-      updateSelection()
-    }
     else if (action === 'add') {
       const result = selection(target.dataset.productId, Number(document.querySelector('#quantity').value), Number(document.querySelector('#extra')?.value ?? 0), document.querySelector('#product-note').value)
       state.draftStarted = true
@@ -419,11 +468,6 @@ document.addEventListener('click', async (event) => {
     }
     else if (action === 'edit' && line) {
       openProduct(line.productId, line.lineId)
-    }
-    else if (action === 'line-quantity' && line) {
-      setCartQuantity(state, line.lineId, line.quantity + Number(target.dataset.delta))
-      await save()
-      renderCheckout()
     }
     else if (action === 'remove' || action === 'clear') {
       state.cart = action === 'clear' ? [] : state.cart.filter(item => item.lineId !== target.dataset.lineId)
