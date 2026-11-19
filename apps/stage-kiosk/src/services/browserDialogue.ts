@@ -25,6 +25,13 @@ const factsSchema = orderFactsSchema
 const phoneMessages = orderingMessages['zh-Hant'].checkout.notificationPhone
 const checkoutEntryPurposes = new Set(['invoice-details', 'notification-details', 'checkout-details'])
 
+// Only an entire numeric reply belongs to a donation slot. Preserve leading
+// zeroes and reject attached requests rather than extracting arbitrary digits.
+function donationCodeInput(transcript: string) {
+  const code = normalizeSlotNumbers(transcript).replaceAll(/[零〇]/g, '0').replaceAll(/幺/g, '1').replace(/^(?:捐贈碼|愛心碼)是?[：:\s]*/, '').replaceAll(/[\s，,。！!、]/g, '')
+  return /^\d+$/.test(code) ? code : undefined
+}
+
 // Phone fragments are literal data only inside a bound notification question.
 // Keep leading zeroes; never pull digits from an unrelated ordering sentence.
 function notificationPhoneInput(transcript: string) {
@@ -74,14 +81,35 @@ export function createBrowserDialogue(io: {
   let answeredQuestion: BrowserConversation['answeredQuestion'] | undefined
   let answeredUtteranceId: number | undefined
   let orderEvidence: OrderEvidence | undefined
+  // The signature binds repeated failures to one visitor/document/cart and the
+  // actual question content, so reissuing a UUID cannot restart an endless loop.
+  // One utterance may pass both Jev and Main; count it only once.
+  let unresolvedQuestion: { signature: string, attempts: number, utteranceId?: number } | undefined
+
   // A quick-path read may consume a question before Main takes over the same
   // utterance. This evidence expires with that question and keeps its binding;
   // another turn, visitor, document or cart cannot inherit the selection.
   // Workflow position survives entry-ticket expiry/cart revisions, but never a
   // new visitor/document. It stores no submission token or buffered phone value.
   let checkoutProgress: { owner: string, documentId: string, purpose: PbCheckoutStep, request: string, suspended: boolean } | undefined
+  // This is observation history, never answer or submission authority. Tokens
+  // are excluded so refreshing final consent cannot masquerade as form progress.
+  let checkoutObservation: { signature: string, attempts: number, turn: object | number } | undefined
 
   let acceptedSelection: { utteranceId: number, expiresAt: number, binding: QuestionSnapshot, selection: { productRef: string, request: string, requestTarget?: string, requestedQuantity: number, orderSelection?: true }, evidence: OrderEvidence } | undefined
+
+  function releaseQuestion() {
+    checkoutObservation = undefined
+    if (checkoutProgress)
+      checkoutProgress.suspended = true
+    questions.reset()
+    orders.reset()
+    orderEvidence = undefined
+    acceptedSelection = undefined
+    answeredQuestion = undefined
+    answeredUtteranceId = undefined
+    unresolvedQuestion = undefined
+  }
 
   function snapshot(raw: unknown): QuestionSnapshot | undefined {
     const facts = parse(factsSchema, raw)
@@ -146,11 +174,11 @@ export function createBrowserDialogue(io: {
       && /^(?:這樣就好|就這樣|餐點正確|餐點沒問題)[。！!，,\s]*$/.test(transcript.trim())) {
       return 'yes'
     }
-    if (pending.kind === 'service' && ['cart-review', 'notification-phone-confirm'].includes(pending.purpose)
+    if (pending.kind === 'service' && ['cart-review', 'notification-phone-confirm', 'invoice-donation-confirm'].includes(pending.purpose)
       && /^(?:正確|沒錯|對|是的|確認|確認無誤|好|好的|好了)[。！!，,\s]*$/.test(transcript.trim())) {
       return 'yes'
     }
-    if (pending.kind === 'service' && pending.purpose === 'notification-phone-confirm'
+    if (pending.kind === 'service' && ['notification-phone-confirm', 'invoice-donation-confirm'].includes(pending.purpose)
       && /^(?:不對|不正確|錯了|錯誤|不是)[。！!，,\s]*$/.test(transcript.trim())) {
       return 'no'
     }
@@ -198,13 +226,32 @@ export function createBrowserDialogue(io: {
     recommendations,
     tables,
     hasSubmissionQuestion: questions.hasSubmissionQuestion,
+    /** Detects unchanged checkout outcomes across distinct utterances; no customer values leave this boundary. */
+    observeCheckout(raw: unknown, step: string, failed: boolean, turn: object | number) {
+      const binding = snapshot(raw)
+      const checkout = safeParse(pbCheckoutSchema, raw && typeof raw === 'object' && 'checkout' in raw ? raw.checkout : undefined)
+      if (!binding || !checkout.success) {
+        checkoutObservation = undefined
+        return
+      }
+      const signature = JSON.stringify({ owner: binding.owner, documentId: binding.documentId, cartVersion: binding.cartVersion, step, failed, checkout: { ...checkout.output, confirmationToken: undefined } })
+      const previous = checkoutObservation?.signature === signature ? checkoutObservation : undefined
+      const attempts = (previous?.attempts ?? 0) + (previous?.turn === turn ? 0 : 1)
+      checkoutObservation = { signature, attempts, turn }
+      // The initial entry prompt is an observation, then two completed answers
+      // without a change trigger recovery. Failed operations have no initial prompt.
+      if (attempts < (failed ? 2 : 3))
+        return
+      checkoutObservation = undefined
+      return { reason: failed ? 'operation-failed' as const : 'no-progress' as const, step, attempts }
+    },
     /** Returns the current service question or its visitor/document-bound checkout position. */
     checkoutStep(raw: unknown) {
       const binding = snapshot(raw)
       const pending = pendingQuestion(raw, binding)
       if (pending) {
         const step = safeParse(pbCheckoutStepSchema, pending.kind === 'service' ? pending.purpose : undefined)
-        return step.success ? step.output : undefined
+        return pending.kind === 'service' && pending.purpose === 'invoice-donation-confirm' ? 'invoice-details' : step.success ? step.output : undefined
       }
       return binding ? checkoutProgress?.purpose : undefined
     },
@@ -217,15 +264,22 @@ export function createBrowserDialogue(io: {
         questions.releaseService(binding, questionId)
       }
     },
+    /** Retires a stalled checkout prompt without changing merchant or meal state. */
+    pauseCheckout(raw: unknown) {
+      const binding = snapshot(raw)
+      if (!binding)
+        return
+      const pending = questions.pending(binding)
+      if (pending?.kind === 'service')
+        questions.releaseService(binding, pending.question.questionId)
+      if (checkoutProgress)
+        checkoutProgress.suspended = true
+    },
     reset: () => {
       tables.reset()
       checkoutProgress = undefined
-      questions.reset()
-      orders.reset()
-      orderEvidence = undefined
-      acceptedSelection = undefined
-      answeredQuestion = undefined
-      answeredUtteranceId = undefined
+      checkoutObservation = undefined
+      releaseQuestion()
     },
     hasPending: () => tables.hasPending() || questions.hasPending() || Boolean(checkoutProgress && !checkoutProgress.suspended && checkoutProgress.owner === io.owner() && checkoutProgress.documentId === io.documentId()),
     /** Recovers only the unchanged, accepted selection of this exact utterance. */
@@ -245,12 +299,15 @@ export function createBrowserDialogue(io: {
       const choice = literalChoice(pending, transcript)
       const namedProduct = pending.kind === 'product' && choice ? pending.visible[Number(choice.split(':')[1]) - 1] : undefined
       const namedAnswer = pending.kind === 'product' && namedProduct && (explicitServingQuantities(pending.request).length === 0 || completePurchase(raw, pending.request, namedProduct.productRef) !== undefined)
+      const checkout = safeParse(looseObject({ checkout: pbCheckoutSchema }), raw)
       return !!browserQuestionChoice(transcript, pending.question)
         || (pending.kind === 'service' && !!choice)
         || (pending.kind === 'service' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pending.purpose) && notificationPhoneInput(transcript) !== undefined)
+        || (pending.kind === 'service' && ['invoice-details', 'invoice-donation-confirm'].includes(pending.purpose) && checkout.success && checkout.output.checkout.methods.some(method => method.method === 'donation' && method.selected) && donationCodeInput(transcript) !== undefined)
         || !!namedAnswer
         || (pending.kind === 'service' && pending.purpose === 'purchase-recommendation' && purchaseAnswerCount(transcript) !== undefined)
         || (pending.kind === 'quantity' && (quantityAnswerCount(transcript) !== undefined || dumplingAnswer(raw, pending, transcript) !== undefined))
+        || (pending.kind === 'slot' && pending.slot.kind === 'dumpling-pieces' && (/^(?:正常|基本|原本)[。！!，,\s]*$/.test(transcript.trim()) || parsePbDumplingOrder(transcript, pending.slot.name, '') !== undefined))
         || (pending.kind === 'slot' && orderSlotCount(transcript, pending.slot) !== undefined)
     },
     collectOrder(raw: unknown, input: unknown, source: string, provided?: { productRef: string, quantity?: number, answer?: string }) {
@@ -394,7 +451,13 @@ export function createBrowserDialogue(io: {
       const binding = snapshot(raw)
       if (!binding)
         throw new Error('目前接待或頁面已變更。')
-      const purpose = input.purpose === 'submit-order' ? 'checkout-details' : ['notification-phone', 'notification-phone-confirm'].includes(input.purpose) ? 'notification-details' : input.purpose
+      let purpose = input.purpose
+      if (purpose === 'submit-order')
+        purpose = 'checkout-details'
+      else if (purpose === 'invoice-donation-confirm')
+        purpose = 'invoice-details'
+      else if (['notification-phone', 'notification-phone-confirm'].includes(purpose))
+        purpose = 'notification-details'
       const step = safeParse(pbCheckoutStepSchema, purpose)
       if (step.success && ['invoice-method', 'invoice-details', 'notification-details', 'checkout-details'].includes(step.output))
         checkoutProgress = { owner: binding.owner, documentId: binding.documentId, purpose: step.output, request: input.request, suspended: false }
@@ -416,9 +479,24 @@ export function createBrowserDialogue(io: {
       const pending = pendingQuestion(raw, binding)
       if (!binding || !pending || !isCurrent())
         return
+      const signature = JSON.stringify({ owner: binding.owner, documentId: binding.documentId, cartVersion: binding.cartVersion, purpose: pending.question.purpose, question: pending.question.question, choices: pending.question.choices })
+      if (unresolvedQuestion?.signature !== signature)
+        unresolvedQuestion = undefined
+      const checkout = safeParse(looseObject({ checkout: pbCheckoutSchema }), raw)
+      if (pending.kind === 'service' && ['invoice-details', 'invoice-donation-confirm'].includes(pending.purpose) && checkout.success && checkout.output.checkout.methods.some(method => method.method === 'donation' && method.selected)) {
+        const code = donationCodeInput(transcript)
+        if (code !== undefined) {
+          unresolvedQuestion = undefined
+          const valid = /^\d{3,7}$/.test(code)
+          const copy = orderingMessages['zh-Hant'].checkout.donationCode
+          const question = questions.presentService(binding, { purpose: valid ? 'invoice-donation-confirm' : 'invoice-details', query: valid ? code : undefined, request: pending.request, question: valid ? copy.confirm.replace('{digits}', code.split('').join(' ')) : copy.invalid, choices: valid ? [{ id: 'yes', description: '捐贈碼正確，只填入剛才覆誦的捐贈碼，不送出訂單。' }, { id: 'no', description: '號碼不正確，重新報捐贈碼。' }] : [{ id: 'yes', description: '重新檢查已輸入的捐贈資料，不送單。' }] })
+          return { kind: 'receipt' as const, result: receipt(question) }
+        }
+      }
       if (pending.kind === 'service' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pending.purpose)) {
         const input = notificationPhoneInput(transcript)
         if (input) {
+          unresolvedQuestion = undefined
           // The question's query is the only buffer. Its owner/document/cart and
           // 120-second expiry also retire partial numbers on reset or navigation.
           const previous = pending.purpose === 'notification-phone' ? pending.query ?? '' : ''
@@ -449,6 +527,18 @@ export function createBrowserDialogue(io: {
       if (selectedAnswer && (selectedAnswer.questionId !== pending.question.questionId || !pending.question.choices.some(choice => choice.id === selectedAnswer.choiceId)))
         return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '目前問題已變更，請依畫面上的問題繼續。' } }
       if (!selectedAnswer && pending.kind === 'slot') {
+        if (pending.slot.kind === 'dumpling-pieces') {
+          const observed = await observe()
+          const fresh = snapshot(observed)
+          if (!fresh || !isCurrent() || questions.pending(fresh)?.question.questionId !== pending.question.questionId)
+            return
+          if (orders.fill(observed, fresh, pending.slot, transcript)) {
+            unresolvedQuestion = undefined
+            orderEvidence?.answers.push({ question: pending.question.question, answer: transcript })
+            questions.reset()
+            return { kind: 'receipt' as const, result: nextOrder(observed, fresh)! }
+          }
+        }
         const count = orderSlotCount(transcript, pending.slot)
         if (count !== undefined) {
           const observed = await observe()
@@ -457,6 +547,7 @@ export function createBrowserDialogue(io: {
             return
           const slot = questions.consumeSlotNumber(pending.question.questionId, count, fresh)
           if (slot && orders.fill(observed, fresh, slot, count)) {
+            unresolvedQuestion = undefined
             orderEvidence?.answers.push({ question: pending.question.question, answer: transcript })
             return { kind: 'receipt' as const, result: nextOrder(observed, fresh)! }
           }
@@ -472,13 +563,14 @@ export function createBrowserDialogue(io: {
           if (!fresh || !isCurrent() || questions.pending(fresh)?.question.questionId !== pending.question.questionId)
             return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '餐點或購物車狀態已變更，請重新確認。' } }
           try {
+            unresolvedQuestion = undefined
             orders.collect(observed, fresh, { lines: dumplings.map(serving => ({ productRef: pending.product.productRef, evidence: serving.evidence, quantity: serving.quantity, choices: [], askGroups: [], note: '' })) }, pending.request, { productRef: pending.product.productRef, answer: transcript })
             orderEvidence = { request: pending.request, answers: [{ question: pending.question.question, answer: transcript }] }
             questions.reset()
             return { kind: 'receipt' as const, result: nextOrder(observed, fresh)! }
           }
           catch (error) {
-            return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: errorMessageFrom(error) ?? '目前無法確認這份水餃的顆數與配置，請重新確認。' } }
+            return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '目前無法確認這份水餃的顆數與配置，請重新確認。', explanation: errorMessageFrom(error) } }
           }
         }
         // Only a whole, explicit count fills this slot locally. Attached options,
@@ -492,6 +584,7 @@ export function createBrowserDialogue(io: {
           const selected = questions.consumeQuantity(pending.question.questionId, count, fresh)
           if (!selected)
             return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '餐點或購物車狀態已變更，請重新確認。' } }
+          unresolvedQuestion = undefined
           answeredUtteranceId = utteranceId
           answeredQuestion = { question: pending.question.question, answer: transcript, name: selected.product.name, purpose: pending.question.purpose, originalRequest: selected.request }
           if (utteranceId !== undefined)
@@ -505,21 +598,33 @@ export function createBrowserDialogue(io: {
       // during that wait invalidates the original question instead of rebinding it.
       const observed = await observe()
       const fresh = snapshot(observed)
-      if (!fresh || !isCurrent() || !questions.pending(fresh))
+      if (!fresh || !isCurrent() || questions.pending(fresh)?.question.questionId !== pending.question.questionId)
         return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '餐點或購物車狀態已變更，請重新確認。' } }
       if (decision.kind === 'NEW_REQUEST') {
-        if (checkoutProgress)
-          checkoutProgress.suspended = true
-        questions.reset()
-        orders.reset()
+        releaseQuestion()
         return pending.kind === 'addition' ? { kind: 'new-request' as const, previousProposal: pending.proposal } : undefined
       }
-      if (decision.kind !== 'ANSWER' || !decision.choiceId)
-        return { kind: 'receipt' as const, result: receipt(pending.question) }
+      if (decision.kind !== 'ANSWER' || !decision.choiceId || !pending.question.choices.some(choice => choice.id === decision.choiceId)) {
+        const sameUtterance = utteranceId !== undefined && unresolvedQuestion?.utteranceId === utteranceId
+        const attempts = (unresolvedQuestion?.attempts ?? 0) + (sameUtterance ? 0 : 1)
+        unresolvedQuestion = { signature, attempts, utteranceId }
+        if (attempts >= 2) {
+          releaseQuestion()
+          return { kind: 'receipt' as const, result: { ok: true, source: 'browser', status: 'clarification', code: 'QUESTION_RETRY_LIMIT', effect: 'none', customerMessage: orderingMessages['zh-Hant'].questionRetryLimit } }
+        }
+        return { kind: 'receipt' as const, result: { ...receipt(pending.question), customerMessage: pending.question.question } }
+      }
+      unresolvedQuestion = undefined
       const selected = questions.consume(pending.question.questionId, decision.choiceId, fresh)
       if (selected.kind === 'service') {
         answeredUtteranceId = utteranceId
         answeredQuestion = { question: selected.question, answer: transcript, selectedChoice: selected.answer, name: selected.name, purpose: selected.purpose }
+        if (selected.purpose === 'invoice-donation-confirm') {
+          if (selected.choiceId === 'yes' && selected.query && /^\d{3,7}$/.test(selected.query))
+            return { kind: 'checkout' as const, action: 'donation-confirmed' as const, code: selected.query }
+          const question = questions.presentService(fresh, { purpose: 'invoice-details', request: selected.request, question: orderingMessages['zh-Hant'].checkout.donationCode.introduction, choices: [{ id: 'yes', description: '重新檢查已輸入的捐贈資料，不送單。' }] })
+          return { kind: 'receipt' as const, result: receipt(question) }
+        }
         if (selected.purpose === 'notification-phone-confirm') {
           if (selected.choiceId === 'yes' && selected.query && /^09\d{8}$/.test(selected.query))
             return { kind: 'checkout' as const, action: 'phone-confirmed' as const, phone: selected.query }
@@ -591,7 +696,7 @@ export function createBrowserDialogue(io: {
         return { kind: 'addition' as const, proposal: selected.proposal, binding: fresh }
       if (selected.kind === 'page')
         return { kind: 'receipt' as const, result: receipt(questions.presentProducts(fresh, selected.products, selected.request, selected.page, selected.query, pending.kind === 'product' ? pending.orderSelection : undefined)) }
-      return { kind: 'receipt' as const, result: { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: selected.kind === 'cancelled' ? '已取消這次選餐，購物車保持不變。' : '這個問題已失效，請重新確認。' } }
+      return { kind: 'receipt' as const, result: { ok: true, source: 'browser', status: 'clarification', effect: 'none', ...(selected.kind === 'cancelled' ? { code: 'QUESTION_RELEASED' } : {}), customerMessage: selected.kind === 'cancelled' ? '已取消這次選餐，購物車保持不變。' : '這個問題已失效，請重新確認。' } }
     },
   }
 }

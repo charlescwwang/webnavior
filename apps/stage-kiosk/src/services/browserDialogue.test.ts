@@ -3,6 +3,7 @@ import type { CartLine } from '@proj-airi/stage-ui/services/pbCart'
 
 import type { AnswerDecision, BrowserAnswer, BrowserEffect, EffectDecision } from '../../../server/src/services/domain/browser-ordering/contracts'
 
+import { looseObject, parse, string } from 'valibot'
 import { afterEach, expect, it, vi } from 'vitest'
 import { readonly, shallowRef } from 'vue'
 
@@ -967,4 +968,93 @@ it.each(['owner', 'document', 'reset'] as const)('does not restore checkout prog
     state[change] = 'replacement'
   expect(dialogue.conversation(facts).waitingFor).toBeUndefined()
   expect(dialogue.checkoutStep(facts)).toBeUndefined()
+})
+
+// Report: this chat, Nov19 — actual PB card availability is not kiosk payment support.
+it.each([
+  { text: '有沒有其他付款方式？', paymentMethods: ['LINE Pay', '信用卡'] },
+  { text: '可以用信用卡嗎？', paymentMethods: ['LINE Pay', '信用卡'] },
+  { text: '可以付現金嗎？', paymentMethods: ['LINE Pay', '信用卡'] },
+  { text: '用信用卡付款', paymentMethods: ['信用卡'] },
+])('explains LINE Pay only without initiating payment: $text', async ({ text, paymentMethods }) => {
+  const { client, begin } = setup()
+  begin(text)
+  const order = { reference: 'TEST-1', status: 20, total: 64, paymentStatus: 'pending', paymentMethods, invoice: { method: 'none' } }
+  client.execute.mockResolvedValue({ ok: true, source: 'browser', page: 'payment', observedAt: 123, order })
+  const resultClient = { ...client, tools: readonly(shallowRef(client.tools.value.filter(tool => tool.name === 'browser_state_get'))) }
+  const result = parse(looseObject({ customerMessage: string() }), await executeBrowserReply(resultClient, 'checkout-guidance'))
+  expect(result.customerMessage).toContain('僅支援 LINE Pay')
+  expect(result.customerMessage).toContain('暫不支援信用卡')
+  if (paymentMethods.includes('LINE Pay'))
+    expect(result.customerMessage).toContain('點選 LINE Pay')
+  else
+    expect(result.customerMessage).toContain('沒有可用的 LINE Pay')
+  expect(client.execute.mock.calls.every(([tool]) => tool.name === 'browser_state_get')).toBe(true)
+})
+
+// Report: this chat, Nov19 — repeated unresolved questions need a non-destructive way out.
+it('stops after two distinct unresolved answers to the same question, even if Main reissues it', async () => {
+  const { dialogue, facts, answer } = setup()
+  answer.mockResolvedValue({ kind: 'UNCERTAIN', provider: 'main' })
+  const cart = structuredClone(facts.cart)
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  expect(await dialogue.answer(facts, '聽不懂', async () => facts, () => true, 10)).toMatchObject({ result: { pendingCustomerChoice: { purpose: 'browser-order-quantity' } } })
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  expect(await dialogue.answer(facts, '還是不懂', async () => facts, () => true, 11)).toMatchObject({ result: { code: 'QUESTION_RETRY_LIMIT', effect: 'none' } })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(facts.cart).toEqual(cart)
+  dialogue.presentQuantity(facts, 'p-0', '我要甲餐')
+  expect(await dialogue.answer(facts, '一份', async () => facts, () => true, 12)).toMatchObject({ kind: 'product', requestedQuantity: 1 })
+})
+
+it('does not count the same utterance twice toward the question retry limit', async () => {
+  const { dialogue, facts, answer } = setup()
+  answer.mockResolvedValue({ kind: 'UNCERTAIN', provider: 'main' })
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  await dialogue.answer(facts, '聽不懂', async () => facts, () => true, 10)
+  expect(await dialogue.answer(facts, '聽不懂', async () => facts, () => true, 10)).toMatchObject({ result: { pendingCustomerChoice: { purpose: 'browser-order-quantity' } } })
+  expect(dialogue.hasPending()).toBe(true)
+})
+
+it('releases the old invoice question when the customer naturally asks about other meals', async () => {
+  const { dialogue, facts, answer } = setup()
+  answer.mockResolvedValue({ kind: 'NEW_REQUEST', provider: 'main' })
+  dialogue.presentService(facts, { purpose: 'invoice-method', request: '結帳', question: '發票要哪種？', choices: [{ id: 'none', description: '無載具' }, { id: 'carrier', description: '手機載具' }] })
+  expect(await dialogue.answer(facts, '我想先看看別的餐點', async () => facts, () => true, 10)).toBeUndefined()
+  expect(dialogue.hasPending()).toBe(false)
+  expect(facts.cart.lines).toEqual([])
+})
+
+it('retires a repeatedly unresolved submission question without returning a submit action', async () => {
+  const { dialogue, facts, answer } = setup()
+  answer.mockResolvedValue({ kind: 'UNCERTAIN', provider: 'unavailable' })
+  dialogue.presentService(facts, { purpose: 'submit-order', query: 'ticket', request: '送單', question: '確認送出嗎？', choices: [{ id: 'yes', description: '送出' }, { id: 'no', description: '保留' }] })
+  await dialogue.answer(facts, '聽不懂', async () => facts, () => true, 10)
+  const result = await dialogue.answer(facts, '還是不懂', async () => facts, () => true, 11)
+  expect(result).toMatchObject({ kind: 'receipt', result: { code: 'QUESTION_RETRY_LIMIT', effect: 'none' } })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(dialogue.hasSubmissionQuestion()).toBe(false)
+})
+
+it('does not release a newer question when an older unresolved answer finishes late', async () => {
+  const { dialogue, facts, answer } = setup()
+  const gate = Promise.withResolvers<AnswerDecision>()
+  answer.mockImplementationOnce(() => gate.promise)
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  const pending = dialogue.answer(facts, '聽不懂', async () => facts, () => true, 10)
+  dialogue.presentQuantity(facts, 'p-0', '我要甲餐')
+  gate.resolve({ kind: 'UNCERTAIN', provider: 'main' })
+  expect(await pending).toMatchObject({ result: { ok: false, status: 'rejected' } })
+  expect(dialogue.conversation(facts).waitingFor?.question).toContain('甲餐')
+  expect(dialogue.hasPending()).toBe(true)
+})
+
+it('resets the unresolved count after a valid quantity answer', async () => {
+  const { dialogue, facts, answer } = setup()
+  answer.mockResolvedValue({ kind: 'UNCERTAIN', provider: 'main' })
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  await dialogue.answer(facts, '聽不懂', async () => facts, () => true, 10)
+  expect(await dialogue.answer(facts, '一份', async () => facts, () => true, 11)).toMatchObject({ kind: 'product' })
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  expect(await dialogue.answer(facts, '聽不懂', async () => facts, () => true, 12)).toMatchObject({ result: { pendingCustomerChoice: { purpose: 'browser-order-quantity' } } })
 })

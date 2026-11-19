@@ -3,7 +3,7 @@ import type { ServiceConnection, ServiceTool, ToolExecution } from '@proj-airi/s
 import { errorMessageFrom } from '@moeru/std'
 import { discoveryResultSchema, executionResultSchema, inspectionResultSchema } from '@proj-airi/stage-shared/interactive-service'
 import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
-import { menuEntryReceiptSchema, readPbJourney, readPbStateJourney } from '@proj-airi/stage-shared/pb-journey'
+import { menuEntryReceiptSchema, readPbJourney, readPbStateJourney, tableSelectionReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
 import { parse, safeParse } from 'valibot'
 import { readonly, shallowRef, toRaw, watch } from 'vue'
 
@@ -148,11 +148,13 @@ export function createInteractiveServiceClient() {
         const journey = issuedUrl ? readPbJourney(issuedUrl) : undefined
         const entry = safeParse(menuEntryReceiptSchema, response.result)
         const submission = safeParse(pbSubmissionResultSchema, response.result)
+        const returned = journey?.tablePath && tool.name === 'browser_return_table' && issuedUrl === activeUrl
+          && safeParse(tableSelectionReceiptSchema, response.result).success
         const submitted = journey && tool.name === 'browser_order_submit' && submission.success && issuedUrl === activeUrl
         // Only PB's bounded entry/submission acknowledgement may settle across
         // rediscovery. It cannot complete another write, restore old handles or
         // authorize any action in the replacement document.
-        if (!submitted && (tool.name !== 'browser_start_ordering' || !issuedUrl || issuedUrl !== activeUrl
+        if (!returned && !submitted && (tool.name !== 'browser_start_ordering' || !issuedUrl || issuedUrl !== activeUrl
           || journey?.tablePath !== new URL(issuedUrl).pathname
           || !entry.success || entry.output.selectedTable !== serializedInput.name)) {
           throw new Error('工具回應不屬於目前頁面。')

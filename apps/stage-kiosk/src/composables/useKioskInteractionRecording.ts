@@ -497,6 +497,9 @@ export function useKioskInteractionRecording() {
             return (nativeOrderingToolName(result.name).startsWith('browser_') && payload?.source === 'browser' && ['browser-product-choice', 'browser-order-quantity', 'browser-order-slot', 'browser-confirm-add', 'browser-service-question'].includes(purpose) && payload.dataOnly !== true)
               || (nativeOrderingToolName(result.name) === 'browser_respond' && payload?.ok === true && payload.source === 'browser' && payload.effect === 'none'
                 && ((payload.customerBoundary === 'review-required' && payload.status === 'clarification') || payload.status === 'checkout-guidance'))
+              // A Host question release ends this utterance; a model continuation
+              // must not recreate the question that the customer just left.
+              || (payload?.source === 'browser' && payload.ok === true && payload.effect === 'none' && ['QUESTION_RELEASED', 'QUESTION_RETRY_LIMIT', 'CHECKOUT_RECOVERY'].includes(payload.code))
               || purpose === 'menu-query-scope' || (result.name === 'menu_confirm_item' && purpose === 'confirm-meal')
               || ((nativeOrderingToolName(result.name).startsWith('browser_cart_') || ['browser_product_get', 'browser_clarify_product', 'browser_search'].includes(nativeOrderingToolName(result.name))) && payload?.source === 'browser' && payload.status === 'clarification' && payload.effect === 'none' && payload.dataOnly !== true)
           }

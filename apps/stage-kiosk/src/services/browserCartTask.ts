@@ -97,7 +97,7 @@ function missingTableMessage(choices: readonly string[], transcript: string) {
   // Multiple codes can include a correction or negation. Only one explicit
   // code can prove absence without guessing which part of the turn is intended.
   if (codes.length === 1 && !resolveTableName(codes[0], choices))
-    return `目前沒有「${codes[0]}」這個桌號，請確認桌號，或從畫面上的選項重新選擇。`
+    return `目前沒有「${codes[0]}」這個桌號，請再說一次桌號。`
 }
 
 /** Owns one current utterance; only validated one-use question answers extend its target scope. */
@@ -218,6 +218,19 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
   }
 
   if (!writes.has(tool.name)) {
+    if (tool.name === 'browser_return_table') {
+      if (!task || !task.isCurrent())
+        return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
+      parse(strictObject({}), input)
+      const result = await client.execute(tool, {})
+      if (safeParse(looseObject({ ok: literal(true), code: literal('table-selection-starting') }), result).success) {
+        // Questions/drafts belong to the previous page; no merchant cart write
+        // is implied by abandoning those local conversation owners.
+        task.dialogue?.reset()
+        task.onRequestComplete?.()
+      }
+      return result
+    }
     if (tool.name === 'browser_close_product')
       return cancelBrowserItemSelection(client)
     if (tool.name === 'browser_table_select' || tool.name === 'browser_start_ordering') {
@@ -330,7 +343,9 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       return result
     }
 
-    if (tool.name === 'browser_search' && task?.dialogue) {
+    if (tool.name === 'browser_search') {
+      if (!task?.dialogue || !task.isCurrent())
+        return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
       const query = typeof input.query === 'string' ? input.query.trim() : ''
       if (task.dialogue.hasPending() && context) {
         const raw = await client.execute(context, { includeCatalog: true })
@@ -348,25 +363,45 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       // including when the vendor later fails to finish rendering that view.
       task.dialogue.reset()
       const labels = task.catalogLabels?.()
-      if (query && labels?.some(label => label.aliases.includes(query) || label.category === query) && context) {
+      if (query) {
+        if (!context)
+          return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
         const raw = await client.execute(context, { includeCatalog: true })
         if (active !== task || !task.isCurrent())
           return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
         const denied = admitCart(task, raw, true)
         if (denied)
           return denied
-        const facts = parse(looseObject({ products: array(looseObject({ ref: string(), name: string() })) }), raw)
-        const matches = labelCatalog(facts.products, labels).filter(product => product.name.includes(query) || product.aliases.includes(query) || product.category === query)
+        const facts = parse(looseObject({ page: optional(string()), search: optional(string()), products: array(looseObject({ ref: string(), name: string(), price: optional(number()), configurations: array(productConfigurationSchema) })) }), raw)
+        const catalog = labelCatalog(facts.products, labels)
+        const normalized = query.toLocaleLowerCase()
+        const knownCategory = catalog.some(product => product.category.toLocaleLowerCase() === normalized)
+        const matches = knownCategory
+          ? catalog.filter(product => product.category.toLocaleLowerCase() === normalized)
+          : catalog.filter(product => [product.name, ...product.aliases, product.category].some(label => label.toLocaleLowerCase().includes(normalized)))
         const present = client.tools.value.find(tool => tool.name === 'browser_present')
-        if (matches.length > 10)
-          return { ok: true, source: 'browser', dataOnly: true, products: matches, explanation: '這個類別超過十項，尚未呈現全部。請先詢問更明確條件，再用實際商品參照呈現；不可宣稱已顯示全部。' }
-        if (matches.length && present) {
-          // Native presentation clears any stale text search and verifies these
-          // exact cards. Configured labels never become invented PB search text.
+        const exact = matches.length === 1 && [matches[0].name, ...matches[0].aliases].some(label => label.toLocaleLowerCase() === normalized)
+        if ((exact || knownCategory) && matches.length <= 10 && present)
           return client.execute(present, { productRefs: matches.map(product => product.ref), mode: 'information' })
+        if (matches.length) {
+          // A substring is retrieval evidence, not a verified category: 湯 also
+          // matches 湯餃 and meal sets. Main must select actual dishes before cues.
+          return { ok: true, source: 'browser', dataOnly: true, search: query, catalogScope: 'full-current-catalog', products: matches.map(({ ref, name, price, aliases, category }) => ({ ref, name, price, aliases, category })), explanation: '這些僅是字面相符的候選，尚未框選。依顧客本輪語意與已知品名／分類／內容挑出真正符合的餐點，再用 point_to_menu_items purpose=information 介紹並框選。問單點湯品時不要把湯餃或含湯套餐列為湯品；資料不足才查 get_menu_item_details。不可把關鍵字命中當成分類或食材證據。完整菜單保持可瀏覽，不改購物車。' }
         }
+        // Inquiries consult the full current catalog instead of blanking PB's
+        // view. Restore an older/manual filter and retire old visual choices.
+        if (facts.search && facts.page === 'menu') {
+          const restored = await client.execute(tool, { query: '' })
+          if (!safeParse(looseObject({ ok: literal(true) }), restored).success)
+            return restored
+        }
+        if (present)
+          await client.execute(present, { productRefs: [] })
+        return { ok: true, source: 'browser', status: 'not-found', effect: 'none', search: query, catalogScope: 'full-current-catalog', products: [], alternatives: filterBrowserRecommendations(catalog).map(({ ref, name, price, category }) => ({ ref, name, price, category })), customerMessage: `目前菜單沒有「${query}」。`, originalRequest: task.transcript, explanation: '這是本輪完整菜單查詢，畫面保留完整菜單。只處理originalRequest這次的問題，不重查前一題。可依目前菜單推薦相近品項；沒有相關品項時詢問是否看其他推薦，不把替代品當成原品項。' }
       }
-      return client.execute(tool, input)
+      // Only an empty query clears a previous/manual native search. Customer
+      // category requests also use full-catalog highlighting above.
+      return client.execute(tool, { query })
     }
     if (tool.name === 'browser_cart_review' || tool.name === 'browser_return_menu') {
       if (!task || !task.isCurrent() || !context)
@@ -510,8 +545,11 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         task.confirmedOrder = answer.result.completeOrder
         return executeBrowserConfirmedAddition(client)
       }
-      if (answer?.kind === 'receipt')
+      if (answer?.kind === 'receipt') {
+        if ('code' in answer.result && ['QUESTION_RELEASED', 'QUESTION_RETRY_LIMIT'].includes(String(answer.result.code)))
+          task.onRequestComplete?.()
         return answer.result
+      }
       if (answer?.kind === 'checkout') {
         if (answer.action === 'submit') {
           const submit = client.tools.value.find(tool => tool.name === 'browser_order_submit')
@@ -531,7 +569,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
             return executeBrowserCheckout(client, 'continue', { afterRejectedSubmit: true })
           return result
         }
-        return executeBrowserCheckout(client, answer.action, 'method' in answer ? { method: parse(pbInvoiceMethodSchema, answer.method) } : 'phone' in answer ? { phone: answer.phone } : {})
+        return executeBrowserCheckout(client, answer.action, 'method' in answer ? { method: parse(pbInvoiceMethodSchema, answer.method) } : 'phone' in answer ? { phone: answer.phone } : 'code' in answer ? { code: answer.code } : {})
       }
       if (answer?.kind === 'review-cart') {
         const review = client.tools.value.find(tool => tool.name === 'browser_cart_review')
@@ -854,13 +892,22 @@ export async function readBrowserOrderingFacts(client: Pick<ReturnType<typeof cr
 }
 
 /** Main may update recommendation criteria; every visual choice is checked against them again. */
+/** Validates published categories before changing reception-owned recommendation state. */
 export function browserRecommendationCriteria(patch: RecommendationCriteria | undefined, products: readonly { name: string }[]) {
   const task = active
   if (!task?.isCurrent() || !task.dialogue)
     throw new Error('目前接待已結束。')
-  if (patch?.category && !labelCatalog(products, task.catalogLabels?.()).some(product => product.category === patch.category))
-    throw new Error('目前沒有這個已設定的餐點類別，請依目前菜單使用關鍵字搜尋或指定餐名。')
-  return patch ? task.dialogue.recommendations.update(patch) : task.dialogue.recommendations.snapshot()
+  const categories = [...new Set(labelCatalog(products, task.catalogLabels?.()).flatMap(product => product.category ? [product.category] : []))]
+  // A natural query such as 湯 is not necessarily a published category. Leave
+  // all existing restrictions untouched so Main can retry a read-only keyword lookup.
+  if (patch?.category && !categories.includes(patch.category))
+    return { ok: false as const, reason: 'category' as const, categories }
+  // This is a necessary evidence check, not a complete intent classifier.
+  // Main still owns semantic restrictions, but a positive-only request cannot
+  // create persistent exclusions (the reported 我要炸的 → 排除炸 inversion).
+  if (patch?.excludedTerms?.some(Boolean) && !/不要|不吃|不想|不喜歡|別推薦|避開|排除|忌口|過敏|不能吃/.test(task.transcript))
+    return { ok: false as const, reason: 'exclusion' as const, categories }
+  return { ok: true as const, criteria: patch ? task.dialogue.recommendations.update(patch) : task.dialogue.recommendations.snapshot() }
 }
 
 export function filterBrowserRecommendations<T extends { name: string, configurations: { unitPrice: number }[] }>(products: T[]): T[] {
@@ -1257,7 +1304,7 @@ export async function executeBrowserConfirmedAddition(client: Pick<ReturnType<ty
 }
 
 /** Checkout drafts and final questions remain bound to the current visitor and native cart. */
-export async function executeBrowserCheckout(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, action: 'continue' | 'invoice-options' | 'invoice' | 'phone' | 'phone-confirmed', input: { method?: string, phone?: string, afterRejectedSubmit?: true } = {}) {
+export async function executeBrowserCheckout(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, action: 'continue' | 'invoice-options' | 'invoice' | 'phone' | 'phone-confirmed' | 'donation-confirmed', input: { method?: string, phone?: string, code?: string, afterRejectedSubmit?: true } = {}) {
   const task = active
   if (!task?.dialogue || !task.isCurrent())
     return { ok: false, source: 'host', effect: 'none' }
@@ -1285,6 +1332,9 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   // invoice choice rather than infer consent from that default.
   const needsInvoiceChoice = action === 'invoice-options' || (action === 'continue' && (!pendingStep || ['cart-review', 'review-checkout', 'invoice-method'].includes(pendingStep)))
   if (!task.answerResolved && ((action === 'invoice' && ['cart-review', 'review-checkout'].includes(pendingStep ?? ''))
+    // A literal invoice-entry answer belongs to its issued slot even when Main
+    // misroutes a short donation code into the notification-phone tool.
+    || (pendingStep === 'invoice-details' && task.dialogue.canAnswerLocally(raw, task.transcript))
     || (action === 'phone' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pendingStep ?? '')))) {
     const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')!
     return executeBrowserCartTool(client, read, { includeCatalog: true })
@@ -1298,7 +1348,13 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   }
   if (action === 'phone' && pendingStep === 'notification-phone-confirm')
     return { ok: true, source: 'browser', effect: 'none', customerMessage: orderingMessages['zh-Hant'].checkout.notificationPhone.confirmationRequired }
-  const name = action === 'invoice' ? 'browser_invoice_select' : action === 'phone' || action === 'phone-confirmed' ? 'browser_notification_phone' : 'browser_checkout_prepare'
+  let name = 'browser_checkout_prepare'
+  if (action === 'invoice')
+    name = 'browser_invoice_select'
+  else if (action === 'phone' || action === 'phone-confirmed')
+    name = 'browser_notification_phone'
+  else if (action === 'donation-confirmed')
+    name = 'browser_invoice_donation'
   const tool = client.tools.value.find(tool => tool.name === name)
   if (!tool)
     throw new Error('目前網站尚未提供這項結帳操作。')
@@ -1308,22 +1364,49 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   if (action === 'phone' || action === 'phone-confirmed') {
     const digits = normalizeSlotNumbers(task.transcript).replaceAll(/\D/g, '')
     if (!input.phone || !/^\d{10,15}$/.test(input.phone) || (action === 'phone' && input.phone !== digits))
-      return { ok: true, source: 'browser', effect: 'none', customerMessage: '請提供完整通知手機號碼，或直接在畫面填寫。' }
+      return { ok: true, source: 'browser', effect: 'none', customerMessage: '請說完整通知手機號碼，可以分段說。' }
     parameters = { phone: input.phone }
+  }
+  if (action === 'donation-confirmed') {
+    const form = safeParse(looseObject({ checkout: pbCheckoutSchema }), raw)
+    if (!input.code || !/^\d{3,7}$/.test(input.code) || !form.success || !form.output.checkout.methods.some(method => method.method === 'donation' && method.selected))
+      return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: orderingMessages['zh-Hant'].checkout.donationCode.invalid }
+    parameters = { code: input.code }
   }
   const result = await client.execute(tool, parameters)
   if (active !== task || !task.isCurrent())
     return { ok: false, source: 'host', effect: 'none' }
   const parsed = safeParse(looseObject({ ok: literal(true), source: literal('browser'), checkout: pbCheckoutSchema, cart: looseObject({ version: string(), lines: array(looseObject({ ...cartLineLabelSchema.entries, unitPrice: number() })), subtotal: optional(number()), tableName: optional(string()) }) }), result)
-  if (!parsed.success)
+  if (!parsed.success) {
+    // Unknown/pending effects are not a recoverable draft failure. In particular,
+    // never manufacture progress or retry a write when its receipt is uncertain.
+    const failed = safeParse(looseObject({ ok: literal(false), source: literal('browser'), effect: literal('none') }), result)
+    if (failed.success) {
+      const fresh = await readBrowserOrderingFacts(client)
+      if (active !== task || !task.isCurrent())
+        return result
+      const denied = admitCart(task, fresh)
+      if (denied)
+        return denied
+      const recovery = task.dialogue.observeCheckout(fresh, `${name}:${action === 'invoice' ? input.method : pendingStep ?? 'invoice-method'}`, true, task.utteranceId ?? task)
+      const form = safeParse(looseObject({ checkout: pbCheckoutSchema }), fresh)
+      if (recovery && form.success && form.output.checkout.methods.length) {
+        const question = task.dialogue.presentService(fresh, { purpose: 'invoice-method', request: task.transcript, question: `${orderingMessages['zh-Hant'].checkout.recovery.operationFailed}${orderingMessages['zh-Hant'].checkout.invoiceOptions.replace('{methods}', form.output.checkout.methods.map(method => method.label).join('、'))}`, choices: form.output.checkout.methods.map(method => ({ id: method.method, description: `選擇${method.label}，只設定發票，不送出訂單。` })) })
+        task.onRequestComplete?.()
+        return { ...question, code: 'CHECKOUT_RECOVERY', recovery, dataOnly: false }
+      }
+    }
     return result
+  }
   const checkout = parsed.output.checkout
   const binding = { ...facts, checkout, cart: { ...facts.cart, ...parsed.output.cart } }
   const pending = task.dialogue.conversation(binding).waitingFor
   if (pending)
     task.dialogue.releaseService(binding, pending.questionId)
   if (needsInvoiceChoice || !checkout.methods.some(method => method.selected)) {
-    const question = task.dialogue.presentService(binding, { purpose: 'invoice-method', request: task.transcript, question: `${orderingMessages['zh-Hant'].checkout.invoiceOptions.replace('{methods}', checkout.methods.map(method => method.label).join('、'))}${orderingMessages['zh-Hant'].checkout.entryModes}`, choices: checkout.methods.map(method => ({ id: method.method, description: `選擇${method.label}，只設定發票，不送出訂單。` })) })
+    const preselected = checkout.methods.find(method => method.selected)
+    const selectionMessage = preselected ? orderingMessages['zh-Hant'].checkout.invoicePreselected.replace('{method}', preselected.label) : ''
+    const question = task.dialogue.presentService(binding, { purpose: 'invoice-method', request: task.transcript, question: `${selectionMessage}${orderingMessages['zh-Hant'].checkout.invoiceOptions.replace('{methods}', checkout.methods.map(method => method.label).join('、'))}`, choices: checkout.methods.map(method => ({ id: method.method, description: `選擇${method.label}${method.selected ? '（目前預選；明確說沿用預選即選此方式）' : ''}，只設定發票，不送出訂單。` })) })
     return { ...parsed.output, ...question, dataOnly: false }
   }
   const selected = checkout.methods.find(method => method.selected)!
@@ -1333,8 +1416,18 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   // Invoice completion is its own bound question. A spoken "OK" re-reads the
   // real form before moving to contact details; it never fills a field or submits.
   if (selected.method !== 'none' && (!invoiceField || !invoiceField.valid)) {
-    const entry = selected.method === 'carrier' || selected.method === 'citizen' ? '掃描或輸入' : '填寫'
-    entryQuestion = { purpose: 'invoice-details', question: invoiceField?.value ? orderingMessages['zh-Hant'].checkout.invalidInvoice.replace('{label}', selected.label).replace('{entry}', entry) : `請在畫面${entry}${selected.label}，完成後告訴我「好了」。` }
+    const copy = orderingMessages['zh-Hant'].checkout
+    let question: string
+    if (selected.method === 'donation') {
+      question = invoiceField?.value ? copy.donationCode.invalid : copy.donationCode.introduction
+    }
+    else if (selected.method === 'carrier' || selected.method === 'citizen') {
+      question = `${copy.scanInvoice.replace('{method}', selected.label)}，掃好後告訴我「好了」。`
+    }
+    else {
+      question = invoiceField?.value ? copy.invalidInvoice.replace('{label}', selected.label).replace('{entry}', '填寫') : `目前此欄尚無法語音代填，請輸入${selected.label}，完成後告訴我「好了」。`
+    }
+    entryQuestion = { purpose: 'invoice-details', question }
   }
   else if (contacts.some(field => field.value && !field.valid)) {
     const invalid = contacts.find(field => field.value && !field.valid)!
@@ -1344,11 +1437,29 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
     entryQuestion = { purpose: 'notification-details', question: orderingMessages['zh-Hant'].checkout.notificationPhone.introduction }
   }
   if (entryQuestion) {
+    const recovery = task.dialogue.observeCheckout(binding, entryQuestion.purpose, false, task.utteranceId ?? task)
+    if (recovery) {
+      // Rebuild from the freshly observed form, not the old question. The user
+      // can retain/change invoice method or supply contact details naturally;
+      // no default is adopted and no merchant data is cleared.
+      const invoice = entryQuestion.purpose === 'invoice-details'
+      const question = task.dialogue.presentService(binding, invoice
+        ? { purpose: 'invoice-method', request: task.transcript, question: `${orderingMessages['zh-Hant'].checkout.recovery.invoice.replace('{method}', selected.label)}${orderingMessages['zh-Hant'].checkout.invoiceOptions.replace('{methods}', checkout.methods.map(method => method.label).join('、'))}`, choices: checkout.methods.map(method => ({ id: method.method, description: `選擇${method.label}，只設定發票，不送出訂單。` })) }
+        : { purpose: 'notification-details', request: task.transcript, question: orderingMessages['zh-Hant'].checkout.recovery.contact, choices: [] })
+      task.onRequestComplete?.()
+      return { ...parsed.output, ...question, code: 'CHECKOUT_RECOVERY', recovery, dataOnly: false, effect: 'none' }
+    }
     const question = task.dialogue.presentService(binding, { ...entryQuestion, request: task.transcript, choices: [{ id: 'yes', description: '目前這一步已填好，重新檢查畫面後繼續下一步；不送出訂單。' }, { id: 'no', description: '還沒填好，保留目前畫面及資料。' }] })
     return { ...parsed.output, ...question, dataOnly: false, effect: 'none' }
   }
   if (!checkout.ready || !checkout.confirmationToken) {
+    const recovery = task.dialogue.observeCheckout(binding, 'checkout-details', false, task.utteranceId ?? task)
     const message = checkout.missing[0] ?? '資料已填入，請核對畫面。'
+    if (recovery) {
+      task.dialogue.pauseCheckout(binding)
+      task.onRequestComplete?.()
+      return { ok: true, source: 'browser', code: 'CHECKOUT_RECOVERY', recovery, effect: 'none', customerMessage: orderingMessages['zh-Hant'].checkout.recovery.details.replace('{missing}', message) }
+    }
     const question = task.dialogue.presentService(binding, { purpose: 'checkout-details', request: task.transcript, question: `${message}完成後告訴我「好了」。`, choices: [{ id: 'yes', description: '資料已填好，重新讀取並核對目前訂單；不送出訂單。' }, { id: 'no', description: '先不繼續，保留目前畫面及資料。' }] })
     return { ...parsed.output, ...question, dataOnly: false, effect: 'none' }
   }
@@ -1380,7 +1491,12 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
     if (task.orderReference && task.orderReference !== state.reference)
       throw new Error('Order reply belongs to a different order.')
     const messages = orderingMessages['zh-Hant'].orderState
-    return { ok: true, source: 'host', status: 'conversation', effect: 'none', order: state, customerMessage: messages[state.paymentStatus].replace('{methods}', state.paymentMethods.join('、') || messages.methodsUnknown) }
+    let customerMessage: string = messages[state.paymentStatus]
+    if (state.paymentStatus === 'pending') {
+      const linePayAvailable = state.paymentMethods.some(method => /^line\s*pay$/i.test(method.trim()))
+      customerMessage = `訂單已建立，尚未付款。${orderingMessages['zh-Hant'].checkout.paymentRestriction}${linePayAvailable ? '目前尚無法代開付款頁，這一步需要點選 LINE Pay，再用手機完成付款授權。' : orderingMessages['zh-Hant'].checkout.paymentUnavailable}`
+    }
+    return { ok: true, source: 'host', status: 'conversation', effect: 'none', order: state, customerMessage }
   }
   const policy = safeParse(servicePolicyReplySchema, selected)
   if (policy.success) {

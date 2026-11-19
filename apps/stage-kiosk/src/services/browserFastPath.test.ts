@@ -506,3 +506,17 @@ it('includes current invoice and contact validity in the automatic Jev read', as
   expect(JSON.stringify(context)).not.toContain('0912345678')
   expect(JSON.stringify(context)).not.toContain('12345')
 })
+
+// Report: this chat, Nov19 21:02 — recommendation then 「還有什麼」 repeated the old item question.
+it('offers another verified recommendation batch while the previous recommendation awaits a dish choice', async () => {
+  const products = [product, { ...product, ref: 'soup', name: '魚丸湯' }, { ...product, ref: 'rice', name: '三杯雞便當' }]
+  const waiting = { ...question, purpose: 'browser-product-choice', question: '您想點哪一道？', choices: [{ id: 'product:1', description: product.name }] }
+  const execute = vi.fn(async (_tool: ServiceTool, _input: Record<string, unknown>) => ({ ok: true }))
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ page: 'menu', cart: { version: 'v', lines: [] }, products }), execute, hasPendingQuestion: () => true, pendingQuestion: () => waiting, shownRecommendations: () => [product.ref], previousRecommendations: refs => refs.filter(ref => ref !== product.ref), recommendationPool: items => items.map(item => item.ref) })
+  const context = await source.context({ transcript: '還有什麼？' })
+  expect(context).toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:recommend-other' })]) })
+  const result = await runFastPath({ isEnabled: async () => true, source, transcript: '還有什麼？', decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:recommend-other', confidence: 0.99 }), webMcp: { tools, execute } })
+  expect(result.kind).toBe('FAST_ACTION')
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_present' }), { productRefs: expect.arrayContaining(['soup', 'rice']), mode: 'other-recommendations' })
+  expect(execute.mock.calls.some(([_tool, input]) => 'criteria' in input)).toBe(false)
+})

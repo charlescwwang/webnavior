@@ -22,6 +22,71 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  // Report: this chat, Nov19 — a promotion reply type was put in questionType and leaked a schema error.
+  it('corrects the misrouted promotion question through the real compiler without PB operations', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'promotion-repair', state: 'active' } })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'wrong-question', type: 'function', function: { name: 'ask_customer_question', arguments: '{"questionType":"promotion-policy"}' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'policy-reply', type: 'function', function: { name: 'reply_to_customer', arguments: '{"replyType":"promotion-policy"}' } }] })
+    const execute = vi.fn()
+    const servicePolicyReply = vi.fn(() => '活動以店家公告為準，目前無法確認有買一送一。')
+    const release = beginBrowserCartTask('有沒有買一送一', { isCurrent: () => true, decide: vi.fn(), servicePolicyReply })
+    const tools = createBrowserOrderingTools({ tools: shallowRef([]), execute })
+    const replies: string[] = []
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const result = await recording.send('ordering', '有沒有買一送一', tools, {
+        onToolResult: (_name, content) => {
+          const payload = JSON.parse(content)
+          if (payload.dataOnly !== true && payload.customerMessage)
+            replies.push(payload.customerMessage)
+        },
+        isRequestComplete: () => servicePolicyReply.mock.calls.length === 1,
+      })
+      expect(result).toMatchObject({ status: 'completed' })
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(2)
+      expect(replies).toEqual(['活動以店家公告為準，目前無法確認有買一送一。'])
+      expect(execute).not.toHaveBeenCalled()
+    }
+    finally {
+      scope.stop()
+      release()
+    }
+  })
+
+  // Report: this chat, Nov19 21:25 — a failed exact category must continue as a keyword lookup.
+  it('repairs the soup category using full catalog evidence and presents confirmed soup without cart writes', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'soup-repair', state: 'active' } })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'category', type: 'function', function: { name: 'list_menu_items', arguments: '{"criteria":{"category":"湯"}}' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'keyword', type: 'function', function: { name: 'point_to_menu_items', arguments: '{"names":["魚丸湯"],"purpose":"information"}' } }] })
+    const product = { ref: 'soup', name: '魚丸湯', price: 50, configurations: [{ version: 'cfg', variantRef: '', name: '', unitPrice: 50, groups: [] }] }
+    const execute = vi.fn(async (tool: { name: string }) => tool.name === 'browser_cart_get'
+      ? { ok: true, source: 'browser', products: [product], cart: { version: 'cart', lines: [] } }
+      : { ok: true, source: 'browser', presentation: { cue: 'shown', products: [{ ref: 'soup', name: '魚丸湯', price: 50 }] } })
+    const dialogue = createBrowserDialogue({ owner: () => 'visitor', documentId: () => 'page', answer: vi.fn() })
+    const release = beginBrowserCartTask('那有什麼湯？', { isCurrent: () => true, decide: vi.fn(), dialogue })
+    const client = { tools: shallowRef(['browser_cart_get', 'browser_search', 'browser_present'].map(name => ({ name, origin: 'https://app.esgpb.com', description: '', inputSchema: { type: 'object' } }))), execute }
+    const scope = effectScope()
+    const results: string[] = []
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const result = await recording.send('ordering', '那有什麼湯？', createBrowserOrderingTools(client), {
+        onToolResult: (_name, content) => results.push(content),
+        isRequestComplete: () => results.some(content => JSON.parse(content).presentation?.cue === 'shown'),
+      })
+      expect(result).toMatchObject({ status: 'completed' })
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(2)
+      expect(execute.mock.calls.map(([tool]) => tool.name).every(name => name === 'browser_cart_get' || name === 'browser_present')).toBe(true)
+      expect(dialogue.recommendations.snapshot().category).toBeUndefined()
+    }
+    finally {
+      scope.stop()
+      release()
+    }
+  })
+
   // Report: this chat, Nov19 01:19 — reply_to_customer rejected extra model
   // parameters before dispatch, but its no-effect receipt never reached Host.
   it('preserves a rejected no-effect reply receipt without inventing an uncertain cart write', async () => {
@@ -1352,20 +1417,20 @@ it('does not attach an old transcript acknowledgement to the replacement recepti
   expect(kioskApi.appendKioskInteraction).toHaveBeenCalledWith(expect.objectContaining({ visitorSessionId: 'old-evidence', metadata: { source: 'asr', utteranceId: 11 } }))
 })
 
-it('retains Falcon text in the existing ASR history contract exactly once without mouth images', async () => {
+it('retains recognized text in the existing ASR history contract exactly once without mouth images', async () => {
   vi.clearAllMocks()
-  kioskApi.startKioskVisitorSession.mockResolvedValueOnce({ session: { id: 'falcon-history' } })
-  kioskApi.appendKioskInteraction.mockResolvedValue({ entry: { id: 'falcon-transcript' } })
+  kioskApi.startKioskVisitorSession.mockResolvedValueOnce({ session: { id: 'asr-history' } })
+  kioskApi.appendKioskInteraction.mockResolvedValue({ entry: { id: 'asr-transcript' } })
   const recording = useKioskInteractionRecording()
   await recording.start('ordering')
-  const input = { id: 700, text: '水餃一份', source: 'asr' as const, recognitionMode: 'falcon' as const }
+  const input = { id: 700, text: '水餃一份', source: 'asr' as const, recognitionMode: 'legacy' as const }
   await recording.recordTranscript(input)
   await recording.recordTranscript(input)
   expect(kioskApi.appendKioskInteraction).toHaveBeenCalledTimes(1)
   expect(kioskApi.appendKioskInteraction).toHaveBeenCalledWith(expect.objectContaining({
     kind: 'asr_transcript',
     content: '水餃一份',
-    metadata: { source: 'asr', utteranceId: 700, recognitionMode: 'falcon' },
+    metadata: { source: 'asr', utteranceId: 700, recognitionMode: 'legacy' },
   }))
 })
 
@@ -1434,6 +1499,22 @@ it('continues both missing searches and retains each named result for the spoken
     expect(browserToolResult('search_menu_items', { ok: true, source: 'browser', status: 'not-found', effect: 'none' }).outcome).toBe('information_ready')
     expect(window.reply()).toContain('章魚燒')
     expect(window.reply()).toContain('貢丸湯')
+  }
+  finally { scope.stop() }
+})
+
+// Report: this chat, Nov19 — the question loop breaker must not be followed by another Main re-ask.
+it.each(['QUESTION_RETRY_LIMIT', 'CHECKOUT_RECOVERY'])('ends the turn after Host %s without another model continuation', async (code) => {
+  vi.resetAllMocks()
+  kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'release-question', state: 'active' } })
+  kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'question', type: 'function', function: { name: 'ask_customer_question', arguments: '{"questionType":"quantity"}' } }] })
+  const payload = { ok: true, source: 'browser', status: 'clarification', effect: 'none', code, customerMessage: '這題暫時無法接續，我先停止追問。' }
+  const tool = rawTool({ name: 'ask_customer_question', description: '', parameters: { type: 'object', properties: {} }, execute: async () => payload })
+  const scope = effectScope()
+  try {
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    expect(await recording.send('ordering', '還是聽不懂', [tool])).toMatchObject({ status: 'completed' })
+    expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
   }
   finally { scope.stop() }
 })

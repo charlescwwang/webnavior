@@ -18,6 +18,7 @@ import { createCheckout } from './pbCheckout'
 import { createControls } from './pbControls'
 import { installInvoiceInput } from './pbInvoiceInput'
 import { createOperation } from './pbOperation'
+import { installPaymentPolicy } from './pbPayment'
 import { createPresentation } from './pbPresentation'
 import { prepareAddition, resolveSelection } from './pbProduct'
 import { resolveRoute } from './pbRoutes'
@@ -49,6 +50,7 @@ export function createPbService() {
   const documentId = crypto.randomUUID()
   const presentation = createPresentation()
   const invoiceInput = installInvoiceInput()
+  const paymentPolicy = installPaymentPolicy(journey)
   const text = pipe(string(), maxLength(200))
   const quantity = pipe(number(), integer(), minValue(1), maxValue(99))
   const selectionSchema = strictObject({ version: text, variantRef: text, choices: array(strictObject({ ref: text, quantity })) })
@@ -81,6 +83,7 @@ export function createPbService() {
   void tablePicker?.choices().catch(() => console.info('PB table enhancement is unavailable.'))
   window.addEventListener('pagehide', () => {
     invoiceInput.dispose()
+    paymentPolicy.dispose()
     tablePicker?.dispose()
   }, { once: true })
   const blockedKey = `webnavior:pb:cart-pending:${baseUrl.pathname}`
@@ -92,6 +95,29 @@ export function createPbService() {
   let queuedCount = 0
   let executingName: string | undefined
   let manualRevision = 0
+  let menuPositioned = false
+  const menuLayoutObserver = new MutationObserver(positionMenu)
+  // One initial viewport adjustment per document. Subsequent reads, search and
+  // trusted input belong to the customer; they never reset the scroll position.
+  function positionMenu() {
+    if (menuPositioned || location.pathname !== journey.menuPath)
+      return
+    const category = document.querySelector<HTMLElement>('main .category-section h3')?.textContent?.trim()
+    const tab = Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find(tab => tab.textContent?.trim() === category && tab.getClientRects().length && tab.getAttribute('aria-disabled') !== 'true')
+    if (!tab || !document.querySelector('main [role="button"] h4, main button h4'))
+      return
+    menuPositioned = true
+    menuLayoutObserver.disconnect()
+    if (window.scrollY > 0)
+      return
+    // PB's category tabs scroll to their section while retaining every item.
+    // Use its own sticky-header offset rather than stopping at the search box.
+    tab.click()
+  }
+  // PB can render its catalog after did-finish-load/discovery. Observe only
+  // until initial placement or customer takeover, and release on pagehide.
+  menuLayoutObserver.observe(document.documentElement, { childList: true, subtree: true })
+  window.addEventListener('pagehide', () => menuLayoutObserver.disconnect(), { once: true })
   const checkout = createCheckout(readCart, () => manualRevision, () => {
     writeMarker = `order:${crypto.randomUUID()}`
     localStorage.setItem(blockedKey, writeMarker)
@@ -100,11 +126,15 @@ export function createPbService() {
       localStorage.removeItem(blockedKey)
   }, journey.canSubmit)
   let controlRevision = 0
-  const controlTools = new Set(['browser_table_select', 'browser_start_ordering', 'browser_cart_review', 'browser_search', 'browser_open_product', 'browser_close_product', 'browser_set_note', 'browser_clarify_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_customer_reset', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_order_submit'])
+  const controlTools = new Set(['browser_return_table', 'browser_table_select', 'browser_start_ordering', 'browser_cart_review', 'browser_search', 'browser_open_product', 'browser_close_product', 'browser_set_note', 'browser_clarify_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_customer_reset', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_order_submit'])
   let activeVisual: AbortController | undefined
   for (const eventName of ['pointerdown', 'keydown', 'wheel']) {
     document.addEventListener(eventName, (event) => {
       if (event.isTrusted && !invoiceInput.owns(event)) {
+        if (location.pathname === journey.menuPath) {
+          menuPositioned = true
+          menuLayoutObserver.disconnect()
+        }
         // Scrolling cancels the visual cue but changes no cart data. Checkout
         // field editing is likewise excluded above; form values are separately
         // fingerprinted before the final submission ticket can be consumed.
@@ -130,11 +160,13 @@ export function createPbService() {
     { name: 'browser_reception_reset', description: 'Host-only explicit staff initialization. Retires local operation warnings and consent; never reads, clears, submits or cancels a PB order/cart/payment. Reload the configured entry afterwards.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
     { name: 'browser_checkout_prepare', description: 'Read actual invoice/notification fields and prepare one expiring confirmation. No submission.', inputSchema: { type: 'object', properties: { focus: { type: 'string', enum: ['invoice', 'next'] } }, required: [], additionalProperties: false } },
     { name: 'browser_invoice_select', description: 'Select one actually offered native invoice method. No order submission.', inputSchema: { type: 'object', properties: { method: { type: 'string', enum: ['none', 'carrier', 'citizen', 'tax', 'donation'] } }, required: ['method'], additionalProperties: false } },
+    { name: 'browser_invoice_donation', description: 'Host-only fill of a confirmed 3–7 digit donation code on the selected donation invoice. No order submission.', inputSchema: { type: 'object', properties: { code: { type: 'string', pattern: '^\\d{3,7}$' } }, required: ['code'], additionalProperties: false } },
     { name: 'browser_notification_phone', description: 'Fill only the notification phone draft. No invoice carrier, email, submission or payment.', inputSchema: { type: 'object', properties: { phone: { type: 'string', pattern: '^\\d{10,15}$' } }, required: ['phone'], additionalProperties: false } },
     { name: 'browser_order_submit', description: 'Host-only: consume a native confirmation token after the customer answers the matching final summary. Never a Main tool.', inputSchema: { type: 'object', properties: { confirmationToken: { type: 'string' } }, required: ['confirmationToken'], additionalProperties: false } },
     { name: 'browser_close_product', description: 'Close the current unadded product selection without changing the cart.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false } },
     ...(tablePicker
       ? [
+          { name: 'browser_return_table', description: 'Return to this same store’s table-selection page when the customer requests a different table. Navigation only: does not choose a table, clear the cart, start ordering or submit.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false } },
           { name: 'browser_table_select', description: 'Select exactly one currently offered dining table by name. Selection only; use browser_start_ordering when the customer asks to enter the menu. Never infer a customer choice from the initial website default.', inputSchema: { type: 'object', properties: { name: { type: 'string', maxLength: 200 } }, required: ['name'], additionalProperties: false } },
           { name: 'browser_start_ordering', description: 'Select the customer-specified table and press the actual Start ordering button to enter its menu. name must be a current tableChoices name explicitly requested by the customer or the verified selectedTable. Ask which table if neither exists. forReset is only for explicit Host reception cleanup while the website stays visible. This does not add food, submit an order or pay. New navigation must read back the table/cart before ordering.', inputSchema: { type: 'object', properties: { name: { type: 'string', maxLength: 200 }, forReset: { type: 'boolean' } }, required: ['name'], additionalProperties: false } },
         ]
@@ -490,6 +522,21 @@ export function createPbService() {
       return { products: [], cue: 'cancelled' as const }
     if (deferVisual)
       return { products: evidence, cue: 'prepared' as const }
+    const cards = products.map(product => cardFor(product.name))
+    const allVisible = cards.every((card) => {
+      if (!card)
+        return false
+      const bounds = card.getBoundingClientRect()
+      const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)
+      return bounds.top >= 0 && bounds.bottom <= innerHeight && bounds.left >= 0 && bounds.right <= innerWidth && !!hit && card.contains(hit)
+    })
+    if (!press && allVisible) {
+      // The expanded menu already shows the whole batch. Frame it together;
+      // no per-dish dwell, automatic scrolling or introduction input lock.
+      return presentation.show(evidence, cards[0], false, cards.slice(1).filter((card): card is HTMLElement => !!card))
+    }
+    if (preservePage)
+      return { products: [], cue: 'cancelled' as const }
     // Each spoken dish owns its own label, scroll and frame. Passing all names
     // to the first card makes off-screen recommendations appear unpresented.
     return presentation.introduce(async () => {
@@ -558,6 +605,7 @@ export function createPbService() {
         activeVisual = undefined
     }
     async function executeAction() {
+      positionMenu()
       if (name === 'browser_state_get') {
         parse(strictObject({ includeCatalog: boolean() }), input)
         if (isPbOrderResultUrl(entry, location.href)) {
@@ -635,7 +683,18 @@ export function createPbService() {
             admission = { cartAdmission: 'after-table-entry' }
           }
         }
-        return { ok: true, source: 'browser', observedAt: Date.now(), documentId, page: 'table', code: 'table-selection-required', effect: 'none', tableChoices, ...(selectedTable ? { selectedTable } : {}), ...admission, customerMessage: selectedTable ? `已選擇${selectedTable}，請說「開始點餐」，或點畫面的開始點餐按鈕。` : '內用請先找到座位，再回來告訴我您的桌號；外帶可以選櫃台自取。這裡沒有外送服務。' }
+        return { ok: true, source: 'browser', observedAt: Date.now(), documentId, page: 'table', code: 'table-selection-required', effect: 'none', tableChoices, ...(selectedTable ? { selectedTable } : {}), ...admission, customerMessage: selectedTable ? `已選擇${selectedTable}，請說「開始點餐」。` : '內用請先找到座位，再回來告訴我您的桌號；外帶可以選櫃台自取。這裡沒有外送服務。' }
+      }
+      if (name === 'browser_return_table') {
+        parse(strictObject({}), input)
+        if (!journey.tablePath)
+          return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '此點餐入口沒有選桌頁。' }
+        controller.signal.throwIfAborted()
+        presentation.cancel()
+        // PB offers no native change-table control on this menu. Use only the
+        // approved same-store GET route; leave its cart and table choice intact.
+        location.assign(journey.tablePath)
+        return { ok: true, source: 'browser', code: 'table-selection-starting', effect: 'none', customerMessage: '正在返回選桌頁，請重新選擇桌號。' }
       }
       if (name === 'browser_table_select' || name === 'browser_start_ordering')
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '目前不在選桌頁，尚未更換桌號。' }
@@ -694,7 +753,7 @@ export function createPbService() {
         const checkoutState = checkout.read()
         return { ok: true, source: 'browser', observedAt: Date.now(), documentId, menuReady: location.pathname === journey.menuPath && observe().products.length > 0, itemSelectionOpen: productDialog.length > 0, productDialog, search: document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value ?? '', page: location.pathname === journey.cartPath ? 'cart' : 'menu', cart, ...(checkoutState ? { checkout: checkoutState } : {}), ...(products ? { products, dataOnly: true } : { customerMessage: cart.lines.length ? `目前購物車：${describeCartLines(cart.lines)}。小計 ${cart.subtotal} 元。` : '購物車目前沒有餐點。' }) }
       }
-      else if (name === 'browser_checkout_prepare' || name === 'browser_invoice_select' || name === 'browser_notification_phone' || name === 'browser_order_submit') {
+      else if (name === 'browser_checkout_prepare' || name === 'browser_invoice_select' || name === 'browser_notification_phone' || name === 'browser_invoice_donation' || name === 'browser_order_submit') {
         if (localStorage.getItem(blockedKey))
           return { ok: false, source: 'browser', status: 'unknown', effect: 'none', customerMessage: '先前操作仍在確認，請先查看目前訂單畫面，避免重複送出。' }
         if (name === 'browser_order_submit') {
@@ -708,6 +767,11 @@ export function createPbService() {
         if (name === 'browser_invoice_select') {
           state = await checkout.choose(parse(strictObject({ method: pbInvoiceMethodSchema }), input).method, controls)
           await checkout.focus('next', controls)
+        }
+        else if (name === 'browser_invoice_donation') {
+          await checkout.donate(parse(strictObject({ code: text }), input).code, controls)
+          await checkout.focus('next', controls)
+          state = await checkout.prepare()
         }
         else if (name === 'browser_notification_phone') {
           await checkout.phone(parse(strictObject({ phone: text }), input).phone, controls)
@@ -981,6 +1045,7 @@ export function createPbService() {
   function discover(raw: unknown) {
     console.info('Webnavior PB discovery received.')
     const request = parse(discoveryRequestSchema, raw)
+    positionMenu()
     if (active?.id !== request.connectionId)
       active = { id: request.connectionId, operations: new Map() }
     const available = isPbOrderResultUrl(entry, location.href) ? tools.filter(tool => ['browser_state_get', 'browser_reception_reset'].includes(tool.name)) : tools

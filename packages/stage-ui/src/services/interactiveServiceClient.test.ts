@@ -169,6 +169,32 @@ describe('interactive service transport ownership', () => {
     expect(settled).toHaveBeenCalledOnce()
   })
 
+  // Report: this chat, Nov19 — table navigation must settle without reviving menu tools.
+  it.each(['browser_return_table', 'browser_cart_add'])('correlates table navigation receipts only for %s', async (name) => {
+    const receipt = Promise.withResolvers<void>()
+    const first = connection('menu')
+    first.discover = vi.fn(async request => ({ ...request, documentId: 'menu', toolsRevision: 1, tools: [{ name, description: '', inputSchema: { type: 'object' } }] }))
+    first.execute = vi.fn(async (request) => {
+      await receipt.promise
+      return { connectionId: request.connectionId, documentId: request.documentId, operationId: request.operationId, result: { ok: true, source: 'browser', code: 'table-selection-starting', effect: 'none', customerMessage: '正在返回選桌頁。' } }
+    })
+    const client = createInteractiveServiceClient()
+    client.activateTransport('https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table', () => first)
+    await client.waitUntilReady()
+    const old = client.tools.value[0]
+    const pending = client.execute(old, {})
+    const assertion = name === 'browser_return_table'
+      ? expect(pending).resolves.toMatchObject({ code: 'table-selection-starting' })
+      : expect(pending).rejects.toThrow('目前頁面')
+    client.beginNavigation()
+    receipt.resolve()
+    await assertion
+    expect(client.tools.value).toEqual([])
+    expect(client.availability.value).toBe(name === 'browser_return_table' ? 'loading' : 'unavailable')
+    expect(first.execute).toHaveBeenCalledOnce()
+    client.activate()
+  })
+
   it('acknowledges entry while the new document is still loading without restoring old tools', async () => {
     const receipt = Promise.withResolvers<void>()
     const first = connection('table')

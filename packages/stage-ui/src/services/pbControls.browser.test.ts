@@ -530,3 +530,21 @@ it('keeps the original live cart row while its delayed count passes an identical
   expect(clicks).toEqual(['0', '0'])
   expect(Array.from(document.querySelectorAll('input')).map(input => input.value)).toEqual(['3', '2'])
 })
+
+// Report: this chat, Nov19 — actual PB add completed while its product dialog was still leaving.
+it('continues when PB naturally finishes closing the product dialog before the close gesture arrives', async () => {
+  history.replaceState({}, '', '/order/store/1kgJeql/internal_use/menu')
+  document.body.innerHTML = '<div role="dialog"><div class="menu-dialog"><h1>魚丸湯</h1><button class="el-dialog__headerbtn">關閉</button></div></div>'
+  const clicked = vi.fn()
+  document.querySelector('button')!.addEventListener('click', clicked)
+  const controller = new AbortController()
+  const operation = createOperation({ documentId: 'closing', operationId: 'cart-review', signal: controller.signal, follow: async (_target, _label, dispatch) => {
+    document.querySelector('[role=dialog]')!.remove()
+    await dispatch()
+    return true
+  } })
+  const controls = createControls(operation, controller.signal)
+  await expect(controls.close()).resolves.toBeUndefined()
+  expect(clicked).not.toHaveBeenCalled()
+  expect(document.querySelector('[role=dialog]')).toBeNull()
+})

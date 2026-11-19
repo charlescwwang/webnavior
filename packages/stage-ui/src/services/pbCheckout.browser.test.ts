@@ -178,3 +178,44 @@ it('moves focus from completed carrier details to notification phone without sub
   expect(phone.value).toBe('')
   expect(clicked).not.toHaveBeenCalled()
 })
+
+// Report: this chat, Nov18 18:27/Nov19 02:16, reproduced on real PB in 0.6.8.
+it('nov18 history audit: focuses invoice choice when the vendor draws a sibling radio indicator above its input', async () => {
+  const { checkout, controls } = setup()
+  const radio = document.querySelector<HTMLInputElement>('.order-create input[type="radio"]:checked')!
+  radio.style.cssText = 'position:absolute;left:0;top:0;margin:0;width:16px;height:16px;opacity:0'
+  const label = radio.closest('label')!
+  label.style.cssText = 'position:relative;display:block;height:24px;width:240px'
+  label.insertAdjacentHTML('beforeend', '<span class="el-radio__inner" style="position:absolute;left:0;top:0;width:16px;height:16px;border:1px solid blue;background:white"></span>')
+  await expect(checkout.focus('invoice', controls)).resolves.toBeUndefined()
+  expect(document.activeElement).toBe(radio)
+})
+
+// Report: this chat, Nov19 — visible-label targeting must still reject a real overlay.
+it('does not focus invoice through a real dialog covering its label', async () => {
+  const { checkout, controls } = setup()
+  document.body.insertAdjacentHTML('beforeend', '<div role="dialog" style="position:fixed;inset:0;z-index:99999;background:white">PB dialog</div>')
+  await expect(checkout.focus('invoice', controls)).rejects.toThrow('被其他畫面遮住')
+  expect(document.activeElement?.matches('input[type=radio]')).toBe(false)
+})
+
+// Report: this chat, Nov19 — donation voice entry writes only a selected donation field and never submits.
+it('fills a donation code with leading zeroes using the merchant input contract', async () => {
+  const { checkout, controls, clicked } = setup()
+  document.querySelector('.order-create')!.insertAdjacentHTML('beforeend', '<label><input type="radio" name="invoice" value="6">捐贈發票</label><input placeholder="請輸入3~7碼數字">')
+  await checkout.choose('donation', controls)
+  const field = document.querySelector<HTMLInputElement>('input[placeholder="請輸入3~7碼數字"]')!
+  const changed = vi.fn()
+  field.addEventListener('input', changed)
+  await checkout.donate('001', controls)
+  expect(field.value).toBe('001')
+  expect(changed).toHaveBeenCalledOnce()
+  expect(checkout.read()?.fields.find(field => field.kind === 'donation')).toMatchObject({ value: '001', valid: true })
+  expect(clicked).not.toHaveBeenCalled()
+  await expect(checkout.donate('12', controls)).rejects.toThrow('3～7')
+  await expect(checkout.donate('12345678', controls)).rejects.toThrow('3～7')
+  expect(field.value).toBe('001')
+  await checkout.choose('none', controls)
+  await expect(checkout.donate('123', controls)).rejects.toThrow('先選擇')
+  expect(field.value).toBe('001')
+})

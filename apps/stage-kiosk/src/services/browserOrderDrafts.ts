@@ -3,7 +3,7 @@ import type { InferOutput } from 'valibot'
 import type { AdditionProposal, OrderSlot, QuestionSnapshot } from './browserQuestionWindow'
 
 import { explicitServingQuantities, normalizeSlotNumbers } from '@proj-airi/stage-shared/ordering-slots'
-import { parsePbDumplingServings, pbDumplingExtraName, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
+import { parsePbDumplingOrder, parsePbDumplingServings, pbDumplingExtraName, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { productConfigurationSchema } from '@proj-airi/stage-shared/product-configuration'
 import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
 import { array, integer, looseObject, maxLength, maxValue, minLength, minValue, nullable, number, optional, parse, pipe, strictObject, string } from 'valibot'
@@ -130,6 +130,14 @@ export function createBrowserOrderDrafts() {
         const product = facts.products.find(product => product.ref === line.productRef)!
         const configuration = product.configurations[0]
         const slot = { draftId: line.id, productRef: product.ref, name: product.name }
+        // The native add-on is stored as extra pieces, but customers order totals.
+        // Bind this wording only to the verified eight-piece product and option.
+        const pieceGroup = configuration.groups.find(group => group.choices.length === 1 && group.choices[0].name === pbDumplingExtraName)
+        if (product.name === '周氏水餃(最低8顆)' && pieceGroup
+          && (line.quantity === null || line.askGroups.includes(pieceGroup.ref) || line.choices.some(choice => choice.ref === pieceGroup.choices[0].ref && choice.quantity === null))) {
+          const maximum = 8 + Math.min(pieceGroup.maximum, pieceGroup.choices[0].maximum)
+          return { slot: { ...slot, kind: 'dumpling-pieces', groupRef: pieceGroup.ref, maximum, question: `周氏水餃${line.quantity === null ? '每份至少8顆，您要幾顆、幾份？例如10顆2份。' : `已選${line.quantity}份，每份要幾顆？例如10顆；正常是8顆。`}`, choices: [] } }
+        }
         if (line.quantity === null)
           return { slot: { ...slot, kind: 'quantity', maximum: 99, question: `請問「${pbProductName(product.name)}」要幾份？`, choices: [] } }
         for (const choice of line.choices) {
@@ -165,6 +173,29 @@ export function createBrowserOrderDrafts() {
       const line = current(binding)?.lines.find(line => line.id === slot.draftId && line.productRef === slot.productRef)
       if (!line)
         return false
+      if (slot.kind === 'dumpling-pieces') {
+        if (typeof value !== 'string')
+          return false
+        const basic = /^(?:正常|基本|原本)[。！!，,\s]*$/.test(value.trim())
+        const parsed = parsePbDumplingOrder(basic ? '8顆' : value, slot.name, '')
+        if (!parsed || parsed.some(serving => serving.piecesPerServing > slot.maximum))
+          return false
+        const product = parse(orderFactsSchema, raw).products.find(product => product.ref === line.productRef)!
+        const group = product.configurations[0].groups.find(group => group.ref === slot.groupRef)!
+        const extra = group.choices[0]
+        const completed = parsed.map(serving => ({
+          ...line,
+          id: crypto.randomUUID(),
+          // A piece-only answer preserves previously stated servings. Split
+          // answers own separate counts, rather than multiplying every clause.
+          quantity: parsed.length === 1 && !normalizeSlotNumbers(value).includes('份') ? line.quantity ?? serving.quantity : serving.quantity,
+          choices: [...line.choices.filter(choice => choice.ref !== extra.ref), ...(serving.extra ? [{ ref: extra.ref, quantity: serving.extra }] : [])],
+          askGroups: line.askGroups.filter(ref => ref !== group.ref),
+        }))
+        const order = current(binding)!
+        order.lines.splice(order.lines.indexOf(line), 1, ...completed)
+        return true
+      }
       if (slot.kind === 'quantity') {
         if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > slot.maximum)
           return false
@@ -204,7 +235,7 @@ export function createBrowserOrderDrafts() {
 
 /** Closed slot answers update a draft only; a later complete confirmation authorizes writes. */
 export function orderSlotCount(text: string, slot: OrderSlot) {
-  if (slot.kind === 'group')
+  if (slot.kind === 'group' || slot.kind === 'dumpling-pieces')
     return
   const spoken = text.trim().startsWith(slot.name) ? text.trim().slice(slot.name.length) : text.trim()
   const normalized = normalizeSlotNumbers(spoken.replace(/^(?:另一個|另一份)/, '')).replaceAll(/\s/g, '')

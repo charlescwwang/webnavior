@@ -42,3 +42,15 @@ it('keeps all Main workflow instructions on the public business-tool contract', 
     expect(instructions).toContain('add_items_to_cart')
   }
 })
+
+// Report: this chat, Nov19 — Main used promotion-policy as a missing-field question type.
+it('keeps promotion inquiries on the reply tool in every active ordering workflow', () => {
+  for (const page of ['table', 'menu', 'cart', 'checkout'] as const) {
+    const { instructions } = orderingInstructions({ ...context, page })
+    expect(instructions).toContain('「有沒有買一送一／現在有什麼優惠」是活動資訊詢問')
+    expect(instructions).toContain('promotion-policy 不是 ask_customer_question 的 questionType')
+    expect(instructions).toContain('不得當成 customerMessage 朗讀或轉貼')
+    expect(instructions).toContain('關鍵字查詢只補找候選')
+    expect(instructions).toContain('不能因名稱含湯就把湯餃、含湯套餐當成單點湯品')
+  }
+})

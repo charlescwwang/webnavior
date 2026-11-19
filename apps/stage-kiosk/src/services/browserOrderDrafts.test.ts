@@ -1,9 +1,11 @@
+import type { AnswerDecision } from '../../../server/src/services/domain/browser-ordering/contracts'
+
 import { expect, it, vi } from 'vitest'
 
 import { createBrowserDialogue } from './browserDialogue'
 
 function setup() {
-  const answer = vi.fn(async () => ({ kind: 'ANSWER' as const, choiceId: 'confirm', provider: 'main' as const }))
+  const answer = vi.fn(async (): Promise<AnswerDecision> => ({ kind: 'ANSWER', choiceId: 'confirm', provider: 'main' }))
   const dialogue = createBrowserDialogue({ owner: () => 'visitor', documentId: () => 'page', answer })
   const facts = { ok: true, source: 'browser', cart: { version: 'cart', lines: [] }, products: [
     { ref: 'p-1', name: '水餃', price: 64, configurations: [{ version: 'cfg-1', variantRef: '', name: '水餃', unitPrice: 64, groups: [{ ref: 'g-1', name: '加量', required: false, maximum: 10, choices: [{ ref: 'a-1', name: '加水餃', unitPrice: 8, maximum: 10 }] }] }] },
@@ -140,4 +142,65 @@ it('uses the complete single-dish utterance to retain a named add-on despite nar
   const { dialogue, facts, line } = setup()
   const text = '水餃一份，加水餃還沒決定幾顆'
   expect(dialogue.collectOrder(facts, { lines: [{ ...line('p-1', '水餃一份', 1, [{ ref: 'a-1', quantity: null }]), askGroups: ['g-1'] }] }, text)).toMatchObject({ pendingCustomerChoice: { question: expect.stringContaining('幾個') } })
+})
+
+// Report: this chat, Nov19 — native「加量」wording trapped customers in an unclear question.
+it.each([
+  { text: '10顆', quantity: 2, pieces: 10 },
+  { text: '正常', quantity: 2, pieces: 8 },
+  { text: '12顆3份', quantity: 3, pieces: 12 },
+])('asks total dumpling pieces and accepts $text while preserving stated servings', async ({ text, quantity, pieces }) => {
+  const { dialogue, facts, line, respond, answer } = setup()
+  const product = facts.products[0]
+  product.name = '周氏水餃(最低8顆)'
+  product.configurations[0].groups[0].choices[0].name = '水餃1顆'
+  const request = '我要周氏水餃兩份'
+  const result = dialogue.collectOrder(facts, { lines: [{ ...line('p-1', request, 2), askGroups: ['g-1'] }] }, request)
+  expect(result).toMatchObject({ pendingCustomerChoice: { question: '周氏水餃已選2份，每份要幾顆？例如10顆；正常是8顆。' } })
+  expect(dialogue.canAnswerLocally(facts, text)).toBe(true)
+  expect(await respond(text)).toMatchObject({ kind: 'receipt', result: { completeOrder: { proposals: [{ quantity, unitPrice: pieces * 8, selection: { choices: pieces === 8 ? [] : [{ ref: 'a-1', quantity: pieces - 8 }] } }] } } })
+  expect(answer).not.toHaveBeenCalled()
+  expect(dialogue.hasPending()).toBe(false)
+})
+
+// Report: this chat, Nov19 — a natural refusal retires only an unfinished selection.
+it('cancels an unanswered slot locally without changing the cart and accepts a new task', async () => {
+  const { dialogue, facts, line, respond, answer } = setup()
+  dialogue.collectOrder(facts, { lines: [line('p-2', '我要便當', null)] }, '我要便當')
+  expect(dialogue.canAnswerLocally(facts, '先不要了')).toBe(true)
+  expect(await respond('先不要了')).toMatchObject({ result: { customerMessage: '已取消這次選餐，購物車保持不變。' } })
+  expect(facts.cart).toEqual({ version: 'cart', lines: [] })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(answer).not.toHaveBeenCalled()
+  expect(dialogue.collectOrder(facts, { lines: [line('p-2', '便當兩份', 2)] }, '便當兩份')).toMatchObject({ completeOrder: { proposals: [{ quantity: 2 }] } })
+})
+
+// Report: this chat, Nov19 — a plain-language piece question must still support split servings.
+it('retains separate dumpling configurations when a draft answer requests two different servings', async () => {
+  const { dialogue, facts, line, respond } = setup()
+  facts.products[0].name = '周氏水餃(最低8顆)'
+  facts.products[0].configurations[0].groups[0].choices[0].name = '水餃1顆'
+  const request = '我要周氏水餃'
+  expect(dialogue.collectOrder(facts, { lines: [line('p-1', request, null)] }, request)).toMatchObject({ pendingCustomerChoice: { question: '周氏水餃每份至少8顆，您要幾顆、幾份？例如10顆2份。' } })
+  expect(await respond('一份十顆、一份正常')).toMatchObject({ result: { completeOrder: { proposals: [{ quantity: 1, unitPrice: 80 }, { quantity: 1, unitPrice: 64 }] } } })
+})
+
+// Report: this chat, Nov19 — changing topics must retire the old slot rather than repeat it.
+it('releases an unfinished question when Main identifies a new request', async () => {
+  const { dialogue, facts, line, answer, respond } = setup()
+  answer.mockResolvedValueOnce({ kind: 'NEW_REQUEST', provider: 'main' })
+  dialogue.collectOrder(facts, { lines: [line('p-2', '我要便當', null)] }, '我要便當')
+  expect(await respond('先問一下有沒有湯')).toBeUndefined()
+  expect(dialogue.hasPending()).toBe(false)
+  expect(facts.cart.lines).toEqual([])
+})
+
+// Report: this chat, Nov19 — an unrecognized reply must explain how to leave the question safely.
+it('reasks once without requiring the customer to learn a special cancellation command', async () => {
+  const { dialogue, facts, line, answer, respond } = setup()
+  answer.mockResolvedValueOnce({ kind: 'UNCERTAIN', provider: 'main' })
+  dialogue.collectOrder(facts, { lines: [line('p-2', '我要便當', null)] }, '我要便當')
+  expect(await respond('我聽不懂')).toMatchObject({ result: { customerMessage: '請問「便當」要幾份？' } })
+  expect(dialogue.hasPending()).toBe(true)
+  expect(facts.cart.lines).toEqual([])
 })

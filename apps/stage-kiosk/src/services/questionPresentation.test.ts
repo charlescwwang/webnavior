@@ -319,7 +319,7 @@ describe('question presentation receipts', () => {
     previous.record('menu_get', { customerMessage: '我找到：水餃。', items: [{ id: 'd', name: '水餃', price: 80 }] })
     expect(previous.reply()).toBe('我找到：水餃。')
     const current = createMenuReplyWindow()
-    expect(replyFromOperation('已加入牛肉麵。', current.reply(), undefined)).toBe('目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件，或使用畫面選餐。')
+    expect(replyFromOperation('已加入牛肉麵。', current.reply(), undefined)).toBe('目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件。')
     expect(replyFromOperation(current.reply(), '已將紅燒牛肉麵加入購物車，共 1 份。', undefined)).toBe('已將紅燒牛肉麵加入購物車，共 1 份。')
   })
 
@@ -338,7 +338,7 @@ describe('question presentation receipts', () => {
     window.record('menu_get', { customerMessage: '我找到：水餃。', items: [{ id: 'd', name: '水餃', price: 80 }] })
     window.record('cart_get', { customerMessage: '購物車是空的。' })
     expect(window.reply()).toBe('我找到：牛肉麵。 我找到：水餃。 單份基本售價：牛肉麵 NT$150、水餃 NT$80。')
-    expect(replyFromOperation('沒有經過查詢的推薦。', createMenuReplyWindow().reply(), undefined)).toBe('目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件，或使用畫面選餐。')
+    expect(replyFromOperation('沒有經過查詢的推薦。', createMenuReplyWindow().reply(), undefined)).toBe('目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件。')
   })
   it('keeps a cart-only summary grounded without requiring a new menu query', async () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
@@ -576,7 +576,8 @@ it.each(['ADD_ITEM', 'REMOVE_ITEM', 'SET_QUANTITY'].flatMap(intent => ['complete
 it.each(['tool-limit', 'duplicate-tool-call', 'tool-rejected', 'provider-error'] as const)('offers browser ordering recovery after %s instead of a purple error', (reason) => {
   const result = replyFromConversation({ status: 'incomplete', reason, agentMode: 'active', requestedTools: ['get_menu_item_details'], answer: '已加入三份，總共999元。' }, { menu: createMenuReplyWindow(), failureMessage: '內部執行上限與工具錯誤', browserRecovery: { operationAttempted: false, page: 'menu' } })
   expect(result.role).toBe('assistant')
-  expect(result.content).toContain('直接在畫面選餐')
+  expect(result.content).toContain('請再告訴我')
+  expect(result.content).not.toContain('畫面選餐')
   expect(result.content).not.toContain('內部執行上限')
   expect(result.content).not.toContain('已加入')
   expect(result.content).not.toContain('999')
@@ -652,4 +653,49 @@ it('keeps an unsettled final submission on order verification instead of cart re
   const reply = replyFromConversation({ status: 'incomplete', reason: 'provider-error', agentMode: 'active', requestedTools: ['browser_question_answer'] }, { menu, failureMessage: '失敗', browserRecovery: { operationAttempted: true, page: 'cart' } })
   expect(reply.content).toContain('訂單紀錄')
   expect(reply.content).not.toContain('打開購物車')
+})
+
+// Report: this chat, Nov19 — asking for fish after millet porridge appended an old porridge miss.
+it('does not attach an unrelated missing search to the current fish lookup', () => {
+  const menu = createMenuReplyWindow({ sourceUtterance: '那有什麼魚類' })
+  menu.record('search_menu_items', { ok: true, source: 'browser', search: '魚', products: [{ name: '魚丸湯', price: 50 }], customerMessage: '目前查到：魚丸湯，單份 50 元。' })
+  menu.record('search_menu_items', { ok: true, source: 'browser', status: 'not-found', search: '粥', products: [], customerMessage: '目前搜尋沒有找到「粥」。' })
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['search_menu_items', 'search_menu_items'] }, { menu, outcome: '目前搜尋沒有找到「粥」。', failureMessage: '未完成。' })
+  expect(reply.content).toContain('魚丸湯')
+  expect(reply.content).not.toContain('粥')
+})
+
+it('keeps a missing dish that the current customer actually asked alongside a found dish', () => {
+  const menu = createMenuReplyWindow({ sourceUtterance: '有魚丸湯和小米粥嗎' })
+  menu.record('search_menu_items', { ok: true, source: 'browser', search: '魚', customerMessage: '目前查到：魚丸湯，單份 50 元。' })
+  menu.record('search_menu_items', { ok: true, source: 'browser', status: 'not-found', search: '小米粥', customerMessage: '目前搜尋沒有找到「小米粥」。' })
+  expect(menu.reply()).toContain('魚丸湯')
+  expect(menu.reply()).toContain('小米粥')
+})
+
+// Report: this chat, Nov19 — soup lookup rejection was replaced with order-edit recovery.
+it('preserves an actionable menu query rejection instead of asking which order to change', () => {
+  const menu = createMenuReplyWindow({ sourceUtterance: '那有什麼湯？' })
+  menu.record('list_menu_items', { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '這次湯品查詢還沒完成，請再告訴我想找的種類。' })
+  const result = replyFromConversation({ status: 'incomplete', reason: 'tool-rejected', requestedTools: ['list_menu_items'], agentMode: 'active' }, { menu, failureMessage: '失敗', browserRecovery: { operationAttempted: false, page: 'menu' } })
+  expect(result.content).toBe('這次湯品查詢還沒完成，請再告訴我想找的種類。')
+  expect(result.content).not.toContain('送出訂單')
+  expect(result.content).not.toContain('調整哪一項')
+})
+
+// Report: this chat, Nov19 — releasing a question needs a visible receipt, not a generic recovery prompt.
+it.each(['QUESTION_RETRY_LIMIT', 'CHECKOUT_RECOVERY'])('shows the Host %s message even when Main had chosen a question tool', (code) => {
+  const menu = createMenuReplyWindow()
+  menu.record('ask_customer_question', { ok: true, source: 'browser', status: 'clarification', effect: 'none', code, customerMessage: '這題暫時無法接續，我先停止追問。' })
+  expect(replyFromConversation({ status: 'completed', requestedTools: ['ask_customer_question'], agentMode: 'active' }, { menu, failureMessage: '失敗' }).content).toBe('這題暫時無法接續，我先停止追問。')
+})
+
+// Report: this chat, Nov19 — a failed targeted display must not narrate ten unrelated catalog candidates.
+it('keeps a rejected targeted display concise and does not repeat its error or the earlier catalog', () => {
+  const menu = createMenuReplyWindow({ sourceUtterance: '那我要炸的' })
+  menu.record('list_menu_items', { ok: true, source: 'browser', dataOnly: true, products: Array.from({ length: 13 }, (_, index) => ({ name: `不相關餐點${index}`, price: 100 })) })
+  menu.record('point_to_menu_items', { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '這次餐點介紹尚未完成，正在重新確認。' })
+  const reply = replyFromConversation({ status: 'incomplete', reason: 'tool-rejected', requestedTools: ['list_menu_items', 'point_to_menu_items'], agentMode: 'active' }, { menu, failureMessage: '失敗', browserRecovery: { operationAttempted: false, page: 'menu' } })
+  expect(reply.content).not.toContain('不相關')
+  expect(reply.content).toBe('這次餐點介紹尚未完成，正在重新確認。')
 })

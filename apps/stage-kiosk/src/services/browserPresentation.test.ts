@@ -136,3 +136,23 @@ it('does not invent a prepared recommendation owner before a reception starts', 
   expect(() => publish('resolved', { ok: true, source: 'browser', presentation: { products, cue: 'shown' } })).not.toThrow()
   expect(presentation.shownRecommendations()).toEqual([])
 })
+
+// Report: this chat, Nov19 — text replies skipped frames hidden by an older search.
+it.each(['menu', 'cart'])('reveals text reply items only on an already active %s page', async (page) => {
+  const { presentation, publish, execute } = setup()
+  publish('called', undefined, 'read', 'browser_cart_get')
+  publish('resolved', { ok: true, source: 'browser', page, products: [{ ref: 'fish', name: '魚丸湯', price: 50 }] }, 'read', 'browser_cart_get')
+  await presentation.speak('有魚丸湯，50元。', { revealMenu: true })
+  expect(execute).toHaveBeenCalledWith(expect.anything(), { productRefs: ['fish'], mode: 'information', preservePage: page !== 'menu' })
+})
+
+// Report: this chat, Nov19 — the soup inside a combo name must not point at the standalone soup.
+it('points to the complete combo mention without also selecting its contained soup name', async () => {
+  const { presentation, publish, execute } = setup()
+  publish('called')
+  publish('resolved', { ok: true, source: 'browser', products: [{ ref: 'combo', name: 'B 套餐(三杯雞飯+ 蛋花湯)' }, { ref: 'soup', name: '蛋花湯' }] })
+  await presentation.speak('B 套餐(三杯雞飯+ 蛋花湯)，單份145元。')
+  expect(execute).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ productRefs: ['combo'] }))
+  await presentation.speak('B 套餐(三杯雞飯+ 蛋花湯)，另外還有單點蛋花湯。')
+  expect(execute).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ productRefs: ['combo', 'soup'] }))
+})

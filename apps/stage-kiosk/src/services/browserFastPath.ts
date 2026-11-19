@@ -29,6 +29,15 @@ const factsSchema = looseObject({
   products: array(looseObject({ ref: string(), name: string(), price: number(), kind: string(), priceType: number(), configurations: array(productConfigurationSchema) })),
 })
 
+function chooseRecommendations(refs: readonly string[]) {
+  const pool = [...refs]
+  const chosen: string[] = []
+  // Sampling without replacement preserves the finite batch limit.
+  while (pool.length && chosen.length < browserRecommendationLimit)
+    chosen.push(...pool.splice(Math.floor(Math.random() * pool.length), 1))
+  return chosen
+}
+
 /**
  * PB supplies fresh references; Jev selects only a semantic intent. This adapter
  * compiles narrow literal slots and sends the actual operation through the same
@@ -171,6 +180,20 @@ export function createBrowserFastPathSource(io: {
           offered.push({ id: 'intent:new-request', description: `提出其他需求或查詢，不是在回答「${waitingFor.question}」；例如詢問每份內容、顆數、價格或修改餐點。保留購物車，不同意結帳或購買。` })
           plans['intent:new-request'] = { name: 'service-new-request', input: { questionId: waitingFor.questionId } }
         }
+        const facts = safeParse(factsSchema, raw)
+        const shown = io.shownRecommendations?.() ?? []
+        const recommendationQuestion = waitingFor.purpose === 'browser-product-choice' || (waitingFor.purpose === 'browser-service-question' && !io.checkoutStep?.(raw))
+        const productWindowOpen = raw && typeof raw === 'object' && 'itemSelectionOpen' in raw && raw.itemSelectionOpen
+        if (facts.success && recommendationQuestion && shown.length && io.tools.some(tool => tool.name === 'browser_present') && !productWindowOpen) {
+          const eligible = io.recommendationPool?.(facts.output.products) ?? facts.output.products.map(product => product.ref)
+          const available = io.previousRecommendations?.(eligible) ?? eligible.filter(ref => !shown.includes(ref))
+          const refs = chooseRecommendations(available)
+          if (refs.length) {
+            const names = refs.map(ref => facts.output.products.find(product => product.ref === ref)!.name)
+            offered.push({ id: 'intent:recommend-other', description: `顧客接著問「還有什麼／其他推薦／換一批」：另介紹${names.join('、')}，不重問上一批想點哪道，不加入購物車，不修改忌口或預算。只在要求其他推薦時使用，不用來回答特定餐名或選擇上一批餐點。` })
+            plans['intent:recommend-other'] = { name: 'browser_present', input: { productRefs: refs, mode: 'other-recommendations' } }
+          }
+        }
         issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans, answerIds: offered.map(choice => choice.id) }
         return { ...formContext, phase: 'ordering', waitingFor, candidates: offered }
       }
@@ -284,15 +307,7 @@ export function createBrowserFastPathSource(io: {
             batches.push({ id: 'intent:recommend-other', mode: 'other-recommendations', refs: available, description: '顧客要求換其他推薦：排除上一批已介紹的餐點，從符合目前條件的其他餐點隨機挑選最多三道；不是搜尋某個餐名或餐類。' })
         }
         for (const batch of batches) {
-          const pool = [...batch.refs]
-          const refs: string[] = []
-          if (batch.id === 'intent:recommend' && requestedRefs.length) {
-            refs.push(...pool)
-          }
-          else {
-            while (pool.length && refs.length < browserRecommendationLimit)
-              refs.push(...pool.splice(Math.floor(Math.random() * pool.length), 1))
-          }
+          const refs = batch.id === 'intent:recommend' && requestedRefs.length ? [...batch.refs] : chooseRecommendations(batch.refs)
           if (refs.length) {
             issued.plans[batch.id] = { name: 'browser_present', input: { productRefs: refs, mode: batch.mode } }
             const names = refs.map(ref => facts.products.find(product => product.ref === ref)!.name)

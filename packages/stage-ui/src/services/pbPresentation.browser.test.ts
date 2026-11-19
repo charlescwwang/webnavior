@@ -18,6 +18,21 @@ function setup() {
   return { presentation, target }
 }
 
+// Report: this chat, Nov19 — an already visible menu batch must remain manually usable.
+it('allows customer clicks to take over a passive batch without an introduction lock', async () => {
+  const { presentation, target } = setup()
+  const second = document.createElement('button')
+  second.textContent = '每日湯品'
+  document.body.append(second)
+  let clicks = 0
+  second.addEventListener('click', () => clicks++)
+  const products = [{ ref: 'meal', name: '每日新餐', price: 100 }, { ref: 'soup', name: '每日湯品', price: 40 }]
+  expect(await presentation.show(products, target, false, [second])).toMatchObject({ cue: 'shown', products })
+  await page.getByRole('button', { name: '每日湯品', exact: true }).click()
+  expect(clicks).toBe(1)
+  expect(document.querySelector('[data-webnavior-presentation]')).toBeNull()
+})
+
 // Report: this chat, Nov14; customer input cancelled introductions instead of being locked.
 it('blocks real customer clicks throughout an introduction and releases after failure', async () => {
   const { presentation, target } = setup()
@@ -216,4 +231,23 @@ it('places the cue in the top layer above a modal without intercepting its real 
   finally {
     modal.close()
   }
+})
+
+// Report: this chat, Nov19 screenshot — all cards were framed but only the first received the hand.
+it('tours every visible highlighted dish without locking clicks or replacing the batch', async () => {
+  const { presentation, target } = setup()
+  const second = document.createElement('button')
+  second.textContent = '每日湯品'
+  second.style.cssText = 'display:block;width:250px;height:100px;margin:20px'
+  document.body.append(second)
+  const products = [{ ref: 'meal', name: '每日新餐', price: 100 }, { ref: 'soup', name: '每日湯品', price: 40 }]
+  expect(await presentation.show(products, target, false, [second])).toMatchObject({ cue: 'shown', products })
+  const batch = document.querySelector<HTMLElement>('[data-webnavior-presentation]')!
+  await expect.poll(() => batch.dataset.pointedProductRef).toBe('meal')
+  expect(JSON.parse(batch.dataset.productNames!)).toEqual(['每日新餐', '每日湯品'])
+  await expect.poll(() => batch.dataset.pointedProductRef).toBe('soup')
+  expect(document.querySelector('[data-webnavior-presentation]')).toBe(batch)
+  await page.screenshot({ path: '__screenshots__/pb-passive-batch-tour.png' })
+  await page.getByRole('button', { name: '每日湯品', exact: true }).click()
+  expect(document.querySelector('[data-webnavior-presentation]')).toBeNull()
 })

@@ -137,6 +137,8 @@ export function createPresentation() {
       hand.style.top = `${position.y}px`
       const label = document.createElement('div')
       label.className = 'label'
+      // Keep action descriptions in diagnostic receipts; the hand and frame are sufficient on the merchant page.
+      label.hidden = true
       label.textContent = control?.label ?? products.map(product => product.name).join('、')
       shadow.append(style, ...frames.map(({ frame }) => frame), hand, label)
       document.documentElement.append(container)
@@ -222,22 +224,71 @@ export function createPresentation() {
       }
       if (signal.aborted)
         return { products: [], cue: 'cancelled' }
-      const rect = target.getBoundingClientRect()
-      if (!target.isConnected || rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.top >= innerHeight) {
+      async function point(element: HTMLElement, index: number) {
+        const rect = element.getBoundingClientRect()
+        if (!element.isConnected || rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.top >= innerHeight)
+          return false
+        const destination = { x: Math.max(4, Math.min(rect.left + rect.width / 2, innerWidth - 48)), y: Math.max(4, Math.min(rect.top + rect.height / 2, innerHeight - 48)) }
+        const duration = reduced ? 0 : travelDuration(Math.hypot(destination.x - position.x, destination.y - position.y))
+        hand.style.left = `${destination.x}px`
+        hand.style.top = `${destination.y}px`
+        container.dataset.phase = 'moving'
+        const movement = hand.animate([{ translate: `${position.x - destination.x}px ${position.y - destination.y}px` }, { translate: '0px 0px' }], { duration, easing: 'ease-in-out', fill: 'forwards' })
+        signal.addEventListener('abort', () => movement.cancel(), { once: true })
+        await wait(duration)
+        if (signal.aborted)
+          return false
+        position = destination
+        container.dataset.phase = 'hovering'
+        if (products[index])
+          container.dataset.pointedProductRef = products[index].ref
+        return true
+      }
+      function settle() {
+        container.dataset.phase = 'settled'
+        // A visible frame expires independently; it is never a durable target.
+        if (!signal.aborted) {
+          const expiry = setTimeout(() => {
+            if (active === owner)
+              cancel()
+          }, 8000)
+          signal.addEventListener('abort', () => clearTimeout(expiry), { once: true })
+        }
+      }
+      if (!press && frames.length > 1) {
+        // The verified batch is already visible. Return that evidence now so
+        // speech and a follow-up question need not wait for the optional tour.
+        // Its single owner keeps every frame and visits each card, without an
+        // introduction lock or scrolling the customer's page.
+        void (async () => {
+          for (const [index, { element }] of frames.entries()) {
+            if (!await point(element, index)) {
+              if (active === owner)
+                cancel()
+              return
+            }
+            await wait(Math.max(pace.dwellMs, holdMs))
+            if (signal.aborted)
+              return
+          }
+          settle()
+        })().catch(() => {
+          // Optional presentation failure cannot dispatch or replay a control.
+          if (active === owner)
+            cancel()
+        })
+        // Let synchronous merchant rendering settle before publishing visible
+        // evidence; a reused/removed card must not become a successful receipt.
+        await wait(0)
+        if (signal.aborted)
+          return { products: [], cue: 'cancelled' }
+        return { products, cue: 'shown', durationMs: performance.now() - startedAt }
+      }
+      if (!await point(target, 0)) {
         if (active === owner)
           cancel()
-        return { products, cue: 'target-unavailable' }
+        return signal.aborted ? { products: [], cue: 'cancelled' } : { products, cue: 'target-unavailable' }
       }
-      const destination = { x: Math.max(4, Math.min(rect.left + rect.width / 2, innerWidth - 48)), y: Math.max(4, Math.min(rect.top + rect.height / 2, innerHeight - 48)) }
-      const duration = reduced ? 0 : travelDuration(Math.hypot(destination.x - position.x, destination.y - position.y))
-      hand.style.left = `${destination.x}px`
-      hand.style.top = `${destination.y}px`
-      container.dataset.phase = 'moving'
-      const movement = hand.animate([{ translate: `${position.x - destination.x}px ${position.y - destination.y}px` }, { translate: '0px 0px' }], { duration, easing: 'ease-in-out', fill: 'forwards' })
-      signal.addEventListener('abort', () => movement.cancel(), { once: true })
-      await wait(duration)
-      position = destination
-      container.dataset.phase = 'hovering'
       if (press && !signal.aborted) {
         // Actionability and a readable pause share the same time window. Final
         // identity/current-owner checks still run at the actual dispatch boundary.
@@ -279,15 +330,7 @@ export function createPresentation() {
       }
       if (!press && holdMs > 0)
         await wait(holdMs)
-      container.dataset.phase = 'settled'
-      // A visible frame expires independently; it is never a durable target.
-      if (!signal.aborted) {
-        const expiry = setTimeout(() => {
-          if (active === owner)
-            cancel()
-        }, 8000)
-        signal.addEventListener('abort', () => clearTimeout(expiry), { once: true })
-      }
+      settle()
       return signal.aborted ? { products: [], cue: 'cancelled', durationMs: performance.now() - startedAt } : { products, cue: 'shown', durationMs: performance.now() - startedAt }
     },
   }

@@ -2,6 +2,7 @@ import type { ProductPresentation } from '@proj-airi/stage-shared/product-presen
 import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/services/interactiveServiceClient'
 
 import { pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
+import { productMentions } from '@proj-airi/stage-shared/product-discovery'
 import { browserPresentationInputSchema, productPresentationSchema } from '@proj-airi/stage-shared/product-presentation'
 import { toOrderingTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { array, looseObject, number, optional, safeParse, string } from 'valibot'
@@ -17,6 +18,7 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
   let sequence = 0
   let latestFacts = 0
   let latestCue = 0
+  let currentPage: string | undefined
   let speechCues: Promise<void> = Promise.resolve()
   let preparedRecommendation: { owner: string, documentId: string, refs: string[] } | undefined
   // Only accepted native presentations count. Scope by visitor/document, not
@@ -48,6 +50,8 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
     const result = event.result as Record<string, unknown>
     if (result.ok !== true || result.source !== 'browser')
       return
+    if (typeof result.page === 'string')
+      currentPage = result.page
     const facts = safeParse(array(looseObject({ ref: string(), name: string(), price: optional(number()) })), result.products)
     if (facts.success && owner.sequence >= latestFacts) {
       latestFacts = owner.sequence
@@ -98,6 +102,7 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
     if (value !== 'ready') {
       clear()
       products = []
+      currentPage = undefined
       recommendations = undefined
     }
   })
@@ -115,6 +120,10 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
     current,
     introducing,
     cancel,
+    /** Names from the current document's verified reads; hints confer no ordering authority. */
+    menuNames() {
+      return client.availability.value === 'ready' ? products.map(product => product.name).filter(name => name.length <= 100).slice(0, 200) : []
+    },
     shownRecommendations() {
       return recommendations && recommendations.owner === visitorOwner() && recommendations.documentId === client.getDocumentId() ? [...recommendations.refs] : []
     },
@@ -129,22 +138,28 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
       return refs.filter(ref => !recommendations?.refs.includes(ref))
     },
     /** Match only previously observed unique names, then revalidate refs in PB. */
-    async speak(text: string) {
+    async speak(text: string, options: { revealMenu?: boolean } = {}) {
       const spokenText = toOrderingTraditionalChinese(text)
       const spokenName = (name: string) => toOrderingTraditionalChinese(pbProductName(name))
-      const refs = products.filter(product => spokenText.includes(spokenName(product.name)) && products.filter(other => spokenName(other.name) === spokenName(product.name)).length === 1).sort((a, b) => spokenText.indexOf(spokenName(a.name)) - spokenText.indexOf(spokenName(b.name))).slice(0, 10).map(product => product.ref)
+      const labels = products.map(product => ({ ...product, name: spokenName(product.name) }))
+      // The full combo owns its text span. A separately mentioned soup still
+      // gets its own cue; a contained ingredient name does not create one.
+      const refs = productMentions(labels, spokenText).filter(({ product }) => labels.filter(other => other.name === product.name).length === 1).slice(0, 10).map(({ product }) => product.ref)
       const tool = client.tools.value.find(tool => tool.name === 'browser_present')
       if (!refs.length || !tool || client.availability.value !== 'ready')
         return
       const owner = epoch
       const visitor = visitorOwner()
       const documentId = client.getDocumentId()
+      // Text has no later playback segment to retry a skipped cue. Only a
+      // freshly observed menu may reveal hidden cards; never leave checkout.
+      const preservePage = !options.revealMenu || currentPage !== 'menu'
       speechCues = speechCues.then(async () => {
         if (owner !== epoch || visitor !== visitorOwner() || documentId !== client.getDocumentId())
           return
-        // Native batches retain one frame per dish and its reading dwell;
-        // separate single-dish calls would drop that dwell to zero.
-        await client.execute(tool, { productRefs: refs, mode: 'information', preservePage: true })
+        // One native batch owns the full spoken/text mention order. Visible
+        // dishes frame together; offscreen text items may reveal their menu.
+        await client.execute(tool, { productRefs: refs, mode: 'information', preservePage })
       }).catch(() => { /* Optional visual failure does not stop the customer reply. */ })
       await speechCues
     },

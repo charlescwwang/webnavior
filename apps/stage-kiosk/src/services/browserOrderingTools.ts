@@ -3,13 +3,13 @@ import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/service
 import type { Tool } from '@xsai/shared-chat'
 
 import { errorMessageFrom } from '@moeru/std'
-import { customerReplySchema, orderingNextActions, orderingTools } from '@proj-airi/stage-shared/ordering-tools'
+import { customerQuestionTypeSchema, customerReplySchema, orderingNextActions, orderingTools } from '@proj-airi/stage-shared/ordering-tools'
 import { pbInvoiceMethodSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { pbDumplingExtraCount, pbDumplingExtraName, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { resolveTableName } from '@proj-airi/stage-shared/table-names'
 import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
 import { rawTool } from '@xsai/tool'
-import { array, integer, looseObject, maxLength, maxValue, minLength, minValue, number, optional, parse, picklist, pipe, safeParse, strictObject, string } from 'valibot'
+import { array, integer, looseObject, maxLength, maxValue, minLength, minValue, number, optional, parse, picklist, pipe, safeParse, strictObject, string, ValiError } from 'valibot'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { cartLineLabelSchema } from '../../../server/src/services/domain/browser-ordering/contracts'
@@ -25,6 +25,18 @@ const orderingFactsSchema = looseObject({ ...orderFactsSchema.entries, cart: loo
 const targetSchema = strictObject({ name: text, configuration: optional(pipe(string(), maxLength(2000))), note: optional(pipe(string(), maxLength(200))) })
 const mealSchema = strictObject({ ...mealFields, quantity, copyFrom: optional(targetSchema) })
 const clientError = (message: string) => ({ ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: message })
+
+// Only messages constructed at this domain boundary are customer-facing.
+// Transport, schema and unexpected runtime exceptions remain diagnostic receipts.
+class CustomerInputError extends Error {}
+
+function clientFailure(error: unknown) {
+  return {
+    ...clientError(error instanceof CustomerInputError ? error.message : orderingMessages['zh-Hant'].toolInputRejected),
+    explanation: errorMessageFrom(error),
+    ...(error instanceof ValiError ? { code: 'INVALID_BROWSER_DATA' } : {}),
+  }
+}
 
 /** Compiles customer-facing names and quantities into the existing verified PB executor. */
 export function createBrowserOrderingTools(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>): Tool[] {
@@ -43,29 +55,29 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
   function resolveMeal(facts: Facts, meal: ReturnType<typeof parse<typeof mealSchema>>, inherited?: Facts['cart']['lines'][number]) {
     const products = matchingProducts(facts.products, meal.name)
     if (products.length !== 1)
-      throw new Error(`無法確定「${meal.name}」是哪道餐點，請先確認名稱。`)
+      throw new CustomerInputError(`無法確定「${meal.name}」是哪道餐點，請先確認名稱。`)
     const product = products[0]
     const configurations = product.configurations.filter(configuration => !meal.variant || configuration.name === meal.variant)
     if (configurations.length !== 1)
-      throw new Error(`請先確認「${meal.name}」要哪種規格。`)
+      throw new CustomerInputError(`請先確認「${meal.name}」要哪種規格。`)
     const configuration = configurations[0]
     const source = meal.copyFrom ? targetRows(facts, meal.copyFrom)[0] : inherited
     if (source && (source.productRef !== product.ref || source.options === undefined || configuration.variantRef))
-      throw new Error('尚無法核對原餐的完整配置，請先確認規格與加料。')
+      throw new CustomerInputError('尚無法核對原餐的完整配置，請先確認規格與加料。')
     const choices = (source?.options ?? []).map((choice) => {
       const options = configuration.groups.flatMap(group => group.choices).filter(option => option.name === choice.name)
       if (options.length !== 1)
-        throw new Error(`尚無法唯一對應原餐的「${choice.name}」選項。`)
+        throw new CustomerInputError(`尚無法唯一對應原餐的「${choice.name}」選項。`)
       return { ref: options[0].ref, quantity: choice.quantity }
     })
     const requested = meal.options ?? []
     if (new Set(requested.map(choice => JSON.stringify([choice.group, choice.name]))).size !== requested.length)
-      throw new Error('同一加料不能重複指定，請確認每份加量。')
+      throw new CustomerInputError('同一加料不能重複指定，請確認每份加量。')
     for (const choice of requested) {
       const groups = configuration.groups.filter(group => group.name === choice.group)
       const options = groups.length === 1 ? groups[0].choices.filter(option => option.name === choice.name) : []
       if (options.length !== 1)
-        throw new Error(`無法確定「${choice.group}／${choice.name}」的選項，請重新確認。`)
+        throw new CustomerInputError(`無法確定「${choice.group}／${choice.name}」的選項，請重新確認。`)
       const index = choices.findIndex(candidate => candidate.ref === options[0].ref)
       if (index >= 0)
         choices.splice(index, 1)
@@ -78,10 +90,10 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
       // the unique observed dumpling choice, never a group title or guessed ID.
       const options = configuration.groups.flatMap(group => group.choices.filter(choice => choice.name === pbDumplingExtraName))
       if (options.length !== 1)
-        throw new Error('網站水餃加量選項已變更，請先確認。')
+        throw new CustomerInputError('網站水餃加量選項已變更，請先確認。')
       const option = options[0]
       if (requested.some(choice => choice.name === pbDumplingExtraName && choice.quantity !== extra))
-        throw new Error('每份顆數與指定加量不一致，請重新確認。')
+        throw new CustomerInputError('每份顆數與指定加量不一致，請重新確認。')
       const index = choices.findIndex(choice => choice.ref === option.ref)
       if (index >= 0)
         choices.splice(index, 1)
@@ -98,10 +110,10 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
     const canonicalName = products.length === 1 ? products[0].name : target.name
     const rows = facts.cart.lines.filter(line => pbProductName(line.name) === pbProductName(canonicalName) && (target.configuration === undefined || (line.description ?? '') === target.configuration) && (target.note === undefined || line.note === target.note))
     if (!rows.length)
-      throw new Error(`購物車裡沒有找到「${target.name}」。`)
+      throw new CustomerInputError(`購物車裡沒有找到「${target.name}」。`)
     const first = rows[0]
     if (rows.some(line => line.productRef !== first.productRef || line.configuration !== first.configuration || line.note !== first.note || line.unitPrice !== first.unitPrice))
-      throw new Error(`購物車有不同配置的「${target.name}」，請先確認要修改哪一項。`)
+      throw new CustomerInputError(`購物車有不同配置的「${target.name}」，請先確認要修改哪一項。`)
     return rows
   }
   function resolveTarget(facts: Facts, target: ReturnType<typeof parse<typeof targetSchema>>) {
@@ -130,6 +142,11 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         // when Main repeats the compressed ASR code as its proposed tableName.
         if (raw && typeof raw === 'object' && 'pendingCustomerChoice' in raw && raw.pendingCustomerChoice)
           return raw
+        // Menu/cart snapshots have no tableChoices. Return to the real table
+        // page before resolving a new name; never parse them as table entries.
+        const page = safeParse(looseObject({ page: string() }), raw)
+        if (page.success && ['menu', 'cart', 'checkout'].includes(page.output.page))
+          return call('browser_return_table', {})
         const entry = parse(looseObject({ tableChoices: array(string()), selectedTable: optional(string()) }), raw)
         const selected = resolveTableName(tableName ?? entry.selectedTable ?? '', entry.tableChoices)
         if (!selected)
@@ -140,7 +157,22 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         const { criteria } = parse(strictObject({ criteria: optional(recommendationCriteriaSchema) }), input)
         const facts = await read()
         const currentCriteria = browserRecommendationCriteria(criteria, facts.products)
-        return { ok: true, source: 'browser', dataOnly: true, products: filterBrowserRecommendations(facts.products), recommendationCriteria: currentCriteria }
+        if (!currentCriteria.ok) {
+          if (currentCriteria.reason === 'exclusion') {
+            return { ...clientError(orderingMessages['zh-Hant'].recovery.lookup), code: 'INVALID_TOOL_ARGUMENTS', dataOnly: true, explanation: '顧客本句沒有拒絕餐點或忌口的語意依據，尚未更新推薦條件。excludedTerms 只代表不要的品項；「我要炸的」是正向需求，不能填 excludedTerms=[炸]。請移除錯誤排除，依原話搜尋炸、挑出炸雞腿便當及炸排骨便當，再以 information 呈現符合的菜單；不要列出不相關的全菜單，也不把前一次烤的查無當本次問題。' }
+          }
+          return {
+            ...clientError(orderingMessages['zh-Hant'].recovery.lookup),
+            code: 'INVALID_TOOL_ARGUMENTS',
+            dataOnly: true,
+            availableCategories: currentCriteria.categories,
+            // This is candidate evidence from the current full catalog, not a
+            // claim that a substring or invented category matches every product.
+            products: facts.products.map(product => ({ name: product.name, price: product.price, aliases: product.aliases, ...(typeof product.category === 'string' ? { category: product.category } : {}), ...(typeof product.description === 'string' ? { description: product.description } : {}) })),
+            explanation: 'criteria.category 必須使用 availableCategories 中的完整分類名稱；沒有相符分類不代表沒有餐點。products 是本輪完整菜單候選，優先依顧客語意、已知品名／分類／內容挑選真正符合的品項，再用 point_to_menu_items purpose=information 介紹並框選。問湯品不能只因名稱含湯就納入湯餃或含湯套餐；資料不足才查 get_menu_item_details。必要時 search_menu_items 可補找候選，關鍵字相符不是餐類已核實。此輪只讀取菜單，未操作網站或改變推薦條件／購物車，請繼續完成原查詢。',
+          }
+        }
+        return { ok: true, source: 'browser', dataOnly: true, products: filterBrowserRecommendations(facts.products), recommendationCriteria: currentCriteria.criteria }
       }
       if (name === 'list_cart_items') {
         parse(strictObject({}), input)
@@ -179,10 +211,14 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         const eligible = purpose !== 'information' ? filterBrowserRecommendations(facts.products) : facts.products
         const refs = names.map((name) => {
           const found = matchingProducts(eligible, name)
+          if (found.length !== 1 && matchingProducts(facts.products, name).length === 1)
+            return undefined
           if (found.length !== 1)
-            throw new Error(`無法確定要介紹的餐點「${name}」。`)
+            throw new CustomerInputError(`無法確定要介紹的餐點「${name}」。`)
           return found[0].ref
         })
+        if (refs.includes(undefined))
+          return { ...clientError(orderingMessages['zh-Hant'].recovery.lookup), code: 'INVALID_TOOL_ARGUMENTS', dataOnly: true, explanation: '指定餐點確實存在，只是不符合目前保留的推薦條件，不能說找不到或無法確定。顧客明確指定餐點或要求查某類時，改用 point_to_menu_items purpose=information 介紹實際符合的餐點；這不會清除其他忌口／預算，也不加入購物車。需要購買且未說份數時接續 ask_customer_question questionType=quantity。' }
         return call('browser_present', { productRefs: refs, mode: purpose })
       }
       if (name === 'add_items_to_cart') {
@@ -203,7 +239,7 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
           }
           catch (error) {
             // Earlier verified writes remain real even if a later read fails.
-            return batchResult([...results, clientError(errorMessageFrom(error) ?? '後續餐點尚未完成。')])
+            return batchResult([...results, clientFailure(error)])
           }
           results.push(result)
           const receipt = parse(looseObject({ status: optional(string()) }), result)
@@ -241,7 +277,7 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
             result = await call('browser_cart_remove', resolveTarget(await read(), target))
           }
           catch (error) {
-            return batchResult([...results, clientError(errorMessageFrom(error) ?? '後續餐點尚未完成。')])
+            return batchResult([...results, clientFailure(error)])
           }
           results.push(result)
           if (parse(looseObject({ status: optional(string()) }), result).status !== 'verified')
@@ -270,12 +306,27 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         parse(strictObject({}), input)
         return cancelBrowserItemSelection(client)
       }
+      if (name === 'return_to_table') {
+        parse(strictObject({}), input)
+        return call('browser_return_table', {})
+      }
       if (name === 'return_to_menu' || name === 'open_cart') {
         parse(strictObject({}), input)
         return call(name === 'return_to_menu' ? 'browser_return_menu' : 'browser_cart_review', {})
       }
       if (name === 'ask_customer_question') {
-        const question = parse(strictObject({ questionType: picklist(['table', 'item', 'quantity', 'option', 'purchase-recommendation', 'cancel-and-search', 'cart-target', 'price-range']), name: optional(text), query: optional(pipe(string(), maxLength(200))) }), input)
+        const requested = safeParse(strictObject({ questionType: customerQuestionTypeSchema, name: optional(text), query: optional(pipe(string(), maxLength(200))) }), input)
+        // Reject before even reading PB: only this boundary proves that a bounded
+        // model correction cannot replay a website or cart operation.
+        if (!requested.success) {
+          return {
+            ...clientError(orderingMessages['zh-Hant'].toolInputRejected),
+            code: 'INVALID_TOOL_ARGUMENTS',
+            dataOnly: true,
+            explanation: `ask_customer_question 只接受 questionType=${customerQuestionTypeSchema.options.join('、')}，不能填入 replyType。活動、買一送一或優惠券說明使用 reply_to_customer，參數為 {"replyType":"promotion-policy"}；不承諾未核實的活動。尚未讀取或操作網站，請依顧客原句修正工具。`,
+          }
+        }
+        const question = requested.output
         if (question.name && ['quantity', 'option', 'purchase-recommendation'].includes(question.questionType)) {
           const facts = await read()
           const products = matchingProducts(facts.products, question.name)
@@ -288,7 +339,11 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         if (question.questionType === 'item')
           return call('browser_clarify_product', { query: question.query ?? question.name ?? '' })
         if (question.questionType === 'table') {
-          const entry = parse(looseObject({ tableChoices: array(string()), selectedTable: optional(string()), customerMessage: string() }), await readBrowserOrderingFacts(client))
+          const raw = await readBrowserOrderingFacts(client)
+          const page = safeParse(looseObject({ page: string() }), raw)
+          if (page.success && ['menu', 'cart', 'checkout'].includes(page.output.page))
+            return call('browser_return_table', {})
+          const entry = parse(looseObject({ tableChoices: array(string()), selectedTable: optional(string()), customerMessage: string() }), raw)
           // Preserve the fresh table read's unavailable-table explanation. A
           // generic question must not replace an A9 rejection with an A1 offer.
           const message = entry.customerMessage
@@ -317,7 +372,9 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
       throw new Error(`尚未提供此操作：${unhandled}`)
     }
     catch (error) {
-      return clientError(errorMessageFrom(error) ?? '操作尚未完成，請重新確認需求。')
+      // Do not label unknown readback/runtime failures as safe argument repair:
+      // unlike pre-dispatch validation, they cannot authorize replaying an effect.
+      return clientFailure(error)
     }
   }
   return (Object.keys(orderingTools) as OrderingToolName[]).map(name => rawTool({

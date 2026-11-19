@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto'
 
 import { executionResultSchema } from '@proj-airi/stage-shared/interactive-service'
 import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
-import { isPbJourneyPage, isPbOrderResultUrl, isPbTableEntryUrl, menuEntryReceiptSchema, readPbJourney } from '@proj-airi/stage-shared/pb-journey'
+import { isPbJourneyPage, isPbOrderResultUrl, isPbTableEntryUrl, menuEntryReceiptSchema, readPbJourney, tableSelectionReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
 import { WebContentsView } from 'electron'
 import { safeParse } from 'valibot'
 
@@ -246,6 +246,18 @@ export class ServiceSurface {
         && this.view === view && this.hostGeneration === hostGeneration && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey) {
         // This acknowledges one native click, not merchant acceptance/payment.
         // The result page permits only the separate Host state reader, never editor tools.
+        return result
+      }
+      const returned = receipt.success && safeParse(tableSelectionReceiptSchema, receipt.output.result)
+      if (kind === 'execute' && request.name === 'browser_return_table' && before?.tablePath
+        && receipt.success && receipt.output.connectionId === request.connectionId && receipt.output.documentId === request.documentId && receipt.output.operationId === request.operationId
+        && returned && returned.success
+        && this.navigationTarget && new URL(this.navigationTarget).origin === before.origin && new URL(this.navigationTarget).pathname === before.tablePath
+        && !new URL(this.navigationTarget).search && !new URL(this.navigationTarget).hash
+        && this.view === view && !this.failed && this.hostGeneration === hostGeneration && this.navigation > generation
+        && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey) {
+        // Only this request's same-store table navigation can cross retirement;
+        // it cannot settle a cart write or restore the previous document tools.
         return result
       }
       const started = receipt.success && safeParse(menuEntryReceiptSchema, receipt.output.result)

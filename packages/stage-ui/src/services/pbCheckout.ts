@@ -109,7 +109,7 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
     },
     /** Scrolls/focuses the current entry step without filling or submitting it. */
     async focus(step: 'invoice' | 'next', controls: ReturnType<typeof createControls>) {
-      const locate = () => {
+      const field = () => {
         const state = read()
         const selected = state?.methods.find(method => method.selected)
         if (!state || !selected)
@@ -124,9 +124,15 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
         const invalidContact = state.fields.find(field => ['phone', 'email'].includes(field.kind) && field.value && !field.valid)
         return notificationField(invalidContact?.kind === 'email' ? 'email' : 'phone')
       }
+      // Element Plus overlays the invisible radio with its own indicator.
+      // Hit-test the visible label, then focus that label's actual input.
+      const locate = () => {
+        const input = field()
+        return input?.type === 'radio' ? input.closest<HTMLElement>('label') ?? undefined : input
+      }
       if (!locate())
         return
-      await controls.act('option', step === 'invoice' ? '前往發票方式' : '前往目前資料欄位', 'draft', locate, target => target.focus({ preventScroll: true }), () => document.activeElement === locate())
+      await controls.act('option', step === 'invoice' ? '前往發票方式' : '前往目前資料欄位', 'draft', locate, () => field()?.focus({ preventScroll: true }), () => !!field() && document.activeElement === field())
     },
     async choose(method: PbInvoiceMethod, controls: ReturnType<typeof createControls>) {
       confirmation = undefined
@@ -144,6 +150,19 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
         target.dispatchEvent(new Event('input', { bubbles: true }))
         target.dispatchEvent(new Event('change', { bubbles: true }))
       }, () => notificationField('phone')?.value === value)
+      return read()!
+    },
+    /** Fills only a selected donation field; the Host owns spoken-code confirmation. */
+    async donate(code: string, controls: ReturnType<typeof createControls>) {
+      if (!/^\d{3,7}$/.test(code) || !read()?.methods.some(method => method.method === 'donation' && method.selected))
+        throw new Error('請先選擇捐贈發票，並提供 3～7 碼捐贈碼。')
+      confirmation = undefined
+      const field = () => unique(document.querySelectorAll<HTMLInputElement>('.order-create input[placeholder="請輸入3~7碼數字"]'))
+      await controls.act('note', '填寫捐贈碼', 'draft', field, (target) => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(target, code)
+        target.dispatchEvent(new Event('input', { bubbles: true }))
+        target.dispatchEvent(new Event('change', { bubbles: true }))
+      }, () => field()?.value === code && read()?.methods.some(method => method.method === 'donation' && method.selected) === true)
       return read()!
     },
     async prepare() {

@@ -260,11 +260,12 @@ const descriptions: Record<string, readonly [string, string, string, string]> = 
   browser_order_draft: ['建立一批尚未加入購物車的餐點草稿', '顧客要新增餐點，包含缺份數、缺客製化或同餐不同配置', 'lines 每筆是一種配置；productRef/selectedOptions.ref/unansweredOptionGroupRefs 複製最新規格。evidence 保留顧客原句片段。quantity 是份數，未知填 null；selectedOptions.quantity 是每份加料數，未知填 null。unansweredOptionGroupRefs 是還需詢問的選項群組；note 只放顧客備註', 'Host 逐項追問缺少欄位，完成後呈現整批確認；這個工具不加入購物車。不能用於查價、推薦或修改已點餐點'],
   browser_cart_get: ['更新購物車並處理目前問題的回答', '回答目前的品項、份數或加入購物車確認問題；或需要重新查核資料', 'includeCatalog=true 取得商品與規格', '讀取狀態或提出下一個問題，尚未加入購物車'],
   browser_cart_review: ['顯示並核對目前購物車', '顧客問已點什麼、核對餐點或要求保留原訂單', '空物件 {}', '回傳實際份數、選項、備註與小計，不改單、不送單'],
+  browser_return_table: ['返回選桌頁', '顧客在菜單或購物車要求換桌號', '空物件 {}', '只回同店選桌頁，不選桌、不開始點餐、不清空購物車或送單；換頁後重新讀取桌號清單'],
   browser_return_menu: ['回到完整菜單', '返回菜單、取消搜尋或離開推薦畫面繼續選餐', '空物件 {}', '清除搜尋與目前選餐，核對購物車未改動；不增加份數、不清空購物車'],
   browser_product_get: ['查指定餐點的完整規格與選項', '已知完整品名，需要查證供應或取得點餐參數', 'names 填顧客指定的完整品名，最多十項', '回傳最新商品、規格與購物車版本；不開視窗、不加入購物車'],
   browser_observe: ['讀取目前完整菜單', '查有哪些餐點、挑選推薦，或尚未指定餐點', 'includeDescriptions 需要內容時為 true；purpose=information 查資訊，choose_product 詢問選餐', '回傳菜單資料；資訊讀取不代表已依條件呈現'],
   browser_present: ['同步顯示及介紹選定餐點', '介紹餐點、推薦或比較價格', 'productRefs 來自最新菜單；recommendation 最多三道，information 僅用於明確比較', '確認指定卡片可見後回傳介紹內容；不改購物車'],
-  browser_search: ['變更網頁搜尋篩選', '顧客想找特定餐點；拒絕目前推薦並想看全部', 'query 為搜尋文字；看全部時傳空字串', '更新實際選單篩選，不刪除已點餐點'],
+  browser_search: ['查完整菜單並框選符合餐點', '顧客問有沒有某餐或某類，拒絕目前推薦並想看全部', 'query 為餐名或類別；看全部時傳空字串', '一般查詢保留完整菜單，有結果就框選；查無不顯示空白篩選頁，不改購物車'],
   browser_clarify_product: ['確認顧客指的是哪道餐點', '只有別稱、片段品名或多個可能品項', 'query 保留顧客原本的餐名用語', '顯示真實候選並提問，等待回答；沒有候選時告知查無，不加入購物車'],
   browser_ask_quantity: ['詢問選定餐點要幾份', '品項已確定但顧客尚未說份數', 'productRef 複製最新商品參照', '提出份數問題並等待，不預設一份、不加入購物車'],
   browser_confirm_add: ['將顧客剛確認的完整餐點加入購物車', 'currentActivity 明說顧客已確認，或回執 additionConfirmed=true', '空物件 {}；品項、份數與選項由 Host 保存', '重新核對後加入購物車；不送出訂單、不付款'],
@@ -430,7 +431,7 @@ export function browserQuestionChoice(transcript: string, question: NonNullable<
     if (exact.length === 1)
       return exact[0].id
   }
-  if (/^(?:先不要了|先不用了|取消|全部取消|都不要了|先取消)[。！!，,\s]*$/.test(text) && question.choices.some(choice => choice.id === 'cancel'))
+  if (/^(?:先不要了|先不用了|取消|取消這題|取消這個問題|先跳過這題|全部取消|都不要了|先取消)[。！!，,\s]*$/.test(text) && question.choices.some(choice => choice.id === 'cancel'))
     return 'cancel'
   if (question.purpose === 'browser-confirm-add' && /^(?:[對是好]|好的|沒錯|可以|確認|加入|好啊)[。！!，,\s]*$/.test(text) && question.choices.some(choice => choice.id === 'confirm'))
     return 'confirm'

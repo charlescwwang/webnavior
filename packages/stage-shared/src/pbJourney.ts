@@ -116,6 +116,15 @@ export function isPbTableEntryUrl(entry: string, current: string) {
     && /^\/order\/t\/[\w.-]{1,200}$/.test(target.pathname)
 }
 
+/** A same-store table-page navigation acknowledgement, never a selected table or cart mutation. */
+export const tableSelectionReceiptSchema = object({
+  ok: literal(true),
+  source: literal('browser'),
+  code: literal('table-selection-starting'),
+  effect: literal('none'),
+  customerMessage: pipe(string(), minLength(1), maxLength(2000)),
+})
+
 /** A bounded menu-entry acknowledgement; it proves no cart or order mutation. */
 export const menuEntryReceiptSchema = object({
   ok: literal(true),

@@ -149,8 +149,19 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
   async function close() {
     await dismissAnnouncement()
     const current = dialog()
-    if (current)
+    if (!current)
+      return
+    try {
       await act('close-product', '關閉商品視窗', 'draft', () => unique(current.querySelectorAll<HTMLButtonElement>('button.el-dialog__headerbtn')), target => target.click(), () => !current.getClientRects().length || !current.isConnected)
+    }
+    catch (error) {
+      // PB's successful add starts a leave transition before the next cart
+      // operation. Natural disappearance already satisfies close; do not retry
+      // a vanished button. Customer takeover or any still-open dialog still fails.
+      const stillOpen = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).some(element => (element.querySelector('.menu-dialog') || element.matches('.menu-dialog')) && element.getClientRects().length)
+      if (signal.aborted || stillOpen)
+        throw error
+    }
   }
   async function dismissAnnouncement() {
     // Production PB can stack its coupon dialog above the store announcement.

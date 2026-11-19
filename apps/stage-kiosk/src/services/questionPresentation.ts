@@ -64,7 +64,8 @@ function browserReadSummary(name: string, payload: Record<string, unknown>) {
   if (openedDetails && !queriedProducts.length)
     return
   const includeDetails = openedDetails || name === 'get_menu_item_details'
-  const products = queriedProducts.slice(0, 10).flatMap((product) => {
+  const limit = includeDetails ? 10 : 3
+  const products = queriedProducts.slice(0, limit).flatMap((product) => {
     if (!product || typeof product !== 'object' || typeof product.name !== 'string')
       return []
     const specs: string[] = []
@@ -104,7 +105,7 @@ function browserReadSummary(name: string, payload: Record<string, unknown>) {
     return [`${pbProductName(product.name)}：${contents ? `${contents}；` : ''}${price}`]
   })
   const nextStep = includeDetails ? '' : '想看哪道餐點，或要點幾份？'
-  return products.length ? `${products.join('；')}。${queriedProducts.length > 10 ? '目前先列出前十道。' : ''}${nextStep}` : '目前條件下沒有符合的餐點，可以告訴我想調整的條件。'
+  return products.length ? `${products.join('；')}。${queriedProducts.length > limit ? `先介紹這${limit}道，還可以聽其他品項。` : ''}${nextStep}` : '目前條件下沒有符合的餐點，可以告訴我想調整的條件。'
 }
 
 /**
@@ -112,7 +113,8 @@ function browserReadSummary(name: string, payload: Record<string, unknown>) {
  * Keep all distinct lookup results: a second lookup may be a comparison, not a
  * replacement recommendation. The Agent still selects queries and operations.
  */
-export function createMenuReplyWindow() {
+export function createMenuReplyWindow(options: { sourceUtterance?: string } = {}) {
+  const missingSearches = new Map<string, string>()
   const messages = new Set<string>()
   const items = new Map<string, { name: string, price: number }>()
   const operations = new Set<string>()
@@ -120,6 +122,7 @@ export function createMenuReplyWindow() {
   let cartReply: string | undefined
   let browserOutcome: string | undefined
   let publicReadReply: string | undefined
+  let publicReadKind: 'catalog' | 'details' | 'cart' | undefined
   let presentationFailure: string | undefined
   let cartChange: unknown
   let orderUnconfirmed = false
@@ -199,13 +202,17 @@ export function createMenuReplyWindow() {
 
       if (['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_confirm_add', 'browser_question_answer'].includes(name))
         cartChange = payload.ok === true && payload.status === 'verified' ? payload : undefined
-      if (name === 'browser_present') {
+      if (['browser_present', 'browser_observe', 'browser_product_get', 'browser_search'].includes(name)) {
         if (payload.ok === false && payload.source === 'browser' && payload.status === 'rejected' && payload.effect === 'none')
           presentationFailure = operationReplyFrom(payload)
         else if (payload.ok === true)
           presentationFailure = undefined
       }
-      publicReadReply = browserReadSummary(publicName, payload) ?? publicReadReply
+      const summary = browserReadSummary(publicName, payload)
+      if (summary) {
+        publicReadReply = summary
+        publicReadKind = publicName === 'list_menu_items' ? 'catalog' : publicName === 'list_cart_items' ? 'cart' : 'details'
+      }
       if ((name.startsWith('browser_cart_') || ['browser_confirm_add', 'browser_question_answer', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone'].includes(name)) && ['browser', 'host'].includes(String(payload.source)) && typeof payload.customerMessage === 'string') {
         if (payload.status === 'verified' || payload.status === 'preserved') {
           if (payload.status === 'verified' && typeof payload.effectMessage === 'string')
@@ -230,7 +237,13 @@ export function createMenuReplyWindow() {
         if (message) {
           reads++
           messages.add(message)
+          if (name === 'browser_search' && payload.status === 'not-found' && typeof payload.search === 'string')
+            missingSearches.set(message, payload.search)
         }
+        return
+      }
+      if (payload.source === 'browser' && payload.ok === true && payload.effect === 'none' && ['QUESTION_RELEASED', 'QUESTION_RETRY_LIMIT', 'CHECKOUT_RECOVERY'].includes(String(payload.code))) {
+        publicReadReply = operationReplyFrom(payload) ?? publicReadReply
         return
       }
       if (typeof payload.customerMessage === 'string')
@@ -293,18 +306,36 @@ export function createMenuReplyWindow() {
     },
     hasReceipts: () => reads > 0 || cartReply !== undefined || publicReadReply !== undefined,
     browserOutcome: () => browserOutcome,
+    /** Old-topic search misses cannot reappear as this turn's final operation prose. */
+    isUnrelatedSearchReply(message: string) {
+      const query = missingSearches.get(message)
+      return !!query && options.sourceUtterance !== undefined && !options.sourceUtterance.includes(query)
+    },
     effectState: (): BrowserEffectState | undefined => [...pendingOperations.values()].some(count => count > 0) ? 'unknown' : effectState,
     orderUnconfirmed: () => orderUnconfirmed || pendingSubmissions.size > 0,
     cartChange: () => cartChange,
     presentationFailure: () => presentationFailure,
     reply() {
       // Without evidence, generated dish claims cannot become customer dialogue.
-      if (!reads)
-        return cartReply ?? publicReadReply ?? '目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件，或使用畫面選餐。'
+      if (!reads) {
+        if (cartReply)
+          return cartReply
+        // A broad catalog preparation is not the answer to a failed targeted
+        // query. Verified details and cart summaries remain useful evidence.
+        if (presentationFailure && publicReadKind === 'catalog')
+          return presentationFailure
+        return publicReadReply ?? presentationFailure ?? '目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件。'
+      }
       const prices = reads > 1 && items.size > 1
         ? ` 單份基本售價：${[...items.values()].slice(0, 6).map(item => `${item.name} NT$${item.price}`).join('、')}。`
         : ''
-      return `${[...messages].join(' ')}${prices}`
+      // Keep explicit multi-item misses, but omit a model's retry of a prior
+      // topic from this turn. All raw tool receipts remain in diagnostics.
+      const current = [...messages].filter((message) => {
+        const query = missingSearches.get(message)
+        return !query || options.sourceUtterance === undefined || options.sourceUtterance.includes(query)
+      })
+      return current.length ? `${current.join(' ')}${prices}` : '目前沒有找到符合這次需求的品項。'
     },
   }
 }
@@ -340,6 +371,8 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   const searched = result.requestedTools.some(name => nativeOrderingToolName(name) === 'browser_search')
   const searchReply = searched && options.menu.hasReceipts() ? options.menu.reply() : ''
   let outcome = options.outcome ?? options.menu.browserOutcome()
+  if (outcome && options.menu.isUnrelatedSearchReply(outcome))
+    outcome = undefined
   if (outcome && searchReply) {
     if (searchReply.includes(outcome))
       outcome = searchReply
@@ -379,10 +412,12 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
     return unresolved
   const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply() : '', outcome, options.question)
   if (result.status !== 'completed') {
-    const passiveOnly = result.requestedTools.every(name => name === 'list_cart_items' || ['browser_observe', 'browser_product_get', 'browser_present'].includes(nativeOrderingToolName(name)))
+    const passiveOnly = result.requestedTools.every(name => name === 'list_cart_items' || ['browser_observe', 'browser_product_get', 'browser_present', 'browser_search'].includes(nativeOrderingToolName(name)))
     const displayFailure = options.menu.presentationFailure()
-    if (result.reason === 'tool-rejected' && passiveOnly && displayFailure && !operationRequired)
-      return { role: 'assistant' as const, content: [receiptReply, displayFailure].filter(Boolean).join(' ') }
+    if (result.reason === 'tool-rejected' && passiveOnly && displayFailure && !operationRequired && !options.menu.orderUnconfirmed() && options.menu.effectState() !== 'unknown')
+      return { role: 'assistant' as const, content: [...new Set([receiptReply, displayFailure].filter(Boolean))].join(' ') }
+    if (passiveOnly && result.requestedTools.length > 0 && !operationRequired && !options.menu.orderUnconfirmed() && options.menu.effectState() !== 'unknown')
+      return { role: 'assistant' as const, content: receiptReply || orderingMessages['zh-Hant'].recovery.lookup }
     if (options.browserRecovery)
       return browserRecoveryReply({ ...options.browserRecovery, effect: options.menu.effectState(), orderUnconfirmed: options.menu.orderUnconfirmed(), verifiedMessage: receiptReply || undefined })
     return receiptReply
