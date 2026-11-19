@@ -164,7 +164,7 @@ export async function buildApp(deps: AppDeps) {
   const localAdminPin = await loadLocalAdminPin(deps.env.KIOSK_ADMIN_PIN, deps.env.KIOSK_ADMIN_PIN_FILE)
   const kioskMediaService = createKioskMediaService(deps.db, join(deps.env.WEBNAVIOR_KIOSK_ASSET_DIR, 'visitor-media'))
   const trustedCors = cors({
-    origin: origin => getTrustedOrigin(origin, deps.env.ADDITIONAL_TRUSTED_ORIGINS),
+    origin: origin => getTrustedOrigin(origin, [...deps.env.ADDITIONAL_TRUSTED_ORIGINS, ...deps.env.KIOSK_TRUSTED_ORIGINS]),
     credentials: true,
   })
 
@@ -453,6 +453,7 @@ export async function buildApp(deps: AppDeps) {
       runtimeModelPolicy: deps.webnaviorAiRuntimeService,
       secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
       apiOrigin: new URL(deps.env.API_SERVER_URL).origin,
+      trustedOrigins: deps.env.KIOSK_TRUSTED_ORIGINS,
       localAdmin: { pin: localAdminPin, secret: deps.env.BETTER_AUTH_SECRET },
       posGateway: createKioskPosGateway(deps.env.KIOSK_POS_BRIDGE_URL ?? 'http://127.0.0.1:5170/'),
       toolTraceObserver: process.env.NODE_ENV !== 'production'

@@ -5,28 +5,16 @@ type PermissionCheck = Exclude<Parameters<Session['setPermissionCheckHandler']>[
 type PermissionRequest = Exclude<Parameters<Session['setPermissionRequestHandler']>[0], null>
 type PermissionDetails = Parameters<PermissionCheck>[3] | Parameters<PermissionRequest>[3]
 
-/** Startup choices select one origin for the whole reception; automatic failover never replays work. */
-export function connectionChoices(configured: string) {
-  const entry = parsePageUrl(configured)
-  const choices = [
-    { label: 'Tailscale 內網', url: 'http://100.92.1.80:5169/kiosk/' },
-    { label: 'Webnavior 公開網域', url: 'https://webnavior.aikcitri.qzz.io/kiosk/' },
-  ]
-  if (!choices.some(choice => choice.url === entry.href))
-    choices.push({ label: '設定的其他入口', url: entry.href })
-  return choices
-}
-
-/** Remote pages require HTTPS except loopback and the operator-selected LAN Kiosk. */
-export function parsePageUrl(value: string): URL {
+/** Remote pages require HTTPS except loopback and exact operator-approved Kiosk origins. */
+export function parsePageUrl(value: string, httpOrigins: readonly string[] = []): URL {
   const url = new URL(value)
   if (url.username || url.password)
     throw new Error('Page URLs cannot contain credentials.')
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
   // Keep the HTTP exception on this host, port and Kiosk path; vendor pages still require TLS.
-  const lanKiosk = url.origin === 'http://100.92.1.80:5169' && url.pathname.startsWith('/kiosk/')
+  const lanKiosk = httpOrigins.includes(url.origin) && url.pathname.startsWith('/kiosk/')
   if (url.protocol !== 'https:' && (url.protocol !== 'http:' || (!loopback && !lanKiosk)))
-    throw new Error('Use HTTPS, loopback HTTP, or the configured LAN Kiosk at http://100.92.1.80:5169/kiosk/.')
+    throw new Error('Use HTTPS, loopback HTTP, or an explicitly configured HTTP Kiosk origin.')
   return url
 }
 

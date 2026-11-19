@@ -38,7 +38,7 @@ import { resolveServiceHandoff } from '../../services/domain/kiosk-interaction-d
 import { createDecisionStages } from '../../services/domain/kiosk-interaction-decision/stages'
 import { decisionRoutes } from '../../services/domain/kiosk/interactionContracts'
 import { ApiError, createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
-import { isLoopbackOrigin } from '../../utils/origin'
+import { isKioskHttpOrigin, isKioskOrigin } from '../../utils/origin'
 import { createLocalAdminAccess } from './localAdmin'
 
 /** Cookie name shared by kiosk registration and bootstrap requests. */
@@ -236,6 +236,8 @@ export interface KioskRoutesOptions {
   posGateway?: ReturnType<typeof createKioskPosGateway>
   /** Exact public API origin for cookie-authenticated POS writes. */
   apiOrigin?: string
+  /** Exact additional Kiosk origins, supplied by server configuration rather than the browser. */
+  trustedOrigins?: readonly string[]
 }
 
 /**
@@ -248,7 +250,8 @@ export interface KioskRoutesOptions {
 export function createKioskRoutes(options: KioskRoutesOptions) {
   const routes = new Hono<HonoEnv>()
   const decisionStages = createDecisionStages()
-  const localAdmin = createLocalAdminAccess({ ...options.localAdmin, secret: options.localAdmin?.secret ?? '', secureCookies: options.secureCookies, origin: options.apiOrigin })
+  const trustedOrigins = options.trustedOrigins ?? []
+  const localAdmin = createLocalAdminAccess({ ...options.localAdmin, secret: options.localAdmin?.secret ?? '', secureCookies: options.secureCookies, origin: options.apiOrigin, trustedOrigins })
   const pinLimiter = rateLimiter({ max: 5, windowSec: 60, routeLabel: 'kiosk.admin.pin', keyGenerator: c => createHash('sha256').update(getCookie(c, kioskDeviceCookieName) ?? 'unregistered').digest('hex') })
 
   routes.post('/admin/session', async (c, next) => {
@@ -275,11 +278,9 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     if (!options.posGateway)
       return c.json({ error: 'POS Bridge unavailable.' }, 503)
     const origin = c.req.header('Origin')
-    // Separate localhost Vite/API ports are an explicit development policy;
-    // the selected LAN Kiosk is the only additional remote HTTP origin.
-    const localDevelopmentOrigin = options.apiOrigin && origin && isLoopbackOrigin(options.apiOrigin) && isLoopbackOrigin(origin)
-    const lanKioskOrigin = origin === 'http://100.92.1.80:5169'
-    if (options.apiOrigin && origin && origin !== options.apiOrigin && !localDevelopmentOrigin && !lanKioskOrigin)
+    // Origin-less device requests still authenticate below. Browser writes
+    // must match the canonical origin or the server-owned deployment allowlist.
+    if (origin && !isKioskOrigin(origin, options.apiOrigin, trustedOrigins))
       throw createForbiddenError('Untrusted POS origin')
     if (!isPublicPosRoute(path))
       await resolveAuthenticatedDevice(c, options.kioskService)
@@ -367,8 +368,8 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         httpOnly: true,
         path: '/api/kiosk',
         sameSite: 'Lax',
-        // LAN HTTP needs a host-only HTTP cookie; HTTPS entries retain Secure.
-        secure: options.secureCookies && c.req.header('Origin') !== 'http://100.92.1.80:5169',
+        // Only configured HTTP entries receive host-only HTTP cookies; HTTPS stays Secure.
+        secure: options.secureCookies && !isKioskHttpOrigin(c.req.header('Origin'), trustedOrigins),
       })
       device = replacement.device
     }
@@ -961,8 +962,8 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       httpOnly: true,
       path: '/api/kiosk',
       sameSite: 'Lax',
-      // LAN HTTP needs a host-only HTTP cookie; HTTPS entries retain Secure.
-      secure: options.secureCookies && c.req.header('Origin') !== 'http://100.92.1.80:5169',
+      // Only configured HTTP entries receive host-only HTTP cookies; HTTPS stays Secure.
+      secure: options.secureCookies && !isKioskHttpOrigin(c.req.header('Origin'), trustedOrigins),
     })
     return c.json({
       device: {

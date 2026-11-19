@@ -9,6 +9,20 @@ export function isLoopbackOrigin(value: string): boolean {
   catch { return false }
 }
 
+/** Keeps Kiosk PIN and POS writes on the canonical or explicitly configured origins. */
+export function isKioskOrigin(origin: string | undefined, canonicalOrigin: string | undefined, trustedOrigins: readonly string[]): boolean {
+  if (!canonicalOrigin)
+    return true
+  if (!origin)
+    return false
+  return origin === canonicalOrigin || trustedOrigins.includes(origin) || (isLoopbackOrigin(canonicalOrigin) && isLoopbackOrigin(origin))
+}
+
+/** Only an explicitly trusted HTTP entry may receive non-Secure device/PIN cookies. */
+export function isKioskHttpOrigin(origin: string | undefined, trustedOrigins: readonly string[]): boolean {
+  return Boolean(origin?.startsWith('http:') && trustedOrigins.includes(origin))
+}
+
 function getOriginFromUrl(url: string): string | undefined {
   try {
     return new URL(url).origin

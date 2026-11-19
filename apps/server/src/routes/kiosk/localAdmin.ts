@@ -7,7 +7,7 @@ import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie'
 import { integer, minValue, number, pipe, safeParse, strictObject, string } from 'valibot'
 
 import { createForbiddenError, createServiceUnavailableError, createUnauthorizedError } from '../../utils/error'
-import { isLoopbackOrigin } from '../../utils/origin'
+import { isKioskHttpOrigin, isKioskOrigin } from '../../utils/origin'
 
 export const localAdminCookieName = 'airi_kiosk_local_admin'
 const sessionLifetimeSeconds = 15 * 60
@@ -32,17 +32,14 @@ export async function loadLocalAdminPin(pin: string, file: string): Promise<stri
 }
 
 /** Owns the signed, expiring local settings grant, bound to one device credential. */
-export function createLocalAdminAccess(options: { pin?: string, secret: string, secureCookies: boolean, origin?: string }) {
+export function createLocalAdminAccess(options: { pin?: string, secret: string, secureCookies: boolean, origin?: string, trustedOrigins: readonly string[] }) {
   // Include PIN identity so rotating either secret invalidates existing grants.
   const signingKey = `kiosk-local-admin:v1:${options.secret}:${digest(options.pin ?? '').toString('hex')}`
   const cookieOptions = { httpOnly: true, secure: options.secureCookies, sameSite: 'Strict' as const, path: '/api/kiosk' }
 
   function assertOrigin(c: Context) {
     const origin = c.req.header('Origin')
-    const localDevelopment = options.origin && origin && isLoopbackOrigin(options.origin) && isLoopbackOrigin(origin)
-    // The selected LAN entry shares this API with the public HTTPS deployment.
-    const lanKiosk = origin === 'http://100.92.1.80:5169'
-    if (options.origin && origin !== options.origin && !localDevelopment && !lanKiosk)
+    if (!isKioskOrigin(origin, options.origin, options.trustedOrigins))
       throw createForbiddenError('Untrusted local administrator origin')
   }
 
@@ -55,7 +52,7 @@ export function createLocalAdminAccess(options: { pin?: string, secret: string, 
       if (!timingSafeEqual(digest(pin), digest(options.pin)))
         throw createUnauthorizedError('Incorrect local administrator PIN')
       const expiresAt = Date.now() + sessionLifetimeSeconds * 1000
-      await setSignedCookie(c, localAdminCookieName, JSON.stringify({ deviceId, credentialHash: digest(credential).toString('hex'), expiresAt }), signingKey, { ...cookieOptions, secure: options.secureCookies && c.req.header('Origin') !== 'http://100.92.1.80:5169', maxAge: sessionLifetimeSeconds })
+      await setSignedCookie(c, localAdminCookieName, JSON.stringify({ deviceId, credentialHash: digest(credential).toString('hex'), expiresAt }), signingKey, { ...cookieOptions, secure: options.secureCookies && !isKioskHttpOrigin(c.req.header('Origin'), options.trustedOrigins), maxAge: sessionLifetimeSeconds })
       return { expiresAt }
     },
     async authorize(c: Context, deviceId: string, credential: string) {
@@ -79,7 +76,7 @@ export function createLocalAdminAccess(options: { pin?: string, secret: string, 
     lock(c: Context) {
       assertOrigin(c)
       // Match the HTTP grant's attributes so locking also clears the LAN cookie.
-      deleteCookie(c, localAdminCookieName, { ...cookieOptions, secure: options.secureCookies && c.req.header('Origin') !== 'http://100.92.1.80:5169' })
+      deleteCookie(c, localAdminCookieName, { ...cookieOptions, secure: options.secureCookies && !isKioskHttpOrigin(c.req.header('Origin'), options.trustedOrigins) })
     },
   }
 }

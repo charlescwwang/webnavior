@@ -10,23 +10,17 @@ import { desktopServiceRequestSchema, desktopSurfaceActivity, desktopSurfaceNavi
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { parse } from 'valibot'
 
-import { connectionChoices, isHostClipboardWrite, isHostMediaRequest, isHostPage, parsePageUrl } from './policy'
-import { readPortableSettings } from './portableSettings'
+import { isHostClipboardWrite, isHostMediaRequest, isHostPage, parsePageUrl } from './policy'
+import { defaultConnections, readPortableSettings } from './portableSettings'
 import { ServiceSurface } from './surface'
 import { TextConsoleWindow } from './textConsole'
 
-// NOTICE: Packaged settings are read asynchronously and can finish after Electron's ready event.
-// Chromium must receive this exact-origin exception synchronously, before any startup await,
-// or the LAN renderer loses crypto.randomUUID, mediaDevices and AudioWorklet support.
-// https://www.electronjs.org/docs/latest/api/command-line-switches/
-app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', 'http://100.92.1.80:5169')
-
 async function start() {
   app.setName('Webnavior Kiosk')
-  let portableSettings: Awaited<ReturnType<typeof readPortableSettings>> | undefined
+  let portableSettings: ReturnType<typeof readPortableSettings> | undefined
   if (app.isPackaged) {
     try {
-      portableSettings = await readPortableSettings(resolve(dirname(process.execPath), 'kiosk.settings.json'))
+      portableSettings = readPortableSettings(resolve(dirname(process.execPath), 'kiosk.settings.json'))
       // Keep existing Windows device identities and merchant sessions when replacing the app folder.
       if (process.platform === 'win32') {
         if (!process.env.LOCALAPPDATA)
@@ -48,6 +42,14 @@ async function start() {
     app.setPath('userData', process.env.KIOSK_DESKTOP_USER_DATA)
   }
 
+  const connections = portableSettings?.connections ?? defaultConnections
+  const httpOrigins = [...new Set(connections.map(choice => new URL(choice.url)).filter(url => url.protocol === 'http:').map(url => url.origin))]
+  // NOTICE: Chromium reads secure-context exceptions before Electron ready.
+  // Read the validated settings synchronously above; an async read can lose
+  // mediaDevices, crypto.randomUUID and AudioWorklet on the selected LAN entry.
+  // https://www.electronjs.org/docs/latest/api/command-line-switches/
+  app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', httpOrigins.join(','))
+
   // The alpha runtime is allowed only for an explicit local pilot, never an implicit production upgrade.
   if (process.versions.node !== '24.22.1')
     throw new Error('This pilot requires the inspected Electron runtime embedding Node 24.22.1.')
@@ -56,15 +58,15 @@ async function start() {
     return
   }
 
-  let entry = parsePageUrl(portableSettings?.kioskUrl ?? process.env.KIOSK_DESKTOP_URL ?? 'http://100.92.1.80:5169/kiosk/')
+  let entry = parsePageUrl(portableSettings?.kioskUrl ?? process.env.KIOSK_DESKTOP_URL ?? defaultConnections[0]!.url, httpOrigins)
   await app.whenReady()
   if (portableSettings) {
-    const choices = connectionChoices(entry.href)
+    const choices = connections
     const { response } = await dialog.showMessageBox({
       type: 'question',
       title: `Webnavior Kiosk ${app.getVersion()}`,
       message: '選擇本次連線方式',
-      detail: 'Tailscale 需先連上內網；公開網域使用一般網路。兩個入口的設備配對各自保存。自建 PB 統一使用公開測試站。',
+      detail: '現場區網需能連到服務主機；Tailscale 需先連線。各入口的設備配對分開保存，點餐途中不會自動切換。自建 PB 仍使用公開測試站。',
       buttons: [...choices.map(choice => choice.label), '取消'],
       defaultId: Math.max(0, choices.findIndex(choice => choice.url === entry.href)),
       cancelId: choices.length,
@@ -74,7 +76,7 @@ async function start() {
       app.quit()
       return
     }
-    entry = parsePageUrl(choices[response].url)
+    entry = parsePageUrl(choices[response]!.url, httpOrigins)
   }
   if (!entry.pathname.endsWith('/'))
     throw new Error('KIOSK_DESKTOP_URL must name the Kiosk base directory, ending with /.')

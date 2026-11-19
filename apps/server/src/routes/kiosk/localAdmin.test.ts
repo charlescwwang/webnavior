@@ -25,6 +25,7 @@ function app(localAdmin: { pin?: string, secret: string } = { pin: '4812', secre
       developmentRegistrationEnabled: false,
       secureCookies: true,
       apiOrigin: 'https://kiosk.example.test',
+      trustedOrigins: ['http://100.92.1.80:5169', 'http://172.17.69.17:5169'],
       localAdmin,
       llmGateway: { complete: async () => Response.json({}) },
       runtimeModelPolicy: { modelFor: async () => 'test' },
@@ -134,10 +135,10 @@ it('keeps local access closed when no Server PIN is configured', async () => {
 })
 
 // Report: this chat, 2026-11-17 — the selected LAN entry must retain local PIN settings access.
-it('allows the selected LAN origin to unlock and save settings without weakening other origins', async () => {
+it.each(['http://100.92.1.80:5169', 'http://172.17.69.17:5169'])('allows configured LAN origin %s to unlock and save settings without weakening other origins', async (origin) => {
   const enrolled = await service.registerDevelopmentDevice({ registrationCode: '483930' })
   const api = app()
-  const headers = { 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Origin': 'http://100.92.1.80:5169', 'Content-Type': 'application/json' }
+  const headers = { 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Origin': origin, 'Content-Type': 'application/json' }
   const login = await api.request('/api/kiosk/admin/session', { method: 'POST', headers, body: '{"pin":"4812"}' })
   expect(login.status).toBe(200)
   expect(login.headers.get('Set-Cookie')).not.toContain('; Secure')

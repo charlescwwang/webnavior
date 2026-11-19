@@ -18,7 +18,7 @@ import { check, integer, maxValue, minValue, nonEmpty, object, optional, parse, 
  * After:
  * - `["https://10.0.0.129:5273", "https://198.18.0.1:5273"]`
  */
-export function parseAdditionalTrustedOriginsEnv(raw: string): string[] {
+export function parseAdditionalTrustedOriginsEnv(raw: string, key = 'ADDITIONAL_TRUSTED_ORIGINS'): string[] {
   const trimmed = raw.trim()
   if (!trimmed)
     return []
@@ -36,7 +36,7 @@ export function parseAdditionalTrustedOriginsEnv(raw: string): string[] {
       normalized = new URL(entry).origin
     }
     catch {
-      throw new TypeError(`ADDITIONAL_TRUSTED_ORIGINS: invalid URL origin segment "${entry}"`)
+      throw new TypeError(`${key}: invalid URL origin segment "${entry}"`)
     }
 
     if (!seen.has(normalized)) {
@@ -108,6 +108,13 @@ const EnvSchema = object({
       transform(raw => parseAdditionalTrustedOriginsEnv(raw)),
     ),
     '',
+  ),
+
+  // Exact device-facing origins. This is independent of the EXE's launch list:
+  // operators must update both sides when moving a deployment to another IP.
+  KIOSK_TRUSTED_ORIGINS: optional(
+    pipe(string(), transform(raw => parseAdditionalTrustedOriginsEnv(raw, 'KIOSK_TRUSTED_ORIGINS')), check(origins => origins.every(origin => /^https?:\/\//.test(origin)), 'KIOSK_TRUSTED_ORIGINS must contain HTTP(S) origins.')),
+    'http://100.92.1.80:5169,http://172.17.69.17:5169',
   ),
 
   DATABASE_URL: pipe(string(), nonEmpty('DATABASE_URL is required')),

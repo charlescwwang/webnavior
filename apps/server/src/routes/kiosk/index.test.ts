@@ -138,7 +138,7 @@ describe('kiosk routes', () => {
   // Report: docs/research/2026-10-27-security-audit.md
   it('proxies POS requests only for an enrolled device and rejects foreign origins and arbitrary paths', async () => {
     const forward = vi.fn<NonNullable<KioskRoutesOptions['posGateway']>['forward']>(async () => Response.json({ payment: { id: 'scratch-payment' } }))
-    const app = new Hono<HonoEnv>().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'failed' }, 500)).route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway, runtimeModelPolicy, apiOrigin: 'https://kiosk.example.com', posGateway: { forward } }))
+    const app = new Hono<HonoEnv>().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'failed' }, 500)).route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway, runtimeModelPolicy, apiOrigin: 'https://kiosk.example.com', trustedOrigins: ['http://100.92.1.80:5169', 'http://172.17.69.17:5169'], posGateway: { forward } }))
     const path = '/api/kiosk/pos/v1/payments'
     expect((await app.request(path, { method: 'POST', body: '{}' })).status).toBe(401)
     expect(forward).not.toHaveBeenCalled()
@@ -162,8 +162,10 @@ describe('kiosk routes', () => {
     // The selected LAN origin reaches the same authenticated POS boundary.
     expect((await app.request(path, { method: 'POST', headers: { Cookie: cookie, Origin: 'http://100.92.1.80:5169' }, body: '{}' })).status).toBe(200)
     expect(forward).toHaveBeenCalledTimes(3)
+    expect((await app.request(path, { method: 'POST', headers: { Cookie: cookie, Origin: 'http://172.17.69.17:5169' }, body: '{}' })).status).toBe(200)
+    expect(forward).toHaveBeenCalledTimes(4)
     expect((await app.request(path, { method: 'POST', headers: { Cookie: cookie, Origin: 'http://100.92.1.81:5169' }, body: '{}' })).status).toBe(403)
-    expect(forward).toHaveBeenCalledTimes(3)
+    expect(forward).toHaveBeenCalledTimes(4)
   })
 
   it('verifies a legacy development device without automatically registering a replacement during payment', async () => {
@@ -2283,4 +2285,27 @@ it.each([
   // Missing page facts cannot select a browse workflow for a table/cart-only scope.
   expect(system[0].content).not.toContain('目前點餐流程：')
   expect(complete.mock.calls[0][0].body.tools).toEqual(tools)
+})
+
+// Report: this chat, 2026-11-18 — the third entry must retain its own device credential over HTTP.
+it.each([
+  ['http://172.17.69.17:5169', false],
+  ['http://100.92.1.80:5169', false],
+  ['https://kiosk.example.test', true],
+  ['http://172.17.69.18:5169', true],
+])('keeps enrollment cookie security scoped to configured origin %s', async (origin, secure) => {
+  const db = await mockDB(schema)
+  const service = createKioskService(db)
+  const app = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({
+    developmentRegistrationEnabled: true,
+    secureCookies: true,
+    kioskService: service,
+    llmGateway: { complete: async () => Response.json({}) },
+    runtimeModelPolicy: { modelFor: async () => 'test' },
+    trustedOrigins: ['http://172.17.69.17:5169', 'http://100.92.1.80:5169'],
+  }))
+  const response = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Origin': origin, 'Content-Type': 'application/json' }, body: '{"registrationCode":"483931"}' })
+  expect(response.status).toBe(201)
+  expect(response.headers.get('Set-Cookie')?.includes('; Secure')).toBe(secure)
+  expect(response.headers.get('Set-Cookie')).toContain('HttpOnly')
 })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { getAuthTrustedOrigins, getTrustedOrigin, isLoopbackOrigin, resolveCheckoutRedirectBase, resolveTrustedRequestOrigin } from '../origin'
+import { getAuthTrustedOrigins, getTrustedOrigin, isKioskHttpOrigin, isKioskOrigin, isLoopbackOrigin, resolveCheckoutRedirectBase, resolveTrustedRequestOrigin } from '../origin'
 
 describe('origin utils', () => {
   it('identifies configured HTTP loopback origins for local development', () => {
@@ -158,4 +158,17 @@ describe('origin utils', () => {
     expect(authOrigins).not.toContain('https://accounts.airi.build')
     expect(authOrigins).not.toContain('https://admin.airi.build')
   })
+})
+
+it('uses exact server-owned Kiosk origins for PIN/POS and HTTP cookie policy', () => {
+  const origins = ['http://172.17.69.17:5169', 'http://100.92.1.80:5169']
+  expect(isKioskOrigin(origins[0], 'https://public.example', origins)).toBe(true)
+  expect(isKioskOrigin('http://172.17.69.18:5169', 'https://public.example', origins)).toBe(false)
+  expect(isKioskOrigin('http://172.17.69.17:5168', 'https://public.example', origins)).toBe(false)
+  expect(isKioskOrigin('https://public.example', 'https://public.example', origins)).toBe(true)
+  expect(isKioskOrigin(undefined, 'https://public.example', origins)).toBe(false)
+  expect(isKioskHttpOrigin(origins[0], origins)).toBe(true)
+  expect(isKioskHttpOrigin('https://public.example', [...origins, 'https://public.example'])).toBe(false)
+  expect(isKioskHttpOrigin(undefined, origins)).toBe(false)
+  expect(isKioskOrigin('http://localhost:5169', 'http://127.0.0.1:5168', [])).toBe(true)
 })

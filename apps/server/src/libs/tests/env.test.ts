@@ -133,4 +133,9 @@ describe('parseEnv', () => {
     expect(env.LLM_ROUTER_MASTER_KEY_PREVIOUS?.length).toBe(32)
     expect(env.LLM_ROUTER_MASTER_KEY.equals(env.LLM_ROUTER_MASTER_KEY_PREVIOUS!)).toBe(false)
   })
+
+  it('uses exact Kiosk origins by default and replaces them when the operator configures a new site', () => {
+    expect(parseEnv(baseEnv()).KIOSK_TRUSTED_ORIGINS).toEqual(['http://100.92.1.80:5169', 'http://172.17.69.17:5169'])
+    expect(parseEnv({ ...baseEnv(), KIOSK_TRUSTED_ORIGINS: 'http://192.168.8.20:5169/, https://inside.example' }).KIOSK_TRUSTED_ORIGINS).toEqual(['http://192.168.8.20:5169', 'https://inside.example'])
+  })
 })
