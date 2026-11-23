@@ -250,13 +250,13 @@ event neither blocks the next visitor nor appears in their conversation. Healthy
 PB replies blocked by an unresolved operation are distinct from transport failure.
 Selecting a table never fabricates an empty cart: meal tools stay
 hidden until the native menu/cart can be checked. On the RD table page, customers
-can use large buttons or name an offered table. They can say「A1 桌，開始點餐」
-in one turn, or name the table first and then say「開始點餐」. After a valid
-selection, the reply explicitly asks the customer to say「開始點餐」or press
-the Start button; the table selection alone does not enter the menu. It does not
-repeat the initial instruction to find a seat and supply a table number. Host admits entry
-only for an explicitly named or native-verified selection; an unchosen default
-cannot authorize entry. Native Start opens the menu, never submits an order.
+can use large buttons or name an offered table. A valid, unambiguous spoken table
+now selects that table and presses Start once, without another Start utterance.
+Approximate or ambiguous codes still require clarification; a confirmed table
+then enters the menu. Menu readiness and matching table are read back before food
+operations. Customers can say「重選桌號」「桌號錯了」to return to the same-store
+table selector; this preserves the cart and never submits an order. No table is
+invented from a missing or ambiguous code. Native Start never adds food or pays.
 If a single explicit table code is absent from the current choices, Host replies
 that the table does not exist and refuses a substitute selection or Start.
 Jev/Decisions receives `selecting_table`, all actual table choices and the latest

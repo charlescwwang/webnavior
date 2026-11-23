@@ -23,6 +23,17 @@ import { runFastPath } from './kiosk-fast-path'
 const cleanup: Array<() => void> = []
 afterEach(() => cleanup.splice(0).forEach(dispose => dispose()))
 
+// Report: this chat, Nov23 — a valid spoken table should enter the menu without another Start utterance.
+it('starts ordering once for a valid spoken table through select_table', async () => {
+  const { call, facts, execute } = setup('A3 桌')
+  Object.assign(facts, { page: 'table', code: 'table-selection-required', tableChoices: ['A3 桌'], selectedTable: '櫃台取餐', customerMessage: '請選桌。' })
+  await call('select_table', { tableName: 'A3 桌' })
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')).toHaveLength(1)
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_start_ordering' }), { name: 'A3 桌' })
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_table_select')).toBe(false)
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add' || tool.name === 'browser_order_submit')).toBe(false)
+})
+
 // Report: this chat, Nov19 — changing tables from the menu parsed missing tableChoices.
 it.each([
   ['select_table', { tableName: 'A3-1 桌' }],
@@ -50,10 +61,10 @@ it.each(['select_table', 'start_ordering_at_table'] as const)('preserves a compr
   expect(execute.mock.calls.every(([tool]) => tool.name === 'browser_cart_get')).toBe(true)
 })
 
-it('runs Jev table suggestion and confirmation through the existing Host executor without native Start', async () => {
+it('runs Jev table suggestion and confirmation through the existing Host executor with one native Start after confirmation', async () => {
   const { client, dialogue, execute } = setup('A31')
   const raw = { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A3-1 桌', 'A3-2 桌'], selectedTable: 'A3-2 桌', customerMessage: '請選桌。' }
-  execute.mockImplementation(async (tool, input) => tool.name === 'browser_table_select'
+  execute.mockImplementation(async (tool, input) => tool.name === 'browser_start_ordering'
     ? { ...raw, selectedTable: input.name, effect: 'none', customerMessage: '已選桌，請說開始點餐。' }
     : { ...raw, observedAt: Date.now() })
   const source = (transcript: string) => createBrowserFastPathSource({
@@ -79,8 +90,8 @@ it('runs Jev table suggestion and confirmation through the existing Host executo
   expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_table_select')).toBe(false)
   const second = await runFastPath({ isEnabled: async () => true, source: source('對'), transcript: '對', decide: async () => ({ kind: 'FAST_ACTION', actionId: 'yes', confidence: 0.99 }), webMcp: { tools: client.tools.value, execute } })
   expect(second).toMatchObject({ kind: 'FAST_ACTION', result: { selectedTable: 'A3-1 桌', effect: 'none' } })
-  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_table_select')).toHaveLength(1)
-  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_start_ordering')).toBe(false)
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')).toHaveLength(1)
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_table_select')).toBe(false)
 })
 
 // Report: this chat, Nov19 01:19 — Qwen emitted a schema-level `parameters`
@@ -1024,7 +1035,7 @@ it.each(Object.entries(contractCases))('connects the published %s parameters to 
   expect(result.status).not.toBe('rejected')
   expect(result.status).not.toBe('proposal_rejected')
   if (name === 'select_table' || name === 'start_ordering_at_table')
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: name === 'select_table' ? 'browser_table_select' : 'browser_start_ordering' }), { name: 'A3 桌' })
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_start_ordering' }), { name: 'A3 桌' })
   if (name === 'set_cart_item_quantity')
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_quantity' }), expect.objectContaining({ lineRef: 'line', quantity: 2 }))
   if (name === 'replace_item_in_cart')

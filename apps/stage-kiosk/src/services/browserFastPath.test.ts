@@ -25,7 +25,7 @@ it('offers only the confirmation action for a unique compressed table candidate'
 it('offers the full split table code rather than its parent for Jev selection', async () => {
   const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'table', tableChoices: ['A3 桌', 'A3-1 桌', 'A3-2 桌'], selectedTable: 'A3 桌' }), execute: vi.fn(), hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const context = await source.context({ transcript: '我要A3-1桌' })
-  expect(context).toMatchObject({ candidates: [{ id: 'table-1', description: '選擇A3-1 桌，留在選桌頁，尚未開始點餐' }] })
+  expect(context).toMatchObject({ candidates: [{ id: 'table-1', description: '使用A3-1 桌開始點餐' }] })
 })
 
 // Report: this chat, Nov15: asking serving contents while checkout was offered repeated checkout.
@@ -551,4 +551,16 @@ it.each(['先不要看購物車', '看購物車再加一份', '購物車裡的�
   await source.context({ transcript })
   expect(read).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_state_get' }), { includeCatalog: true })
   expect(execute).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov23 — spoken corrections must return to the same-store table picker.
+it.each(['重選桌號', '桌號錯了', '請換桌號'])('offers a table correction without reading the catalog: %s', async (transcript) => {
+  const execute = vi.fn(async () => ({ ok: true, source: 'browser', code: 'table-selection-starting', effect: 'none' }))
+  const read = vi.fn(async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] } }))
+  const source = createBrowserFastPathSource({ tools: [...tools, { ...tools[0], name: 'browser_return_table' }], read, execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  expect(await source.context({ transcript })).toMatchObject({ candidates: [{ id: 'intent:return-table' }] })
+  expect(read).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_state_get' }), { includeCatalog: false })
+  await source.execute({ candidateId: 'intent:return-table' })
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_return_table' }), {})
+  expect(execute).toHaveBeenCalledOnce()
 })

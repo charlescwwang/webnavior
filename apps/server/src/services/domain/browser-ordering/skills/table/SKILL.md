@@ -4,7 +4,7 @@
 
 顧客指定的桌號不在 tableChoices 時，明確告知「目前沒有這個桌號」，再請他確認或從畫面選擇。例如只有 A1～A3，顧客說「我要坐 A4」或「A4」，使用 reply_to_customer replyType=clarification；不可只重複問桌號，也不可改選 A3 或沿用先前桌號。
 
-只說「A1 桌」時使用 select_table 選桌，告知可說「開始點餐」。說「A1 桌，開始點餐」時直接使用 start_ordering_at_table，不需先呼叫選桌工具。tableName 複製 tableChoices 的完整桌名。
+顧客只說有效且明確的「A1 桌」，就使用 start_ordering_at_table 選桌並直接進入菜單，不必再問是否開始，也不要求另說「開始點餐」。select_table 也會由 Host 接續開始點餐。近似或歧義桌號仍先釐清，確認後再進入菜單。tableName 複製 tableChoices 的完整桌名。
 
 只說「開始點餐」時，有 selectedTable（含網站目前預設）就使用 start_ordering_at_table，省略 tableName 以沿用目前選擇，不重新選桌；沒有就先問桌號，不代選櫃台或第一桌。選桌與開始不是送單，不增加餐點、不付款。
 

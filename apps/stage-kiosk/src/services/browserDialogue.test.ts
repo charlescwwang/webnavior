@@ -21,17 +21,17 @@ it.each([['A31', 'A3-1 桌'], ['A32', 'A3-2 桌']])('confirms %s before selectin
   const select = { ...context, name: 'browser_table_select' }
   const client = { ...original, tools: readonly(shallowRef([...original.tools.value, select])) }
   const entry = { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A3-1 桌', 'A3-2 桌'], selectedTable: 'A3-2 桌', customerMessage: '請選桌。' }
-  client.execute.mockImplementation(async tool => tool.name === select.name ? { ok: true, source: 'browser', status: 'table-selected', selectedTable: name } : entry)
+  client.execute.mockImplementation(async tool => tool.name === 'browser_start_ordering' ? { ok: true, source: 'browser', status: 'table-selected', selectedTable: name } : entry)
   begin(spoken)
   expect(await executeBrowserCartTool(client, select, { name })).toMatchObject({ effect: 'none', pendingCustomerChoice: { purpose: 'browser-table-confirmation', question: expect.stringContaining(name) } })
-  expect(client.execute.mock.calls.filter(([tool]) => tool.name === select.name)).toHaveLength(0)
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')).toHaveLength(0)
   expect(dialogue.hasPending()).toBe(true)
   begin('對')
   const answer = await prepareBrowserQuestionAnswer(client)
   expect(answer).toBeTypeOf('function')
   expect(await answer!()).toMatchObject({ ok: true, selectedTable: name })
-  expect(client.execute.mock.calls.filter(([tool]) => tool.name === select.name)).toHaveLength(1)
-  expect(client.execute.mock.calls.find(([tool]) => tool.name === select.name)?.[1]).toEqual({ name })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')).toHaveLength(1)
+  expect(client.execute.mock.calls.find(([tool]) => tool.name === 'browser_start_ordering')?.[1]).toEqual({ name })
   expect(dialogue.hasPending()).toBe(false)
   expect(await prepareBrowserQuestionAnswer(client)).toBeUndefined()
 })
@@ -41,7 +41,7 @@ it.each(['不是', 'A3之二', 'manual-change', 'jev-answer'] as const)('handles
   const select = { ...context, name: 'browser_table_select' }
   const client = { ...original, tools: readonly(shallowRef([...original.tools.value, select])) }
   const entry = { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A3-1 桌', 'A3-2 桌'], selectedTable: 'A3-2 桌', customerMessage: '請選桌。' }
-  client.execute.mockImplementation(async (tool, input) => tool.name === select.name ? { ok: true, source: 'browser', effect: 'none', selectedTable: input.name } : { ...entry, observedAt: Date.now() })
+  client.execute.mockImplementation(async (tool, input) => tool.name === 'browser_start_ordering' ? { ok: true, source: 'browser', effect: 'none', selectedTable: input.name } : { ...entry, observedAt: Date.now() })
   begin('A31')
   await executeBrowserCartTool(client, select, { name: 'A3-1 桌' })
   const question = dialogue.tables.pending(entry)!
@@ -65,19 +65,32 @@ it.each(['不是', 'A3之二', 'manual-change', 'jev-answer'] as const)('handles
       expect(result).toMatchObject(answerText === '不是' ? { effect: 'none', customerMessage: expect.stringContaining('尚未選擇') } : { selectedTable: 'A3-1 桌' })
     }
   }
-  const calls = client.execute.mock.calls.filter(([tool]) => tool.name === select.name)
+  const calls = client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')
   expect(calls).toHaveLength(['A3之二', 'jev-answer'].includes(answerText) ? 1 : 0)
-  expect(client.execute.mock.calls.some(([tool]) => tool.name === 'browser_start_ordering')).toBe(false)
+  expect(client.execute.mock.calls.some(([tool]) => tool.name === 'browser_table_select')).toBe(false)
 })
 
 it('selects an actual A31 directly rather than asking about A3-1', async () => {
   const { client, context, begin, dialogue } = setup()
   const select = { ...context, name: 'browser_table_select' }
-  client.execute.mockImplementation(async tool => tool.name === select.name ? { ok: true, selectedTable: 'A31 桌' } : { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A3-1 桌', 'A31 桌'], customerMessage: '請選桌。' })
+  client.execute.mockImplementation(async tool => tool.name === 'browser_start_ordering' ? { ok: true, selectedTable: 'A31 桌' } : { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A3-1 桌', 'A31 桌'], customerMessage: '請選桌。' })
   begin('A31')
   expect(await executeBrowserCartTool(client, select, { name: 'A31 桌' })).toMatchObject({ selectedTable: 'A31 桌' })
   expect(dialogue.hasPending()).toBe(false)
-  expect(client.execute.mock.calls.filter(([tool]) => tool.name === select.name)).toHaveLength(1)
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')).toHaveLength(1)
+})
+
+// Report: this chat, Nov23 — valid table-only utterances complete entry without another model round.
+it.each(['A3', 'A 三桌', '我的桌號是A3', '我要坐A3', 'A3，還要乙餐一份'])('completes table-only entry while preserving a compound order: %s', async (utterance) => {
+  const { client, context, dialogue, decide } = setup()
+  const complete = vi.fn()
+  release.push(beginBrowserCartTask(utterance, { dialogue, decide, isCurrent: () => true, onRequestComplete: complete }))
+  client.execute.mockImplementation(async tool => tool.name === 'browser_cart_get'
+    ? { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A3 桌'], customerMessage: '請選桌。' }
+    : { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: 'A3 桌', customerMessage: '正在準備菜單。' })
+  expect(await executeBrowserCartTool(client, { ...context, name: 'browser_table_select' }, { name: 'A3 桌' })).toMatchObject({ code: 'table-entry-starting' })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')).toHaveLength(1)
+  expect(complete).toHaveBeenCalledTimes(utterance.includes('乙餐') ? 0 : 1)
 })
 
 // Report: this chat, Nov17 — cart review treated 「這樣就好」 as a request to edit a dish.
@@ -359,7 +372,7 @@ function setup(labels: { name: string, aliases: string[], category: string }[] =
       return { ok: true, source: 'browser', presentation: { cue: 'shown', products: facts.products.filter(product => Array.isArray(input.productRefs) && input.productRefs.includes(product.ref)).map(({ ref, name, price }) => ({ ref, name, price })) } }
     return { ok: true, source: 'browser', status: 'verified', cart: { version: 'after-add' } }
   })
-  const client = { tools: readonly(shallowRef([context, { ...context, name: 'browser_state_get' }, add, clarify, present, { ...context, name: 'browser_product_get' }])), execute }
+  const client = { tools: readonly(shallowRef([context, { ...context, name: 'browser_state_get' }, { ...context, name: 'browser_start_ordering' }, add, clarify, present, { ...context, name: 'browser_product_get' }])), execute }
   const decide = vi.fn<(proposal: BrowserEffect) => Promise<EffectDecision>>(async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }))
   const onRequestComplete = vi.fn()
   const begin = (text: string, jev = false) => release.push(beginBrowserCartTask(text, { ...(jev ? { intentSource: 'jev' as const } : {}), dialogue, decide, onRequestComplete, isCurrent: () => true }))
@@ -716,7 +729,7 @@ it.each(['我要外帶', '我要自取', '我要外送'])('handles the actual ta
   }
   else {
     expect(result).toMatchObject({ selectedTable: '櫃台取餐' })
-    expect(client.execute.mock.calls.filter(([tool]) => tool.name === native.name)).toHaveLength(1)
+    expect(client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')).toHaveLength(1)
   }
 })
 
@@ -765,7 +778,7 @@ it('waits for the native menu before replacing the entry acknowledgement with or
   expect(settled).not.toHaveBeenCalled()
   entered = true
   ready.resolve()
-  expect(await pending).toMatchObject({ customerMessage: expect.stringContaining('菜單準備好了，想吃什麼') })
+  expect(await pending).toMatchObject({ customerMessage: expect.stringContaining('已進入A2的菜單，想吃什麼') })
 })
 
 // Report: this chat, 2026-11-14 — finite cancellation closed PB but left the Host's quantity question alive.

@@ -86,7 +86,9 @@ export function createBrowserFastPathSource(io: {
       // selects the action, and task/document scope is checked before execution.
       let navigation: { id: string, name: string, description: string } | undefined
       if (!io.hasPendingQuestion()) {
-        if (/^(?:我點了什麼|看購物車|查看購物車|購物車|核對購物車|總共多少|總金額多少)[。！!？?\s]*$/.test(transcript) && io.tools.some(tool => tool.name === 'browser_cart_review'))
+        if (/^(?:請|幫我|我要)?(?:重選桌號|重新選桌號|重新選桌|換桌號|換桌|桌號錯了|桌號不對|選錯桌號|聽錯桌號了)[。！!？?\s]*$/.test(transcript) && io.tools.some(tool => tool.name === 'browser_return_table'))
+          navigation = { id: 'intent:return-table', name: 'browser_return_table', description: '返回同店選桌頁修正桌號，保留購物車，不送出訂單。' }
+        else if (/^(?:我點了什麼|看購物車|查看購物車|購物車|核對購物車|總共多少|總金額多少)[。！!？?\s]*$/.test(transcript) && io.tools.some(tool => tool.name === 'browser_cart_review'))
           navigation = { id: 'intent:view-cart', name: 'browser_cart_review', description: '查看購物車裡的餐點與網站總額，不修改或送出訂單。' }
         else if (/^(?:回去看菜單|回到菜單|返回菜單|回主菜單|繼續點餐)[。！!？?\s]*$/.test(transcript) && io.tools.some(tool => tool.name === 'browser_return_menu'))
           navigation = { id: 'intent:return-menu', name: 'browser_return_menu', description: '回到完整菜單，清除搜尋，保留購物車裡的餐點。' }
@@ -145,9 +147,9 @@ export function createBrowserFastPathSource(io: {
         // Literal table codes narrow the target list, not the intent. When
         // no table token is available, Jev can still understand pickup or Start.
         const offered = requested ? [requested] : choices
-        const plans = Object.fromEntries(offered.map(choice => [choice.id, { name: choice.id === 'start' || (requested && /開始/.test(transcript)) ? 'browser_start_ordering' : 'browser_table_select', input: { name: choice.id === 'start' ? table.output.selectedTable! : choice.description } }]))
+        const plans = Object.fromEntries(offered.map(choice => [choice.id, { name: 'browser_start_ordering', input: { name: choice.id === 'start' ? table.output.selectedTable! : choice.description } }]))
         issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans, answerIds: offered.map(choice => choice.id) }
-        return { phase: 'selecting_table', tableSelectionRequired: true, tableSelection: { choices: table.output.tableChoices, selectedTable: table.output.selectedTable }, candidates: offered.map(choice => ({ ...choice, description: plans[choice.id].name === 'browser_start_ordering' ? `使用${plans[choice.id].input.name}開始點餐` : `選擇${choice.description}，留在選桌頁，尚未開始點餐` })) }
+        return { phase: 'selecting_table', tableSelectionRequired: true, tableSelection: { choices: table.output.tableChoices, selectedTable: table.output.selectedTable }, candidates: offered.map(choice => ({ ...choice, description: `使用${plans[choice.id].input.name}開始點餐` })) }
       }
 
       if (navigation) {

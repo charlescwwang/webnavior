@@ -25,9 +25,11 @@ it('routes by verified page and pending task instead of an extra classifier or u
   expect(orderingInstructions(undefined).workflow).toBe('browse')
 })
 
-it('teaches table selection and menu entry as distinct voice operations without accepting a website default', () => {
+it('teaches direct menu entry for explicit tables and correction through the table picker', () => {
   const { instructions } = orderingInstructions({ ...context, phase: 'selecting_table', page: 'table' })
-  expect(instructions).toContain('select_table')
+  expect(instructions).toContain('不必再問是否開始')
+  expect(instructions).toContain('重選桌號')
+  expect(instructions).toContain('近似或歧義桌號先釐清')
   expect(instructions).toContain('start_ordering_at_table')
   expect(instructions).toContain('沒有就先問桌號')
   expect(instructions).not.toContain('請顧客點「開始點餐」')

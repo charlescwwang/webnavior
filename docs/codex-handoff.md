@@ -1,5 +1,11 @@
 # Codex Handoff
 
+## 2026-11-23 Spoken table selection now starts ordering
+
+- User requested direct Start after a valid spoken table, with correction for wrong speech/ASR. Host table selection now dispatches combined browser_start_ordering once; preserves live approximate-table confirmation, missing/ambiguous rejection, one-use answers, menu readiness and matching-table readback. Confirmation wording and public select_table semantics/common+table prompts agree. No native contract change.
+- Table-only utterances retire the task after its navigation receipt; compound food requests stay uncovered. Menu acknowledgement names the verified table and teaches「重選桌號」. Existing same-store return_to_table preserves cart, retires local pending questions, and does not select a replacement/submit; fast-path candidates now include「桌號錯了」「重選桌號」. New table requires fresh choices. No reception restart or cart clear.
+- First test reproduced old select-only behavior, then Kiosk1199 pass/1 expected fail/49 skip, shared23, server skill5, Kiosk scoped types and changed-code lint passed. Root checks not run. Existing RC4 native host supports these operations; no new EXE is required for this frontend/prompt change. Physical field ASR acceptance not performed. Deployment results appended after activation.
+
 ## 2026-11-23 RC4 server history activated after renewed authorization
 
 - User clarified that the password authorization dialog disappeared before they could type. Retried systemctl through the normal system authorization flow (no sudo), user completed authorization, and deployment succeeded. Two runtime files match committed after hashes; API restarted PID137553→400244; local/public readyz db/redis ok and all 9 frontend HTTP byte checks passed again. History cap12/6000 and recovery-guidance context filtering are now active; full archive preserved. This supersedes the earlier pending-history limitation below.

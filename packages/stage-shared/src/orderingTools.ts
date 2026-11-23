@@ -62,7 +62,7 @@ const mealParameters: Record<string, OrderingParameter> = {
 
 /** Model-facing operations; native browser protocol names remain private to execution. */
 export const orderingTools = {
-  select_table: { nativeName: 'browser_table_select', description: '在選桌頁選擇顧客指定的桌號，回傳選擇結果。桌號使用目前可選清單；未指定時先詢問。', parameters: { type: 'object', properties: { tableName: { type: 'string', minLength: 1, maxLength: 200 } }, required: ['tableName'], additionalProperties: false } },
+  select_table: { nativeName: 'browser_table_select', description: '在選桌頁使用顧客指定的有效桌號直接開始點餐，不需另問是否開始。桌號使用目前可選清單；未指定或有歧義時先詢問。', parameters: { type: 'object', properties: { tableName: { type: 'string', minLength: 1, maxLength: 200 } }, required: ['tableName'], additionalProperties: false } },
   start_ordering_at_table: { nativeName: 'browser_start_ordering', description: '顧客要求開始點餐時，使用顧客指定或畫面目前選擇的桌號進入菜單。未指定時沿用目前選擇，省略 tableName；畫面也沒有有效選擇時才詢問。', parameters: { type: 'object', properties: { tableName: { type: 'string', minLength: 1, maxLength: 200 } }, required: [], additionalProperties: false } },
   list_menu_items: { nativeName: 'browser_observe', description: '列出符合目前推薦條件的可售餐點與網站單價。criteria可依顧客要求更新條件，省略欄位沿用原設定。', parameters: { type: 'object', properties: { criteria: criteriaParameter }, required: [], additionalProperties: false } },
   get_menu_item_details: { nativeName: 'browser_product_get', description: '查詢指定餐點的內容、單價、每份顆數與選項，取得可向顧客回答的資料，可一次查多道。承接前文的問題也使用此工具，不以一般附和代替回答。顧客要看商品視窗時使用open_menu_item_details。', parameters: { type: 'object', properties: { names: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 200 }, minItems: 1, maxItems: 10 } }, required: ['names'], additionalProperties: false } },

@@ -238,23 +238,18 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         task.answerResolved = true
         if ('declined' in confirmed)
           return { ok: true, source: 'browser', status: 'verified', effect: 'none', customerMessage: orderingMessages['zh-Hant'].tableConfirmation.cancelled }
-        // A yes confirms the offered table only. Even an original Start request
-        // cannot turn this answer into automatic menu entry or a purchase.
-        const select = client.tools.value.find(tool => tool.name === 'browser_table_select')
-        if (!select)
-          return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: orderingMessages['zh-Hant'].tableConfirmation.stale }
-        return executeBrowserTool(client, select, { name: confirmed.name })
       }
-      const missing = missingTableMessage(entry.output.tableChoices, task.transcript)
+      const confirmedName = confirmed && 'name' in confirmed ? confirmed.name : undefined
+      const missing = confirmedName ? undefined : missingTableMessage(entry.output.tableChoices, task.transcript)
       if (missing)
         return { ok: true, source: 'host', status: 'clarification', effect: 'none', customerMessage: missing }
-      const name = typeof input.name === 'string' ? input.name : ''
+      const name = confirmedName ?? (typeof input.name === 'string' ? input.name : '')
       // A Start request may use the website's current selection, including its
       // default. A model cannot switch to another table without customer intent.
       const compact = (value: string) => value.replaceAll(/\s/g, '').toUpperCase()
       const spokenCodes = normalizeSlotNumbers(task.transcript).toUpperCase().match(/[A-Z]+\s*\d+(?:\s*[-‐‑–—－之]\s*\d+)*/g)?.map(compact) ?? []
-      const explicitlyNamed = resolveTableName(task.transcript.replaceAll(/[，,。！!]/g, ''), entry.output.tableChoices) === name || compact(task.transcript).includes(compact(name)) || spokenCodes.some(code => resolveTableName(code, entry.output.tableChoices) === name) || (name === '櫃台取餐' && task.transcript.includes('櫃台'))
-      if (pending) {
+      const explicitlyNamed = Boolean(confirmedName) || resolveTableName(task.transcript.replaceAll(/[，,。！!]/g, ''), entry.output.tableChoices) === name || compact(task.transcript).includes(compact(name)) || spokenCodes.some(code => resolveTableName(code, entry.output.tableChoices) === name) || (name === '櫃台取餐' && task.transcript.includes('櫃台'))
+      if (pending && !confirmedName) {
         if (!explicitlyNamed || task.selectedAnswer)
           return checkBrowserState(task, entry.output)
         task.dialogue?.tables.reset()
@@ -263,7 +258,13 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         return { ok: true, source: 'host', status: 'proposal_rejected', effect: 'none', dataOnly: true, selectedTable: entry.output.selectedTable, tableChoices: entry.output.tableChoices, explanation: '這次提案使用的桌號與畫面目前選擇不同，尚未執行。顧客未要求換桌，請沿用這次回傳的 selectedTable；呼叫 start_ordering_at_table 時省略 tableName，即會使用畫面目前選擇。不必要求顧客重新選桌。' }
       if (!name || !entry.output.tableChoices.includes(name) || (!explicitlyNamed && task.intentSource !== 'jev' && (tool.name === 'browser_table_select' || entry.output.selectedTable !== name)))
         return { ok: true, source: 'host', status: 'clarification', effect: 'none', customerMessage: '內用請先找到座位，再告訴我您的桌號；外帶請選櫃台自取。' }
-      let result = await executeBrowserTool(client, tool, { name })
+      // Choosing a valid table now includes menu entry. Use PB's combined
+      // select-and-Start operation once; do not dispatch a separate select or
+      // replay Start after navigation retires this document.
+      const start = tool.name === 'browser_start_ordering' ? tool : client.tools.value.find(tool => tool.name === 'browser_start_ordering')
+      if (!start)
+        return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: orderingMessages['zh-Hant'].tableConfirmation.stale }
+      let result = await executeBrowserTool(client, start, { name })
       if (safeParse(menuEntryReceiptSchema, result).success && client.waitUntilReady) {
         await client.waitUntilReady()
         if (active !== task || !task.isCurrent())
@@ -282,17 +283,18 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
             break
           await new Promise(resolve => setTimeout(resolve, 100))
         }
-        result = { ...parse(menuEntryReceiptSchema, result), customerMessage: '菜單準備好了，想吃什麼？可以告訴我餐點和份數，或請我推薦。' }
+        result = { ...parse(menuEntryReceiptSchema, result), customerMessage: `已進入${name}的菜單，想吃什麼？桌號不對可以說「重選桌號」。` }
       }
-      // A standalone Start request is fully covered by its navigation receipt.
+      // A standalone table/Start request is covered by its navigation receipt.
       // Do not launch a second Main round with the retired table tool set. A
       // sentence also requesting food remains a separate, uncovered demand.
       const entryReceipt = safeParse(menuEntryReceiptSchema, result)
       // Remove only the verified table, then require a complete entry/assent
       // phrase. Extra food requests must continue after the new menu is ready.
       const entryText = normalizeSlotNumbers(task.text).toUpperCase().replaceAll(/[,，。！!、\s]/g, '').replace(compact(name), '')
+      const tableOnly = resolveTableName(normalizeSlotNumbers(task.text).replaceAll(/[，,。！!\s]/g, '').replace(/^(?:請幫我|幫我|我要坐|我要|我想要|我的桌號是|桌號是|我在|我們在|請選|選擇|選)/, '').replace(/(?:請|幫我|我要)?開始(?:點餐)?吧?$/, ''), entry.output.tableChoices) === name
       if (active === task && task.isCurrent() && entryReceipt.success
-        && /^(?:(?:好的?|對|沒錯|可以|確認)(?:那就)?)?(?:(?:請|幫我|我要)?開始(?:點餐)?吧?)?$/.test(entryText)) {
+        && (tableOnly || /^(?:(?:好的?|對|沒錯|可以|確認)(?:那就)?)?(?:(?:請|幫我|我要)?開始(?:點餐)?吧?)?$/.test(entryText))) {
         task.onRequestComplete?.()
       }
       return result
