@@ -423,3 +423,13 @@ it.each(['read-failed', 'stale-document', 'missing-restart-policy', 'unpaid-with
   await expect(resetConversationService(client)).rejects.toThrow(/訂單/)
   expect(client.refresh).not.toHaveBeenCalled()
 })
+
+// Report: this chat, Nov23 — a successful payment-page discovery fell into legacy Menu recovery and stayed blocked.
+it('recovers the native payment page using its read-only order state', async () => {
+  const tool = { name: 'browser_state_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
+  const execute = vi.fn(async () => ({ ok: true, source: 'browser', page: 'payment', documentId: 'payment-doc', order: { reference: 'order-1', status: 20, total: 184, paymentStatus: 'pending', paymentMethods: ['linepay', 'credit'], invoice: {} }, restart: 'operation-pending' }))
+  const client = { tools: shallowRef([tool]), execute, recover: vi.fn(async () => {}) }
+  await expect(recoverConversationService(client, [])).resolves.toBeUndefined()
+  expect(execute).toHaveBeenCalledWith(tool, { includeCatalog: false })
+  expect(execute).toHaveBeenCalledOnce()
+})

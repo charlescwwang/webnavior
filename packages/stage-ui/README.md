@@ -503,3 +503,8 @@ it does not cut off an already admitted phrase. Direct `BaseVAD.processAudio`
 callers can supply the equivalent fourth `allowSpeechStart` argument. Audio blocks
 serialize admission, inference and segment transitions together; after skipped
 input, the next inference starts with fresh recurrent model state.
+
+PB submission acknowledgement uses a fresh same-order Inertia HTTP result read,
+not the bootstrap `data-page` attribute left behind by SPA navigation. An
+unavailable read retains pending dispatch and cannot repeat submission. The
+same reader owns normal payment/result state, including asset-version headers.

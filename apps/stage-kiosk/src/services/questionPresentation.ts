@@ -17,8 +17,15 @@ import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages
 export type BrowserEffectState = 'none' | 'applied' | 'partial' | 'unknown'
 
 /** Customer recovery uses verified progress only; it never completes or replays an order. */
-export function browserRecoveryReply(input: { operationAttempted: boolean, effect?: BrowserEffectState, orderUnconfirmed?: boolean, page?: BrowserConversation['page'], verifiedMessage?: string }) {
+export function browserRecoveryReply(input: { operationAttempted: boolean, effect?: BrowserEffectState, orderUnconfirmed?: boolean, page?: BrowserConversation['page'], verifiedMessage?: string, receipt?: unknown }) {
   const messages = orderingMessages['zh-Hant'].recovery
+  const submission = safeParse(pbSubmissionResultSchema, input.receipt)
+  if (submission.success) {
+    // Submission status belongs to the order, never a generic cart failure.
+    // Keep pending/unknown as such and retain the native receipt's truthful
+    // guidance without replacing it with an instruction to edit/retry the cart.
+    return { role: 'assistant' as const, recovery: true as const, content: submission.output.customerMessage }
+  }
   if (!input.orderUnconfirmed && input.effect && input.effect !== 'unknown') {
     if (input.verifiedMessage && input.effect !== 'partial')
       return { role: 'assistant' as const, recovery: true as const, content: input.verifiedMessage }

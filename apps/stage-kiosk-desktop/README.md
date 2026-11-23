@@ -487,3 +487,13 @@ A real Electron Main/preload test verifies a browser microphone, synthetic
 eight-channel Spatial Mask, native PB child view and a 350 ms renderer task.
 These checks are not physical Windows microphone or room-echo qualification.
 No Python, Hush or native-array audio bridge remains in the portable payload.
+
+## Submission result repair (0.7.8-rc.5)
+
+RC5 rebuilds the native PB adapter to read fresh order results after SPA
+navigation. A dispatched order never falls back to stale cart bootstrap data.
+The matching frontend recovers read-only payment pages without requiring Menu
+editor tools and preserves the order receipt instead of generic cart recovery.
+Replace the complete portable folder for these native changes. ASR diagnostics
+now distinguish empty transcript, cancellation, stale capture and background mode;
+this release does not change background filtering or TTS configuration.

@@ -12,7 +12,7 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, totalmoney: 64 }, submissionDelay = 0) {
+function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, totalmoney: 64 }, submissionDelay = 0, staleBootstrap = false) {
   history.replaceState({}, '', '/order/store/1kgJeql/internal_use/orders/create')
   document.body.innerHTML = `<section class="order-create"><label><input type="radio" name="invoice" value="5" checked>無載具</label><label><input type="radio" name="invoice" value="3">手機載具</label><input placeholder="請輸入共8碼編號"><div class="el-form-item"><label>手機號碼</label><input type="email"></div><div class="el-form-item"><label>E-mail</label><input type="email"></div></section><p>總金額<span>$64</span></p><button>送出訂單</button>`
   const clicked = vi.fn()
@@ -24,7 +24,7 @@ function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, tot
         document.body.innerHTML = '<p>取餐編號：TEST-0001</p>'
         history.replaceState({}, '', '/order/store/1kgJeql/internal_use/orders/TEST-123/choosePayment')
         const root = document.createElement('div')
-        root.setAttribute('data-page', JSON.stringify({ component: 'Order/ChoosePayment', url: location.pathname, props: { storeHash: '1kgJeql', flowType: 'internal_use', order: result } }))
+        root.setAttribute('data-page', JSON.stringify({ component: staleBootstrap ? 'Order/Create' : 'Order/ChoosePayment', url: location.pathname, props: { storeHash: '1kgJeql', flowType: 'internal_use', order: result } }))
         document.body.append(root)
       }
       if (submissionDelay)
@@ -37,7 +37,8 @@ function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, tot
   let revision = 0
   const dispatched = vi.fn()
   const accepted = vi.fn()
-  const checkout = createCheckout(async () => structuredClone(cart), () => revision, dispatched, accepted, true)
+  const readResultPage = vi.fn(async () => ({ component: 'Order/ChoosePayment', url: location.pathname, props: { storeHash: '1kgJeql', flowType: 'internal_use', order: result } }))
+  const checkout = createCheckout(async () => structuredClone(cart), () => revision, dispatched, accepted, true, readResultPage)
   const controller = new AbortController()
   const operation = createOperation({ documentId: 'document', operationId: 'checkout', signal: controller.signal, follow: async (target, _label, dispatch) => {
     target.scrollIntoView({ block: 'center' })
@@ -45,7 +46,7 @@ function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, tot
     return true
   } })
   const controls = createControls(operation, controller.signal)
-  return { checkout, controls, cart, clicked, dispatched, accepted, touch: () => revision++ }
+  return { checkout, controls, cart, clicked, dispatched, accepted, readResultPage, touch: () => revision++ }
 }
 
 // Report: this chat Nov17 — DEV-642583 dispatched the final submit but timed out after five seconds.
@@ -146,7 +147,7 @@ it('keeps a collapsed order note in the final facts', async () => {
 
 it('does not enable vendor submission before its result flow has been verified', async () => {
   const { controls, cart, clicked } = setup()
-  const checkout = createCheckout(async () => cart, () => 0, vi.fn(), vi.fn(), false)
+  const checkout = createCheckout(async () => cart, () => 0, vi.fn(), vi.fn(), false, async () => undefined)
   await checkout.phone('0912345678', controls)
   const prepared = await checkout.prepare()
   expect(prepared.ready).toBe(false)
@@ -243,4 +244,28 @@ it('fills only the selected tax invoice field through native input and change ev
   await checkout.choose('none', controls)
   await expect(checkout.tax('12345678', controls)).rejects.toThrow('先選擇')
   expect(field.value).toBe('00123456')
+})
+
+// Report: this chat, Nov23 — order was dispatched but stale Inertia bootstrap data became invalid-result-format.
+it('reads the fresh order result after SPA navigation instead of the stale bootstrap attribute', async () => {
+  const { checkout, controls, clicked, accepted, readResultPage } = setup(undefined, 0, true)
+  await checkout.phone('0912345678', controls)
+  const prepared = await checkout.prepare()
+  expect(await checkout.submit(prepared.confirmationToken!, controls)).toMatchObject({ status: 'accepted', order: { hash: 'TEST-123' } })
+  expect(document.querySelector('[data-page]')?.getAttribute('data-page')).toContain('Order/Create')
+  expect(readResultPage).toHaveBeenCalledOnce()
+  expect(clicked).toHaveBeenCalledOnce()
+  expect(accepted).toHaveBeenCalledOnce()
+})
+
+it('keeps an unavailable fresh result pending and never submits again', async () => {
+  const { checkout, controls, clicked, accepted, readResultPage } = setup()
+  readResultPage.mockRejectedValueOnce(new Error('Temporary result read failure'))
+  await checkout.phone('0912345678', controls)
+  const prepared = await checkout.prepare()
+  expect(await checkout.submit(prepared.confirmationToken!, controls)).toMatchObject({ status: 'pending', effect: 'pending' })
+  expect(clicked).toHaveBeenCalledOnce()
+  expect(accepted).not.toHaveBeenCalled()
+  await expect(checkout.submit(prepared.confirmationToken!, controls)).rejects.toThrow('核對')
+  expect(clicked).toHaveBeenCalledOnce()
 })

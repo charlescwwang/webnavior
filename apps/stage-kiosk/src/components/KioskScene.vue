@@ -996,6 +996,8 @@ async function processVoiceCandidate(
   updateVoiceDiagnostic(diagnosticId, { status: 'recognizing' })
   voiceDiagnosticByUtterance.set(reservation.id, diagnosticId)
   let submitted = false
+  let disposition = 'recognition-failed'
+  let recognizedCharacters: number | undefined
   const startedAt = performance.now()
   const sessionId = interactionRecording.visitorSessionId.value
   const serviceId = scenarioRegistry.activeScenario.value?.id
@@ -1014,27 +1016,35 @@ async function processVoiceCandidate(
       transcribe: (recording, signal, chunk) => transcribeKioskAudio(recording, signal, chunk, transcriptionContext),
     })
     requestMs = performance.now() - startedAt
+    recognizedCharacters = text.trim().length
     signal.throwIfAborted()
     if (!allowsObservedVoice(visualSpeechRequired.value)) {
-      updateVoiceDiagnostic(diagnosticId, { status: 'ignored' })
+      disposition = 'presence-changed'
+      updateVoiceDiagnostic(diagnosticId, { status: 'blocked', reason: disposition })
       return
     }
     if (!text.trim()) {
+      disposition = 'empty-transcript'
       updateVoiceDiagnostic(diagnosticId, { status: 'unrecognized' })
       return
     }
     updateVoiceDiagnostic(diagnosticId, { status: 'recognized', text })
-    if (!interactionTurn.isCurrentVoiceCandidate(candidate))
+    if (!interactionTurn.isCurrentVoiceCandidate(candidate)) {
+      disposition = 'stale-capture'
+      updateVoiceDiagnostic(diagnosticId, { status: 'interrupted', reason: disposition })
       return
+    }
     if (sessionId && sessionId === interactionRecording.visitorSessionId.value)
       void interactionRecording.recordTranscript({ id: reservation.id, text, source: 'asr', recognitionMode: 'legacy' })
     reservation.complete({ recording, text, recognitionMode: 'legacy' })
     submitted = true
+    disposition = 'submitted'
     pendingTranscript.value = undefined
   }
   catch (error) {
     const cancelled = candidate.signal.aborted || reservation.signal.aborted || recognitionSignal?.aborted
-    updateVoiceDiagnostic(diagnosticId, { status: cancelled ? 'ignored' : 'failed' })
+    disposition = cancelled ? 'cancelled' : 'recognition-failed'
+    updateVoiceDiagnostic(diagnosticId, { status: cancelled ? 'interrupted' : 'failed', reason: disposition })
     if (!cancelled) {
       pendingTranscript.value = t(error instanceof KioskDeviceRequestError && error.status === 413 ? 'stage.kiosk-agent.audio-too-large' : 'stage.kiosk-agent.audio-failed')
       console.error('Failed to process kiosk voice candidate:', error)
@@ -1047,7 +1057,7 @@ async function processVoiceCandidate(
     if (sessionId && sessionId === interactionRecording.visitorSessionId.value) {
       // This clock covers the ASR request, separately from the existing
       // decision/tool clock. No customer audio or text is added to this event.
-      void interactionRecording.append('service_event', JSON.stringify({ kind: 'voice_recognition_timing', mode: 'asr', elapsedMs: performance.now() - startedAt, requestMs, audioMs: buffer.length / 16, submitted }), { source: 'voice_recognition_timing', utteranceId: reservation.id })
+      void interactionRecording.append('service_event', JSON.stringify({ kind: 'voice_recognition_timing', mode: 'asr', elapsedMs: performance.now() - startedAt, requestMs, audioMs: buffer.length / 16, submitted, disposition, recognizedCharacters, backgroundSpeechMode: backgroundSpeechMode.value }), { source: 'voice_recognition_timing', utteranceId: reservation.id })
     }
     reservation.cancel()
     if (!submitted)
@@ -1484,7 +1494,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       const knownRejection = !result.uncertain && typeof receipt?.customerMessage === 'string'
       const execution = safeParse(serviceOperationSchema, receipt?.execution)
       const orderUnconfirmed = execution.success && execution.output.steps.some(step => step.effect === 'order' && step.state === 'unknown')
-      const recovery = browserOrdering ? browserRecoveryReply({ operationAttempted: result.uncertain, orderUnconfirmed, verifiedMessage: partialMessage ?? (knownRejection ? String(receipt.customerMessage).slice(0, 2_000) : undefined) }) : undefined
+      const recovery = browserOrdering ? browserRecoveryReply({ receipt, operationAttempted: result.uncertain, orderUnconfirmed, verifiedMessage: partialMessage ?? (knownRejection ? String(receipt.customerMessage).slice(0, 2_000) : undefined) }) : undefined
       const message = recovery?.content ?? (partialMessage
         ? `${partialMessage} 請先核對購物車，避免重複加入。`
         : knownRejection

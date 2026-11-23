@@ -140,6 +140,14 @@ export async function recoverConversationService(client: Pick<ReturnType<typeof 
     await readConversationRetryContext(client)
     return
   }
+  const state = client.tools.value.find(tool => tool.name === 'browser_state_get')
+  if (state) {
+    // Native order pages deliberately expose read-only state, not editor or
+    // owned-Menu recovery tools. Reading a current order retires the connection
+    // error only; it grants no retry, cart mutation or payment authority.
+    parse(pbOrderReceptionSchema, await client.execute(state, { includeCatalog: false }))
+    return
+  }
   const contextTool = client.tools.value.find(tool => tool.name === 'kiosk_conversation_context')
   const taskTool = client.tools.value.find(tool => tool.name === 'kiosk_agent_task')
   if (!contextTool || !taskTool)

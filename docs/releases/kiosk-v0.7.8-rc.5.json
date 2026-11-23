@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "tag": "kiosk-v0.7.8-rc.5",
+  "sourceReference": "refs/tags/kiosk-v0.7.8-rc.5^{}",
+  "previousCandidate": "kiosk-v0.7.8-rc.4",
+  "createdDate": "2026-11-23",
+  "status": "release-candidate-validation-incomplete",
+  "purpose": "Repair false post-submission cart failures and native payment recovery; distinguish ASR admission outcomes without changing background filtering.",
+  "changes": [
+    "Fresh same-order Inertia result read replaces stale bootstrap attribute after submission; shared with ordinary order reads, preserves protocol version and identity validation.",
+    "Failed fresh result read stays pending; no submit replay.",
+    "Native read-only payment/result recovery does not require owned Menu editor tools.",
+    "Order outcome guidance retained rather than replaced by generic unsettled-cart warning.",
+    "ASR timing records disposition, recognized character count and current background mode; cancelled capture diagnostic no longer says ignored."
+  ],
+  "checks": {
+    "kioskUnit": {
+      "passed": 1201,
+      "expectedFail": 1,
+      "skipped": 49
+    },
+    "browserCheckoutPayment": 24,
+    "serverBackgroundDirect": 18,
+    "scopedTypes": [
+      "stage-ui",
+      "stage-kiosk",
+      "stage-kiosk-desktop"
+    ],
+    "changedCodeLint": "passed",
+    "redReproductions": [
+      "Stale SPA bootstrap gives unknown instead of accepted.",
+      "Native payment recovery falls into Menu recovery tools unavailable."
+    ],
+    "rootChecks": "not rerun under scoped validation policy"
+  },
+  "artifacts": "pb-test.local/kiosk-rc5-20261123-r1/",
+  "pendingValidation": [
+    "Physical Windows and full customer ASR/application/merchant payment acceptance.",
+    "No real order submission or payment performed; isolated browser fixtures only."
+  ],
+  "reviewLimitation": "Automatic approval review rejected a request carrying a real archived order ref to the merchant. Used existing local capture and isolated fixtures instead; rejected request not executed.",
+  "nativeExeUpdateRequired": true,
+  "notChanged": [
+    "Background filter policy",
+    "TTS",
+    "ASR models",
+    "Audio algorithms",
+    "Webpage image recognition"
+  ],
+  "tagPolicy": {
+    "immutable": true,
+    "stableAfterAcceptance": "kiosk-v0.7.8"
+  }
+}

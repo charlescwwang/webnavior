@@ -26,7 +26,7 @@ export function notificationField(kind: 'phone' | 'email') {
 }
 
 /** One document's checkout draft and one-use submission ticket; no payment controls are exposed. */
-export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: () => number, onDispatch: () => void, onAccepted: () => void, canSubmit: boolean) {
+export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: () => number, onDispatch: () => void, onAccepted: () => void, canSubmit: boolean, readResultPage: () => Promise<unknown>) {
   let confirmation: { token: string, fingerprint: string, expiresAt: number } | undefined
   let dispatched = false
   function unique<T extends HTMLElement>(elements: Iterable<T> | ArrayLike<T>) {
@@ -218,17 +218,15 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
       // The fixed checkout expectation predates the click. Navigation alone
       // proves no acceptance, and pickup number is not the merchant identity.
       const parent = path.match(/^\/order\/store\/([^/]+)\/([^/]+)\/orders\/create$/)!
-      const roots = document.querySelectorAll('[data-page]')
       let raw: unknown
-      if (roots.length === 1) {
-        try {
-          raw = JSON.parse(roots[0].getAttribute('data-page')!)
-        }
-        catch { raw = null }
+      try {
+        // Inertia's data-page attribute is bootstrap data and can still say
+        // Order/Create after the URL has changed. Only a fresh result read can
+        // establish merchant acceptance; a failed read stays pending, never
+        // replays the already-dispatched submit or invents a cart failure.
+        raw = await readResultPage()
       }
-      else if (roots.length > 1) {
-        raw = null
-      }
+      catch { raw = undefined }
       const result = readPbSubmissionResult({ origin: location.origin, store: parent[1], flow: parent[2], cartPath: path, total: fresh.form.total! }, location.href, raw)
       if (result.status === 'accepted')
         onAccepted()

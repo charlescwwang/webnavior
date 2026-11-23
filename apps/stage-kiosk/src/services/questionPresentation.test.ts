@@ -699,3 +699,11 @@ it('keeps a rejected targeted display concise and does not repeat its error or t
   expect(reply.content).not.toContain('不相關')
   expect(reply.content).toBe('這次餐點介紹尚未完成，正在重新確認。')
 })
+
+// Report: this chat, Nov23 — a dispatched order was incorrectly presented as an unsettled cart operation.
+it('keeps the native order outcome message instead of generic cart recovery', () => {
+  const message = '訂單結果仍在確認，請先查看目前畫面，避免重複送出。'
+  const result = browserRecoveryReply({ operationAttempted: true, receipt: { schemaVersion: 1, ok: true, source: 'browser', code: 'order-submission-result', dispatch: 'dispatched', status: 'unknown', effect: 'unknown', consistency: 'unavailable', reason: 'invalid-result-format', customerMessage: message } })
+  expect(result.content).toBe(message)
+  expect(result.content).not.toContain('購物車')
+})

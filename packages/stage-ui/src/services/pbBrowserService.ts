@@ -125,7 +125,7 @@ export function createPbService() {
   }, () => {
     if (writeMarker && localStorage.getItem(blockedKey) === writeMarker)
       localStorage.removeItem(blockedKey)
-  }, journey.canSubmit)
+  }, journey.canSubmit, readOrderPage)
   let controlRevision = 0
   const controlTools = new Set(['browser_return_table', 'browser_table_select', 'browser_start_ordering', 'browser_cart_review', 'browser_search', 'browser_open_product', 'browser_close_product', 'browser_set_note', 'browser_clarify_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_customer_reset', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_invoice_tax', 'browser_order_submit'])
   let activeVisual: AbortController | undefined
@@ -221,6 +221,23 @@ export function createPbService() {
     if (pages.length !== 1)
       throw new Error('PB 頁面資料尚未就緒，請重新載入後再試。')
     return parse(looseObject({ version: nullable(string()) }), JSON.parse(pages[0].getAttribute('data-page')!)).version
+  }
+
+  /** Fresh same-order HTTP facts for both post-submit acknowledgement and ordinary order reads. */
+  async function readOrderPage() {
+    const url = location.href
+    if (!isPbOrderResultUrl(entry, url))
+      throw new Error('訂單結果頁仍在載入。')
+    const version = readAssetVersion()
+    // The rendered version is an Inertia protocol token. Its bootstrap order
+    // payload is not current after SPA navigation, so never use it as a receipt.
+    const response = await fetch(url, { cache: 'no-store', redirect: 'error', headers: { 'X-Inertia': 'true', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html, application/xhtml+xml', ...(version === null ? {} : { 'X-Inertia-Version': version }) }, signal: AbortSignal.timeout(8000) })
+    if (!response.ok || response.url !== url || response.headers.get('X-Inertia') !== 'true')
+      throw new Error('訂單狀態暫時無法讀取，請先查看畫面，避免重複送單。')
+    const raw: unknown = await response.json()
+    if (location.href !== url)
+      throw new Error('訂單狀態屬於已離開的頁面。')
+    return raw
   }
 
   async function pageProps(suffix: string, signal?: AbortSignal) {
@@ -617,15 +634,7 @@ export function createPbService() {
         parse(strictObject({ includeCatalog: boolean() }), input)
         if (isPbOrderResultUrl(entry, location.href)) {
           const url = location.href
-          const version = readAssetVersion()
-          // PB returns 409 even for a healthy payment page when this version
-          // is omitted. Result reads use the same protocol token as editor reads.
-          const response = await fetch(url, { cache: 'no-store', redirect: 'error', headers: { 'X-Inertia': 'true', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html, application/xhtml+xml', ...(version === null ? {} : { 'X-Inertia-Version': version }) }, signal: AbortSignal.timeout(8000) })
-          if (!response.ok || response.url !== url || response.headers.get('X-Inertia') !== 'true')
-            throw new Error('訂單狀態暫時無法讀取，請先查看畫面，避免重複送單。')
-          const order = readPbOrderState(entry, url, await response.json())
-          if (location.href !== url)
-            throw new Error('訂單狀態屬於已離開的頁面。')
+          const order = readPbOrderState(entry, url, await readOrderPage())
           // A result page grants no editor controls. Its fresh lifecycle decision
           // permits only Host entry reload after a terminal payment state. Never
           // clear a journal marker or infer settlement from the page title.
