@@ -26,10 +26,14 @@ Three isolated Linux Electron/native IPC cart cycles passed after the fix. See t
 [RC3 record](../../docs/releases/kiosk-v0.7.8-rc.3.json) for scope and remaining
 Windows/formal application acceptance.
 
-All are candidate checkpoints. The retained portable archive reports `0.7.8`
-and does not contain RC2 or RC3. Both have successful Electron compilation but no new
-Windows package or deployment. Physical acceptance is still pending. Future fixes
-receive a new RC tag; existing tags are never moved. Image features remain separate.
+RC3 is now packaged as application version `0.7.8-rc.3` and its matching Kiosk
+frontend is deployed. See the [deployment record](../../docs/releases/kiosk-v0.7.8-rc.3-deployment.json)
+for the archive checksum, source commit and served-content verification. Exit the
+old application and replace the complete portable folder to load the new native
+PB adapter; updating the web page alone does not apply these native fixes.
+The original retained `0.7.8` archive remains unchanged and lacks RC2/RC3 fixes.
+Windows physical and formal application acceptance remain pending. Existing tags
+are never moved, and webpage image recognition remains separate.
 
 ## November master audio restored (0.7.8)
 

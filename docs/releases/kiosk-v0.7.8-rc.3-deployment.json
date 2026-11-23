@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-23T03:10:55.381671+00:00",
+  "release": "kiosk-rc3-20261123-r1",
+  "sourceCandidate": "kiosk-v0.7.8-rc.3",
+  "sourceCommit": "95ad652625c144024ec068a41b73b9b203379809",
+  "desktopVersion": "0.7.8-rc.3",
+  "status": "deployed-and-packaged",
+  "frontend": {
+    "target": "/var/www/airi/kiosk",
+    "changedFiles": 96,
+    "httpChecks": 9,
+    "entryLast": true,
+    "previousHashedAssetsRetained": true,
+    "backup": "/home/aimax/webnavior/pb-test.local/kiosk-rc3-20261123-r1/before-activation",
+    "apiRestart": false,
+    "apiPid": "137553",
+    "db": "ready",
+    "redis": "ready"
+  },
+  "windows": {
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc3-20261123-r1/windows/Webnavior-Kiosk-Windows-x64-20261123-110857.zip",
+    "sha256": "f0148f2f31f3abeac83d567d9fbd006171c9d2efdb863130eecbc22167aae853",
+    "bytes": 163763236,
+    "files": 81,
+    "crc": "passed",
+    "payloadHashes": "passed",
+    "compiledMainPreloadPbIdentical": true,
+    "nativeLoadingFixture": "passed",
+    "signed": false,
+    "physicalValidation": false
+  },
+  "logs": "/home/aimax/webnavior/pb-test.local/kiosk-rc3-20261123-r1",
+  "verificationScope": "Scoped unit/types/lint and three live isolated Linux Electron/native cart cycles recorded by RC3; new production HTTP checks and portable payload checks passed. Windows and full formal Vue/API/ASR acceptance remain pending.",
+  "installation": "Exit the old application completely and extract the complete new folder. Existing per-user device and merchant login data are preserved.",
+  "changesNotIncluded": [
+    "Global service-recovery lock redesign.",
+    "Webpage screenshot recognition."
+  ]
+}

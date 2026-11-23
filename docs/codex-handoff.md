@@ -1,5 +1,13 @@
 # Codex Handoff
 
+## 2026-11-23 RC3 部署與 Windows 打包完成
+
+- 使用者明確要求部署與打包。包版本改為0.7.8-rc.3以區別舊0.7.8，來源commit 95ad652625c144024ec068a41b73b9b203379809（RC3修正加包版號／說明），不移動既有RC tags、不宣稱stable。Windows README與包內先看我已更新。
+- 前端發布 kiosk-rc3-20261123-r1，/var/www/airi/kiosk 共96 changed files，備份舊入口、保留舊hash資產，index最後切換。四入口index/version＋公開entry JS共9項HTTP bytes核對通過；API PID137553保持不變、無restart，公開與本機readyz均db/redis ok。未變更API、資料庫、模型、收音或PB商家服務。
+- Windows x64包 Webnavior-Kiosk-Windows-x64-20261123-110857.zip，163763236 bytes，SHA256 f0148f2f31f3abeac83d567d9fbd006171c9d2efdb863130eecbc22167aae853；官方固定Runtime SHA／PE x64／ZIP CRC／81檔payload hashes及main/preload/pb編譯輸出一致均通過，包內version 0.7.8-rc.3與sourceCommit已核對。未簽章，Windows實機仍待驗收。Electron原生載入fixture通過；修正本身3次live cart cycles與100 scoped unit等見RC3記錄。
+- 證據與回復資料 /home/aimax/webnavior/pb-test.local/kiosk-rc3-20261123-r1/；deployment正式記錄 docs/releases/kiosk-v0.7.8-rc.3-deployment.json。/tmp/latest-windows-portable.json已更新且舊檔備份在stage。舊Windows ZIP不含本次修正，現場需完整退出並整包解壓新資料夾；保留LOCALAPPDATA設備／商家登入。只刷新網頁不足以更新native PB adapter。未自動操作現場Windows機台，未push Git遠端。
+
+
 ## 2026-11-23 菜單轉購物車實測根因與修正（RC3，未部署）
 
 - 使用者補充最常在菜單轉購物車後顯示完整資料讀取失敗；真 Linux Electron/native IPC/PB 隔離profile重現：購物車導航與 includeCatalog=false 成功，includeCatalog=true 三次皆拒絕。HTTP證據為裸 menu 302 至同店 menu?table=... 再200；原本 response.url 必須等於request URL，把正常canonical redirect當登入錯誤。並非已證明商家改版或此次由跨document競態造成。僅保留rendered link參數的嘗試沒有解決，已移除該嘗試。
