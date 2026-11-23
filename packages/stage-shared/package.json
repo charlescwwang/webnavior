@@ -48,7 +48,8 @@
     "./kiosk-audio": "./src/kioskAudio.ts",
     "./kiosk-desktop": "./src/kioskDesktop.ts",
     "./interaction-lifecycle": "./src/interactionLifecycle.ts",
-    "./kiosk-service-mode": "./src/kioskServiceMode.ts"
+    "./kiosk-service-mode": "./src/kioskServiceMode.ts",
+    "./kiosk-host-tools": "./src/kioskHostTools.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

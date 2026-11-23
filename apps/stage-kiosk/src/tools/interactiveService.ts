@@ -1,8 +1,8 @@
 import type { Tool } from '@xsai/shared-chat'
 
+import { hostToolNames } from '@proj-airi/stage-shared/kiosk-host-tools'
 import { rawTool } from '@xsai/tool'
 
-import { hostToolNames } from '../../../order-menu/src/hostTools'
 import { executeBrowserCartTool } from '../services/browserCartTask'
 import { createBrowserOrderingTools } from '../services/browserOrderingTools'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'

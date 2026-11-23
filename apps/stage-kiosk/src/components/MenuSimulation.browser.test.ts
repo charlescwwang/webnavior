@@ -8,7 +8,7 @@ import { createI18n } from 'vue-i18n'
 
 import zhHant from '../../../../packages/i18n/src/locales/zh-Hant/stage.yaml'
 import MenuItemCard from '../../../order-menu/src/components/menuItemCard.vue'
-import MenuSimulationPanel from './menuSimulationPanel.vue'
+import MenuSimulationPanel from '../devtools/menuSimulationPanel.vue'
 
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 

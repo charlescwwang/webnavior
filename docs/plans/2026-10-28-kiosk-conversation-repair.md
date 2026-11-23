@@ -239,3 +239,9 @@ SLM快速16例與歷史26例使用不同分類契約／上下文／候選，不�
 - D09尚未通過：顧客明說「我想問，那個，我還沒說清楚」，原句retry正常重新送判斷，但得到INCOMPLETE，沒有回覆；gold要求clarify。沒有查回舊水果、錯誤訊息或訂單副作用。這是「明顯還沒說完時等待」與「使用者主動重試時應有澄清回饋」的行為／預期差異，不能把所有INCOMPLETE硬交Main，也不能臨時改gold算通過。需在現有等待／重試呈現流程解決並補對照測試後，再推進20×3驗收。
 
 以上兩輪皆保留當時source hash manifest；後一輪不覆蓋前一輪失敗。新的提示修改已有admission regression、decision套件測試、Server typecheck及改檔lint驗證紀錄（`/tmp/kiosk-repair-restored-*`）。CUDA恢復代表能推論，不代表全部對話驗收通過；20×3及其他尚未跑的矩陣仍保留未完成。
+
+### 2026-11-23 正式 PB 與示範網站的依賴分離
+
+正式 Kiosk 曾直接引用 `apps/order-menu` 的 host-only 工具名稱及價格澄清文字，管理員元件也靜態引用示範測試面板。這是共用模組歸屬錯誤，不能以此要求保留正式端對示範網站的依賴。
+
+工具名稱契約移至 `stage-shared/kiosk-host-tools`，價格文案移至中央 `orderingMessages`；測試面板改為 DEV-only 非同步載入，橋接測試頁移至 `stage-ui/test/fixtures`。正式 Vite 產物逐 chunk 的模組清單驗證沒有 order-menu、order-menu-server、測試面板或測試頁程式。這項驗證證明產物程式隔離，不代表已完成現場支付或所有延遲問題的驗收。

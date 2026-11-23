@@ -2,11 +2,11 @@ import { defineInvoke } from '@moeru/eventa'
 import { createContext } from '@moeru/eventa/adapters/window-message'
 import { expect, it } from 'vitest'
 
-import { probe } from './fixtures/eventaProbe'
+import { probe } from '../../test/fixtures/eventaProbe'
 
 it('uses the installed Eventa across real origins and settles pending calls on dispose without WebMCP', async () => {
   expect('modelContext' in document).toBe(false)
-  const url = new URL('/src/services/fixtures/eventaProbe.html', window.location.href)
+  const url = new URL('/test/fixtures/eventaProbe.html', window.location.href)
   url.hostname = url.hostname === 'localhost' ? '127.0.0.1' : 'localhost'
   expect(url.origin).not.toBe(window.location.origin)
   const frame = document.createElement('iframe')

@@ -1,5 +1,12 @@
 # Codex Handoff
 
+## 2026-11-23 Production PB / demo dependency separation
+
+- User challenged production PB depending on the test application. Removed Kiosk runtime imports from apps/order-menu: host-only tool names now belong to stage-shared/kiosk-host-tools; price clarification copy belongs to central orderingMessages. No compatibility re-export from the demo app.
+- Moved operator simulation component to Kiosk devtools and replaced its static import with a DEV-only async import. Moved bridge fixture pages from stage-ui/src/services/fixtures to stage-ui/test/fixtures, updating integration tests. Demo runtime remains available to isolated development/tests only; no demo website deletion needed for this boundary fix.
+- Production Vite chunk-module audit:2921 emitted modules,0 demo/order-menu-server/devtools simulation/test fixture modules. Kiosk1206 pass/1 expected fail/49 skip,pricing87 pass,bridge browser20 pass,simulation browser1 pass. Kiosk/order-menu/stage-ui/stage-shared scoped types and changed-code lint pass. Root typecheck not run. No ASR/TTS/model/checkout policy/native executable change. Build evidence temporarily /tmp/pb-boundary-check pending release staging.
+
+
 ## 2026-11-23 Past-fix regression audit and follow-through
 
 - User asked what old Menu means, challenged recording expiry, and requested checking prior organized fixes for active misuse. Audited handoff, October conversation-repair/service-recovery plans, current native/owned protocol paths, capture lifecycle/FIFO, quantity/checkout wrappers, table guidance, background-mode direct rules, and production audio entry. CodeGraph status0 pending; graph is supplementary because Vue callback edges are incomplete.

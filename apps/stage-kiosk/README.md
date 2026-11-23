@@ -1,6 +1,6 @@
 # AIRI Kiosk
 
-`@proj-airi/stage-kiosk` is the full-screen AIRI surface for a restaurant kiosk with voice-led ordering and existing touch controls. It shares AIRI's local hardware UI, LLM tools, and independent `@proj-airi/order-menu` service; the Server owns all ASR/TTS provider, model, voice, endpoint, and credential policy.
+`@proj-airi/stage-kiosk` is the full-screen AIRI surface for a restaurant kiosk with voice-led ordering and existing touch controls. It shares AIRI's local hardware UI and LLM tools; production PB uses the Electron browser adapter and does not depend on the demo `@proj-airi/order-menu` application. Demo simulation controls load only in development; the Server owns all ASR/TTS provider, model, voice, endpoint, and credential policy.
 
 Use it for customer-facing horizontal or vertical kiosk displays. Do not use it as a replacement for the normal settings-oriented `stage-web` application.
 

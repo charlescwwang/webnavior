@@ -1,4 +1,5 @@
 import type { ConversationContext, ConversationHandoff } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { HostToolName } from '@proj-airi/stage-shared/kiosk-host-tools'
 
 import type { PaymentMethod } from '../../order-menu-server/src/domain/contracts'
 import type { RecommendationStrategy } from '../../order-menu-server/src/domain/recommendation'
@@ -10,23 +11,23 @@ import type { IngredientFilters } from './domain/composition'
 import type { CartSnapshot, FulfillmentMode, MenuItem, MenuPageState, PosOrderGateway, RecommendationTag, Selection, SubmittedOrder } from './domain/order-machine'
 import type { SelectedQueryScope } from './domain/queryScope'
 import type { SeatingContext } from './domain/seating'
-import type { HostToolName } from './hostTools'
 import type { DecisionContext, DomainPlan, DomainReference, IntentCandidate, KioskRevisions, OperationPlan, PendingConfirmation, PendingQuestion } from './kiosk-intents'
 import type { ScrollDirection, ScrollResult } from './menuScroll'
 import type { MenuToolDefinition, MenuToolName } from './toolDefinitions'
 
 import { errorMessageFrom } from '@moeru/std'
 import { conversationContextSchema, handoffSchema, isTargetAcknowledgement, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { hostToolNames } from '@proj-airi/stage-shared/kiosk-host-tools'
 import { parse } from 'valibot'
 
+import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
 import { ingredientDefinitions, vegetarianIngredients } from '../../order-menu-server/src/domain/composition'
 import { currentRecommendationSignal } from '../../order-menu-server/src/domain/recommendation'
 import { emptyFilterMessage, filterAvailability, filterIngredients, ingredientFilters } from './domain/composition'
 import { itemMatchesQuery, possibleMenuItems } from './domain/menuIdentity'
 import { catalogInfo, createOrderMachine, itemAvailability, ItemSelectionError, menuPageState, menuPageStates } from './domain/order-machine'
-import { filterPrices, intersectPrices, priceClarification, priceConditions, priceDescription } from './domain/pricing'
+import { filterPrices, intersectPrices, priceConditions, priceDescription } from './domain/pricing'
 import { createQueryScope } from './domain/queryScope'
-import { hostToolNames } from './hostTools'
 import { authorize, buildClarificationPrompt, compileOperationPlan, configurationQuestion, createConfirmation, createQuestion, deriveDecisionContext, questionIsCurrent, resolveClarificationReference, resolveIntent, targetReferenceLimit, validateConfirmation } from './kiosk-intents'
 import { createMealClarification, mealMessages } from './mealClarification'
 import { paymentLabels } from './pos-bridge'
@@ -2334,7 +2335,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         throw new Error('STALE_PLAN: Agent task constraints expired or catalog changed.')
       // The host stops on ok:false. This is a clarification boundary, not an
       // empty search result that the Agent may retry with guessed amounts.
-      return { ok: false, items: [], customerMessage: priceClarification }
+      return { ok: false, items: [], customerMessage: orderingMessages['zh-Hant'].priceClarification }
     }
     if (name === 'menu_confirm_item')
       return await invoke(name, input)

@@ -102,7 +102,7 @@ it('recovers a definitive presentation refusal after a lost response while retai
 })
 
 async function setup(query = '', fixture = 'menuFrame') {
-  const url = new URL(`/src/services/fixtures/${fixture}.html${query}`, window.location.href)
+  const url = new URL(`/test/fixtures/${fixture}.html${query}`, window.location.href)
   url.hostname = url.hostname === 'localhost' ? '127.0.0.1' : 'localhost'
   const frame = document.createElement('iframe')
   const loaded = new Promise<void>(resolve => frame.addEventListener('load', () => resolve(), { once: true }))
@@ -213,7 +213,7 @@ it.each(['parent-origin', 'menu-origin'] as const)('rejects a sibling iframe att
   cleanups.push(() => connection.dispose())
   const binding = await defineInvoke(connection.context, discoverService)({ version: 1, challenge: 'source-test', connectionId: 'approved-parent' })
   const request = { connectionId: binding.connectionId, documentId: binding.documentId, toolsRevision: binding.toolsRevision, operationId: 'unapproved-write', name: 'order_add_item', input: { itemId: 'dish-0', quantity: 1 } }
-  const actorUrl = new URL('/src/services/fixtures/sourceProbe.html', sourceOrigin === 'parent-origin' ? window.location.origin : url.origin)
+  const actorUrl = new URL('/test/fixtures/sourceProbe.html', sourceOrigin === 'parent-origin' ? window.location.origin : url.origin)
   actorUrl.searchParams.set('request', JSON.stringify(request))
   actorUrl.searchParams.set('targetOrigin', url.origin)
   const actor = document.createElement('iframe')

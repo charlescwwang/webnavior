@@ -10,7 +10,6 @@ import { handoffSchema, serviceContextKey } from '@proj-airi/stage-shared/kiosk-
 import { parse } from 'valibot'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
-import { priceClarification } from '../../../order-menu/src/domain/pricing'
 import { normalizeTranscript } from '../../../server/src/services/domain/kiosk-interaction-decision/context'
 import { decisionQuestionBudget } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import { presentedQuestionFrom } from './questionPresentation'
@@ -372,7 +371,7 @@ async function resolveFastPath(input: {
     const decisionSource = applicationResolved ? 'application' : 'system-one'
     decisionState = resolvedPriceState(decisionState, decision)
     if (decision.reason === 'UNSUPPORTED_PRICE')
-      return { kind: 'CLARIFICATION', prompt: priceClarification, decisionState }
+      return { kind: 'CLARIFICATION', prompt: orderingMessages['zh-Hant'].priceClarification, decisionState }
     input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource, transcript: input.transcript })
     if (decisionState?.phase === 'clarification' && decision.kind === 'CLARIFICATION') {
       const question = decisionState.waitingFor
@@ -421,7 +420,7 @@ async function resolveFastPath(input: {
         input.session?.discard()
       decisionState = resolvedPriceState(decisionState, decision)
       if (decision.reason === 'UNSUPPORTED_PRICE')
-        return { kind: 'CLARIFICATION', prompt: priceClarification, decisionState }
+        return { kind: 'CLARIFICATION', prompt: orderingMessages['zh-Hant'].priceClarification, decisionState }
       spent = decision.modelQuestions === undefined ? undefined : spent + decision.modelQuestions
       input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource: 'system-one', transcript: input.transcript })
       if (decision.kind === 'INCOMPLETE') {

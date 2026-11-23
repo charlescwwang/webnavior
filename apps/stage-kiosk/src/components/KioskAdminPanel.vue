@@ -3,11 +3,11 @@ import type { KioskDevice } from '../services/kiosk-device'
 
 import { useBuildInfo } from '@proj-airi/stage-ui/composables/use-build-info'
 import { Checkbox, FieldRange } from '@proj-airi/ui'
+import { defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
 import KioskMediaDeviceSettings from './KioskMediaDeviceSettings.vue'
-import MenuSimulationPanel from './menuSimulationPanel.vue'
 
 import { useFeedbackInvitationEnabled } from '../composables/useFeedbackInvitationSettings'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
@@ -28,6 +28,10 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const buildInfo = useBuildInfo()
 const development = import.meta.env.DEV
+// Production must not load the demo application through operator test controls.
+const MenuSimulationPanel = import.meta.env.DEV
+  ? defineAsyncComponent(() => import('../devtools/menuSimulationPanel.vue'))
+  : undefined
 const feedbackInvitationEnabled = useFeedbackInvitationEnabled()
 const decisionDiagnosticsEnabled = defineModel<boolean>('decisionDiagnosticsEnabled', { required: true })
 const idleDiagnosticsEnabled = defineModel<boolean>('idleDiagnosticsEnabled', { required: true })

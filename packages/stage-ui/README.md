@@ -508,3 +508,7 @@ PB submission acknowledgement uses a fresh same-order Inertia HTTP result read,
 not the bootstrap `data-page` attribute left behind by SPA navigation. An
 unavailable read retains pending dispatch and cannot repeat submission. The
 same reader owns normal payment/result state, including asset-version headers.
+
+Browser bridge test pages live in `test/fixtures`, outside runtime source. They
+may use the independent demo ordering runtime to exercise protocol integration;
+production consumers must not import those fixtures.

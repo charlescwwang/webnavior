@@ -1,8 +1,5 @@
 import type { PriceChoice, PriceConditions, PriceEvidence } from '../../../server/src/services/domain/kiosk-interaction-decision/priceContracts'
 
-/** Safe clarification when no complete single-dish price interpretation exists. */
-export const priceClarification = '請指定單份餐點的價格上限或範圍，例如「100 元以下」。整筆預算、左右或更便宜的需求，目前需要先確認單份價格條件。'
-
 export const priceProperties = {
   minPrice: { type: 'integer', minimum: 0, description: '單份基本售價下限，POS 售價單位；不是整筆預算。' },
   maxPrice: { type: 'integer', minimum: 0, description: '單份基本售價上限，POS 售價單位；不是整筆預算。' },

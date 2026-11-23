@@ -259,3 +259,7 @@ lifetime belong to `apps/stage-kiosk-desktop/audio`, not this neutral package.
 `kiosk-array-input` owns the v1 native-input control/MessagePort contract for the
 original desktop LCMV path. Control RPC is trusted-main-frame only; each audio port
 belongs to one capture generation. It is separate from the native GPU DSP bridge.
+
+`kiosk-host-tools` owns the host-only tool-name contract used by Kiosk and the
+demo ordering service. Production consumers must import this package subpath,
+never the demo application source. It defines tool visibility, not ordering data.

@@ -1,11 +1,11 @@
 import type { InteractionLifecycleMessage } from '@proj-airi/stage-shared/interaction-lifecycle'
 
-import type { CheckoutSnapshot } from '../../../../../apps/order-menu/src/domain/checkout-flow'
+import type { CheckoutSnapshot } from '../../../../apps/order-menu/src/domain/checkout-flow'
 
-import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from '../../../../../apps/order-menu/src/domain/checkout-flow'
-import { menu } from '../../../../../apps/order-menu/src/domain/order-machine'
-import { connectInteractiveService } from '../../../../../apps/order-menu/src/interactiveService'
-import { createMenuToolRuntime } from '../../../../../apps/order-menu/src/webmcp'
+import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from '../../../../apps/order-menu/src/domain/checkout-flow'
+import { menu } from '../../../../apps/order-menu/src/domain/order-machine'
+import { connectInteractiveService } from '../../../../apps/order-menu/src/interactiveService'
+import { createMenuToolRuntime } from '../../../../apps/order-menu/src/webmcp'
 
 const origin = new URL(document.referrer).origin
 const slow = new URL(window.location.href).searchParams.has('slow')
