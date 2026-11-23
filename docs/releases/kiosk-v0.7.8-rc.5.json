@@ -4,7 +4,7 @@
   "sourceReference": "refs/tags/kiosk-v0.7.8-rc.5^{}",
   "previousCandidate": "kiosk-v0.7.8-rc.4",
   "createdDate": "2026-11-23",
-  "status": "release-candidate-validation-incomplete",
+  "status": "internal-source-checkpoint-superseded",
   "purpose": "Repair false post-submission cart failures and native payment recovery; distinguish ASR admission outcomes without changing background filtering.",
   "changes": [
     "Fresh same-order Inertia result read replaces stale bootstrap attribute after submission; shared with ordinary order reads, preserves protocol version and identity validation.",
@@ -50,5 +50,6 @@
   "tagPolicy": {
     "immutable": true,
     "stableAfterAcceptance": "kiosk-v0.7.8"
-  }
+  },
+  "supersededBy": "kiosk-v0.7.8-rc.6"
 }

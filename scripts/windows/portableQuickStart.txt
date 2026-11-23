@@ -1,4 +1,4 @@
-Webnavior Kiosk 0.7.8-rc.5（連線、公告與手動付款修正版） — Windows 10/11 Intel x64 可攜版
+Webnavior Kiosk 0.7.8-rc.6（連線、公告與手動付款修正版） — Windows 10/11 Intel x64 可攜版
 
 本版補上付款頁 Inertia 版本標頭，避免正常付款頁被誤判為連線失敗。
 普通首次讀取即可自動暫緩優惠券、關閉商家公告；可選 LINE Pay 或信用卡手動付款。

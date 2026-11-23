@@ -2732,10 +2732,12 @@ async function sendConversationMessage(
             await interactiveServiceClient.waitUntilReady(signal)
           // External browser tools observe their own document. They cannot supply
           // the owned Menu's revision, task, POS, or finite-candidate contracts.
-          if (interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_observe')) {
+          if (browserOrdering) {
             if (!interactionTurn.isCurrent(turn) || interactiveServiceClient.availability.value !== 'ready')
               throw new Error('External browser document is unavailable.')
-            retryContextKey = await retryContext.capture()
+            // Payment/result documents expose browser_state_get only. They
+            // retain native protocol ownership but have no editor retry ticket.
+            retryContextKey = interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_recovery_context') ? await retryContext.capture() : undefined
             if (!interactionTurn.isCurrent(turn))
               throw new Error('External browser request was superseded.')
             const browserTools = activeTools.value.filter(tool => Object.hasOwn(orderingTools, tool.function.name))

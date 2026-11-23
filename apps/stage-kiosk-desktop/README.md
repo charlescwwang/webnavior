@@ -488,9 +488,9 @@ eight-channel Spatial Mask, native PB child view and a 350 ms renderer task.
 These checks are not physical Windows microphone or room-echo qualification.
 No Python, Hush or native-array audio bridge remains in the portable payload.
 
-## Submission result repair (0.7.8-rc.5)
+## Submission result repair (0.7.8-rc.6)
 
-RC5 rebuilds the native PB adapter to read fresh order results after SPA
+RC6 rebuilds the native PB adapter to read fresh order results after SPA
 navigation. A dispatched order never falls back to stale cart bootstrap data.
 The matching frontend recovers read-only payment pages without requiring Menu
 editor tools and preserves the order receipt instead of generic cart recovery.
