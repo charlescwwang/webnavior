@@ -1,4 +1,9 @@
-Webnavior Kiosk 0.7.8（十一月 master 收音回復版） — Windows 10/11 Intel x64 可攜版
+Webnavior Kiosk 0.7.8-rc.3（購物車資料讀取修正版） — Windows 10/11 Intel x64 可攜版
+
+本版修正進入購物車後，PB 正常菜單轉址被誤判為讀取失敗，以及首次加餐空草稿的讀回錯誤。
+包含 RC2 的共用資料驗證，需搭配本次部署的 Kiosk 前端。請完整退出舊程式後，將整包解壓到新資料夾使用。
+現有 Windows 使用者的設備設定與商家登入會保留；不要刪除 LOCALAPPDATA 內的資料。
+此版仍為候選版，尚未完成 Windows 實機驗收。
 
 本次先完整退出舊程式、整包解壓到新資料夾。統編代填配套伺服器版本已啟用。
 0.7.8 依十一月 master（b1a7f5b／326ff95）恢復 Electron 內 Chromium 收音。
