@@ -5,7 +5,7 @@
   "sourceCandidate": "kiosk-v0.7.8-rc.4",
   "sourceCommit": "b598ef9a3d974d88aba49181766b7ac153512b37",
   "desktopVersion": "0.7.8-rc.4",
-  "status": "frontend-deployed-and-packaged-api-history-pending",
+  "status": "deployed-and-packaged",
   "frontend": {
     "target": "/var/www/airi/kiosk",
     "changedFiles": 98,
@@ -13,8 +13,8 @@
     "entryLast": true,
     "previousHashedAssetsRetained": true,
     "backup": "/home/aimax/webnavior/pb-test.local/kiosk-rc4-20261123-r1/before-activation",
-    "apiRestart": false,
-    "apiPid": "137553"
+    "apiRestart": true,
+    "apiPid": "400244"
   },
   "windows": {
     "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc4-20261123-r1/windows/Webnavior-Kiosk-v0.7.8-rc.4-Windows-x64-20261123-120801.zip",
@@ -37,9 +37,29 @@
     "physicalWindows": "pending"
   },
   "apiHistory": {
-    "status": "not-deployed-runtime-restored",
-    "reason": "systemctl restart authorization timed out; sudo denied by NoNewPrivs environment. Original API process remains ready.",
-    "changes": "12 messages / 6000 chars and recovery-guidance inference filtering are committed but not active."
+    "status": "deployed",
+    "apiPid": "400244",
+    "previousPid": "137553",
+    "health": {
+      "status": "ready",
+      "checks": {
+        "db": "ok",
+        "redis": "ok"
+      }
+    },
+    "files": [
+      {
+        "path": "apps/server/src/services/domain/kiosk-agent-interaction/index.ts",
+        "before": "c4074b39c8ab233a8afaa8a3ef0e72e5fa85dd3c5ce67d07047b2679ae942e02",
+        "after": "cf863a7b8a7535ba62f3cf07a94ec9165a0c3ef91b6e69e04d0b062fcea73565"
+      },
+      {
+        "path": "apps/server/src/services/domain/kiosk-interaction-decision/context.ts",
+        "before": "bd1676847f9c9a372a98a6afa1e8df6b7dbc765b225158d7c1ffffb42c52a635",
+        "after": "04a0cefc5cd5dca45d3858008c2310fb12c0e9079a40eb0d6fe017afb824362a"
+      }
+    ],
+    "changes": "12 messages / 6000 chars and recovery-guidance inference filtering are active; durable archive preserved."
   },
   "logs": "/home/aimax/webnavior/pb-test.local/kiosk-rc4-20261123-r1",
   "installation": "Exit the old application completely and extract the complete new folder; native navigation fixes require the new Electron package.",

@@ -1,5 +1,10 @@
 # Codex Handoff
 
+## 2026-11-23 RC4 server history activated after renewed authorization
+
+- User clarified that the password authorization dialog disappeared before they could type. Retried systemctl through the normal system authorization flow (no sudo), user completed authorization, and deployment succeeded. Two runtime files match committed after hashes; API restarted PID137553→400244; local/public readyz db/redis ok and all 9 frontend HTTP byte checks passed again. History cap12/6000 and recovery-guidance context filtering are now active; full archive preserved. This supersedes the earlier pending-history limitation below.
+- RC4 deployment JSON, latest package pointer and Desktop README updated. Existing RC4 ZIP/source tag are unchanged, no rebuild needed. Runtime backup stage/api-before; api-activation.json records success. No new Windows/full payment claim.
+
 ## 2026-11-23 RC4 manual payment / announcement / history fixes
 
 - Field confirms RC3 was restarted and manual LINE Pay clicks also fail; credit must remain usable. Electron blocked cross-origin redirect/popups and the PB adapter disabled credit. RC4 admits same-order merchant LINE/credit wrappers and initial pinned gateway, preserves named-window POST in owned view and HTTPS authentication, emits manual-payment with no PB tool authority, and rediscovers only after supported merchant return. No real payment/order submission during validation.

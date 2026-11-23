@@ -38,9 +38,9 @@ are never moved, and webpage image recognition remains separate.
 RC4 is packaged as `0.7.8-rc.4` with matching frontend deployed. See the
 [RC4 deployment record](../../docs/releases/kiosk-v0.7.8-rc.4-deployment.json).
 Manual payment navigation and regular announcement acknowledgement require this
-complete new portable folder. Server history shortening is committed but has not
-been activated: service restart privileges were unavailable and the original
-runtime was restored. The API remains healthy. Windows acceptance is pending.
+complete new portable folder. Server history shortening is active after the operator completed system
+authorization and the API restarted successfully. The complete interaction
+archive remains preserved. Windows acceptance is pending.
 
 ## Manual payment handoff (0.7.8-rc.4)
 
