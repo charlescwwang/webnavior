@@ -219,3 +219,28 @@ it('fills a donation code with leading zeroes using the merchant input contract'
   await expect(checkout.donate('123', controls)).rejects.toThrow('先選擇')
   expect(field.value).toBe('001')
 })
+
+// Report: this chat, Nov20 — tax ID draft entry preserves all eight digits and never submits.
+it('fills only the selected tax invoice field through native input and change events', async () => {
+  const { checkout, controls, clicked } = setup()
+  document.querySelector('.order-create')!.insertAdjacentHTML('beforeend', '<label><input type="radio" name="invoice" value="4">統一編號</label><input placeholder="請輸入統一編號">')
+  await checkout.choose('tax', controls)
+  const field = document.querySelector<HTMLInputElement>('input[placeholder="請輸入統一編號"]')!
+  const input = vi.fn()
+  const change = vi.fn()
+  field.addEventListener('input', input)
+  field.addEventListener('change', change)
+  await checkout.tax('00123456', controls)
+  expect(field.value).toBe('00123456')
+  expect(input).toHaveBeenCalledOnce()
+  expect(change).toHaveBeenCalledOnce()
+  expect(checkout.read()?.fields.find(field => field.kind === 'tax')).toMatchObject({ value: '00123456', valid: true })
+  expect(clicked).not.toHaveBeenCalled()
+  await expect(checkout.tax('1234567', controls)).rejects.toThrow('8 碼')
+  await expect(checkout.tax('123456789', controls)).rejects.toThrow('8 碼')
+  await expect(checkout.tax('１２３４５６７８', controls)).rejects.toThrow('8 碼')
+  expect(field.value).toBe('00123456')
+  await checkout.choose('none', controls)
+  await expect(checkout.tax('12345678', controls)).rejects.toThrow('先選擇')
+  expect(field.value).toBe('00123456')
+})

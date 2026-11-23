@@ -26,12 +26,12 @@ Eventa/Worker/Worklet operation and render ownership, and optional
 `MASK_STRESS_SECONDS=120` runs a bounded-memory synthetic stream. None establishes
 Windows USB channel layout or real-room TTS suppression.
 
-Hush is a separate microphone-only path (EXE0.7.5 / bridgev9). It does not use
-AEC, AudioContext, AudioWorklet, playback reference or speaker/input pairing.
-`nativeCapture.worker.ts` owns one native read at a time through the existing
-ArrayInput MessagePort. Native PortAudio callbacks own the sample clock; each
-read drains captured PCM and the next read is scheduled 16 ms after completion.
-The renderer receives levels, timestamps and completed VAD segments. True native
-read/queue stalls retain 250 ms bounds; there is no playback delivery timeout in
-this branch. RTF/MVDR → Hush → AGC → VAD and the existing Server ASR remain.
-Existing LCMV/Spatial Mask retain their AEC and playback-reference transport.
+Version 0.7.8 restores the November master's production `spatialInput`,
+`spatialCapture.worklet`, `spatialMask.worker`, `spatialMask`, `microphoneInput`
+and `useArrayMicrophone` at master `b1a7f5b`. Electron Chromium owns acquisition;
+actual eight-channel input selects Mask, other inputs restore browser speech
+processing. Playback-aware dynamic routing and the original source-clock
+invariants are retained. No Python/PortAudio/Hush audio bridge remains.
+LCMV code is retained for comparison, not selected by the production Scene.
+The Scene adapts the restored boundary to current VAD and optional visual gate;
+physical Windows layout and real-room performance still require validation.

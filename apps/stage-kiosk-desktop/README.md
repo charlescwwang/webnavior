@@ -6,39 +6,30 @@ This portable test release requires the matching Kiosk frontend and Server polic
 release. It includes table return, menu placement, recommendation tours without
 floating action labels, invoice focus and the LINE Pay-only kiosk policy. The
 frontend provides plain-language dumpling piece questions and a spoken
-“取消這題” escape for unfinished selections. Existing LCMV defaults,
+“取消這題” escape for unfinished selections. Existing ordering defaults,
 connection settings and user profiles are preserved. Physical Windows acceptance
 and same-page off-hours submission rejection detection remain unverified.
 
-## 0.6.3 original LCMV with native input
+## Pre-image release candidate
 
-On the Windows EXE, explicit UMA-8 mode with the existing LCMV algorithm now uses
-physical PortAudio eight-channel input instead of Chromium `getUserMedia` exact-eight
-constraints. Automatic mode recognizes an already identified UMA-8; select UMA-8
-explicitly if browser enumeration has no device label. A native input selector is
-independent of the normal browser speaker selector. Existing seven-channel mapping,
-AEC3 WASM, LCMV tuning, gain, VAD and ASR behavior are retained. Spatial Mask
-and ordinary browser clients retain their existing acquisition paths.
+Git tag `kiosk-v0.7.8-rc.1` preserves the source before webpage screenshot
+recognition is added. It is a candidate checkpoint, not a stable or physically
+accepted release. See the [candidate record](../../docs/releases/kiosk-v0.7.8-rc.1.json)
+for passing checks, known failures and remaining Windows acceptance work.
 
-The input-only Python owner does not load Hush or native RTF/MVDR.
-Generation-bound MessagePorts carry render and paired native PCM directly between
-the AudioWorklet, Electron and the original DSP Worker after a one-time preload
-handoff. The renderer UI handles final PCM/recognition, not reference delivery.
-Enumeration uses a separate short-lived owner; navigation/close retires all owners.
-No pending/queue time limits are enlarged. This requires the matching EXE/frontend
-and physical Windows acceptance; no manual five-second calibration is required.
+The retained portable archive still reports version `0.7.8`; this checkpoint
+does not rebuild or deploy it. Future fixes receive a new RC tag, and the image
+feature is developed separately. Existing tags are never moved.
 
+## November master audio restored (0.7.8)
 
-## Native Hush CPU audio (0.7.5)
-
-The optional Hush pipeline replaces the retired UL-UNAS GPU audio candidate.
-It retains native eight-channel capture, online RTF/MVDR, AGC and WebRTC
-segmentation, with CPU Hush processing after mono overlap-add. Hush has no AEC
-or playback-reference pairing; existing LCMV/Spatial Mask keep their own AEC. Existing
-LCMV/Spatial Mask remain selectable. Old GPU preferences require explicit
-re-selection. The matching frontend and EXE are required (native bridge v9).
-See [audio/README.md](audio/README.md) for ownership, delay, packaging and physical
-acceptance. GPU qualification and model-bypass launchers are no longer shipped.
+Electron remains the kiosk host. Audio returns to the November master's
+Chromium microphone acquisition and actual-channel routing: eight-channel
+Spatial Mask or ordinary browser speech processing. Hush, Python capture,
+native audio IPC and the utility-process experiment are removed. LCMV was
+only a comparison path in this baseline. Current PB native operations and
+spoken tax-ID fill remain available. Replace the complete executable package
+and load the matching frontend. See [audio/README.md](audio/README.md).
 
 ## Connection settings
 
@@ -202,8 +193,7 @@ renderer long tasks, app process CPU/working set, system free memory and Main
 timer lag. Domain and resource kind replace URL paths and query strings. Headers,
 bodies, console text, customer fields and camera/audio content are excluded.
 Model records accept only a fixed numeric envelope: avatar, VAD, camera initialization
-and slow camera inference. Native audio status/start/open and array connection
-timings distinguish model-enabled GPU startup from capture-only LCMV.
+and slow camera inference. The current browser audio does not launch native model/capture processes.
 
 The first-response interval includes connection, network and server wait; it
 does not separately measure DNS/TLS. Worker requests without a frame identity
@@ -441,3 +431,18 @@ confirmed 3–7 digit spoken donation codes. Carrier/citizen selection retains t
 existing native keyboard handoff for keyboard-emulating scanners; no camera QR
 decoder is installed. Use the complete new portable folder when testing this
 capability; updating only the web frontend does not add a native tool.
+
+Desktop 0.7.6 adds spoken tax ID entry and requires the native PB bundle with
+`browser_invoice_tax` and deploying its matching Kiosk frontend. The Host owns
+segmented collection and read-back consent; the native action fills only a
+selected tax invoice's eight-digit draft. Updating only a web page cannot add
+this capability to an older portable executable.
+
+### Audio validation scope
+
+The rollback is based on master `b1a7f5b` / microphone correction `326ff95`.
+Real Chromium tests cover observed channel routing and microphone restarts.
+A real Electron Main/preload test verifies a browser microphone, synthetic
+eight-channel Spatial Mask, native PB child view and a 350 ms renderer task.
+These checks are not physical Windows microphone or room-echo qualification.
+No Python, Hush or native-array audio bridge remains in the portable payload.

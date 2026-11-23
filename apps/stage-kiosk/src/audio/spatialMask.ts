@@ -4,14 +4,21 @@ export interface MaskOutput {
   mask: Float32Array
   offsetFrames: number
 }
+/** Dynamic routing shares one FFT and source clock; soft preserves the deployed DSP. */
+export type SpatialProcessing = 'soft' | 'dynamic'
+export type SpatialMode = 'soft' | 'binary' | 'tail' | 'gate'
 interface MaskFrame {
+  directional: boolean
+  directionDifference: number
+  maskFraction: number
   fm: Float64Array
   frontR: Float64Array
   frontI: Float64Array
 }
 /**
  * Spatial competition mask derived from the user-supplied UMA-8 v1.4 core.
- * Seven mapped 48kHz channels in; 16kHz mono out. No spatial Gate or silence gate.
+ * Seven mapped 48kHz channels in; 16kHz mono out. The opt-in dynamic mode
+ * uses Binary Mask during audible TTS/tail and directional Raw Gate otherwise.
  * FIR/FFT/mask arithmetic follows fixtures/spatialMask/reference.js. Only the
  * emission schedule and storage ownership differ; output slots are reclaimed
  * after overlap-add is final. Do not reset this engine between utterances.
@@ -42,6 +49,12 @@ export class SpatialMask {
   private frameCount = 0
   private didMask: number
   private capacity: number
+  private accGate: Float64Array
+  private gateUntil = -1
+  private playbackEvents: { at: number, playing: boolean }[] = []
+  private binaryUntil = -512
+  private playbackTransitions = 0
+  private processingMode: SpatialMode = 'soft'
   private accMask: Float64Array
   private norm: Float64Array
   private raw16: Float32Array
@@ -50,7 +63,7 @@ export class SpatialMask {
   private finalFrameCount: number
   private final: boolean
   outputLength = 0
-  constructor(onOutput: (output: MaskOutput) => void, radiusMm = 45) {
+  constructor(onOutput: (output: MaskOutput) => void, radiusMm = 45, private processing: SpatialProcessing = 'soft') {
     if (!Number.isFinite(radiusMm) || radiusMm < 10 || radiusMm > 100)
       throw new Error('Invalid array radius')
     this.onOutput = onOutput
@@ -131,12 +144,28 @@ export class SpatialMask {
     this.didMask = 0
     this.capacity = 4096
     this.accMask = new Float64Array(this.capacity)
+    this.accGate = new Float64Array(this.capacity)
     this.norm = new Float64Array(this.capacity)
     this.raw16 = new Float32Array(this.capacity)
     this.finalized = 0
     this.sent = 0
     this.finalFrameCount = 0
     this.final = false
+  }
+
+  /**
+   * Playback edges arrive after all preceding capture samples, on that same
+   * 48kHz clock. They affect synthesis selection, never restart filters/VAD.
+   */
+  setPlayback(playing: boolean, offsetFrames: number) {
+    if (this.final || !Number.isSafeInteger(offsetFrames) || offsetFrames !== this.samples48)
+      throw new Error('Playback source clock mismatch.')
+    if (this.processing === 'soft')
+      return // Deployed soft mode has no playback timeline or control backlog.
+    if (this.playbackEvents.length >= 64)
+      throw new Error('Playback control backlog exceeded.')
+    this.playbackEvents.push({ at: Math.ceil(offsetFrames / 3), playing })
+    this.playbackTransitions++
   }
 
   _fft(inverse = false) {
@@ -306,6 +335,12 @@ export class SpatialMask {
       dif[f] = bestF - bestO
       mf[f] = Math.max(0, Math.min(1, (dif[f] + 0.03) / 0.55))
     }
+    // Binary competition uses the same direction estimates as soft Mask. This
+    // threshold selects direction, not speech; Silero remains the only VAD.
+    if (this.processing === 'dynamic') {
+      for (let f = 0; f < 257; f++)
+        mf[f] = dif[f] > 0 ? 1 : 0
+    }
     // Gaussian on frequency axis, with scipy.ndimage reflect boundary.
     const fm = new Float64Array(257)
     for (let f = 0; f < 257; f++) {
@@ -314,7 +349,39 @@ export class SpatialMask {
         s += mf[this._reflect(f + o, 257)] * this.gf[o + 6]
       fm[f] = s
     }
-    this.frames[this.frameCount++ % 32] = { fm, frontR, frontI }
+    let d = 0
+    let m = 0
+    let weight = 0
+    if (this.processing === 'dynamic') {
+      // v4's speech-band spatial evidence, before temporal smoothing. Using
+      // existing lookahead below avoids its additional 24-frame synthesis wait.
+      for (let f = 7; f <= 121; f++) {
+        let power = 0
+        for (let ch = 0; ch < 7; ch++)
+          power += spectraR[ch][f] ** 2 + spectraI[ch][f] ** 2
+        const w = Math.sqrt(power)
+        weight += w
+        d += w * dif[f]
+        m += w * fm[f]
+      }
+    }
+    const directionDifference = weight > 1e-12 ? d / weight : 0
+    const maskFraction = weight > 1e-12 ? m / weight : 0
+    let directionSum = directionDifference
+    let maskSum = maskFraction
+    const preceding = this.processing === 'dynamic' ? Math.min(6, this.frameCount) : 0
+    // Three unsmoothed decisions can all fail under intermittent reflections,
+    // even when v4's seven-frame evidence retains a continuing front source.
+    // Use causal spatial evidence, not extra future PCM or a second VAD. The
+    // existing four-frame lookahead below still protects the opening edge.
+    for (let previous = 1; previous <= preceding; previous++) {
+      const frame = this.frames[(this.frameCount - previous) % 32]
+      directionSum += frame.directionDifference
+      maskSum += frame.maskFraction
+    }
+    const evidenceFrames = preceding + 1
+    const directional = weight > 1e-12 && directionSum / evidenceFrames > -0.10 && maskSum / evidenceFrames > 0.055
+    this.frames[this.frameCount++ % 32] = { fm, frontR, frontI, directionDifference, maskFraction, directional }
     this._pipeline(false)
   }
 
@@ -330,7 +397,7 @@ export class SpatialMask {
 
   _pipeline(atEnd: boolean) {
     const n = this.frameCount
-    // Only Mask's four-frame Gaussian lookahead remains. No hard/Gate decisions.
+    // Both modes retain exactly the existing four-frame Gaussian lookahead.
     while (this.didMask < n) {
       if (!atEnd && this.didMask + 4 >= n)
         break
@@ -344,13 +411,27 @@ export class SpatialMask {
         }
         smooth[f] = val
       }
-      this._synthFrame(k, this.frames[k % 32], smooth)
+      let gate = 0
+      if (this.processing === 'dynamic') {
+        // Three directional frames must agree. The four already available
+        // future frames permit a 32ms pre-open, without adding audio buffering.
+        // Unlike v4, no centred seven-frame decision or 24-frame wait is added.
+        let run = 0
+        for (let j = Math.max(0, k - 2); j <= Math.min(k + 4, n - 1); j++) {
+          run = this.frames[j % 32].directional ? run + 1 : 0
+          if (run >= 3)
+            this.gateUntil = Math.max(this.gateUntil, j + 20)
+        }
+        // 320ms spatial hangover and a 32ms release; neither delays PCM.
+        gate = Math.max(0, Math.min(1, (this.gateUntil - k) / 2))
+      }
+      this._synthFrame(k, this.frames[k % 32], smooth, gate)
     }
     if (atEnd)
       this._emitReady(this.samples16)
   }
 
-  _synthFrame(k: number, frame: MaskFrame, mask: Float64Array) {
+  _synthFrame(k: number, frame: MaskFrame, mask: Float64Array, gate: number) {
     const { frontR, frontI } = frame
     for (let f = 0; f < 257; f++) {
       this.fftR[f] = frontR[f] * mask[f]
@@ -370,6 +451,8 @@ export class SpatialMask {
       const hann = this.window[j]
       const v = this.fftR[j] * 256 * hann
       this.accMask[ix] += v
+      if (this.processing === 'dynamic')
+        this.accGate[ix] += this.raw16[ix] * hann * hann * gate
       this.norm[ix] += hann * hann
     }
     this.finalFrameCount++
@@ -388,7 +471,21 @@ export class SpatialMask {
         const ix = (this.sent + j) % this.capacity
         const inv = this.norm[ix] > 1e-12 ? 1 / this.norm[ix] : 0
         raw[j] = this.raw16[ix]
-        mask[j] = this.accMask[ix] * inv
+        const binary = this.accMask[ix] * inv
+        mask[j] = binary
+        if (this.processing === 'dynamic') {
+          const sample = this.sent + j
+          while (this.playbackEvents[0] && this.playbackEvents[0].at <= sample) {
+            const event = this.playbackEvents.shift()!
+            // NOTICE: 320ms is an initial echo-tail guard, not a measured USB
+            // device delay. It holds the filter choice; it never holds samples.
+            this.binaryUntil = event.playing ? Infinity : event.at + 5120
+          }
+          const blend = Math.max(0, Math.min(1, (sample - this.binaryUntil) / 512))
+          mask[j] = binary * (1 - blend) + this.accGate[ix] * inv * blend
+          this.processingMode = this.binaryUntil === Infinity ? 'binary' : blend < 1 ? 'tail' : 'gate'
+          this.accGate[ix] = 0
+        }
         this.accMask[ix] = 0
         this.norm[ix] = 0
       }
@@ -444,6 +541,6 @@ export class SpatialMask {
 
   /** Fixed storage limits; useful for long-running capture telemetry. */
   get statistics() {
-    return { inputFrames: this.final ? this.originalInputFrames : this.samples48, outputFrames: this.sent, retainedFrames: this.frames.length, historyCapacity: 32, synthesisCapacity: this.capacity }
+    return { inputFrames: this.final ? this.originalInputFrames : this.samples48, outputFrames: this.sent, retainedFrames: this.frames.length, historyCapacity: 32, synthesisCapacity: this.capacity, processingMode: this.processingMode, playbackTransitions: this.playbackTransitions }
   }
 }

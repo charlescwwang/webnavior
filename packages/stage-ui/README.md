@@ -30,8 +30,8 @@ Inertia order facts and verified payment-method labels; they never gain cart,
 reset, submission or payment controls. Missing evidence remains unknown. A
 submission retires editor descriptors and reconnects with only this reader;
 manual SPA submission is also recognized from fresh page facts. PB form validity
-reaches Jev without phone, carrier or donation-code values. Host reception
-ownership still gates order facts. This reader does not authorize payments.
+reaches Jev without phone, carrier or donation-code values. Order facts remain bound to the currently
+loaded document and order URL. This reader does not authorize payments.
 
 Result snapshots also carry a read-only reception `restart` decision. Only
 verified paid/cancelled states without pending document operations or persisted
@@ -54,7 +54,7 @@ hand taps for the dropdown, counter pickup/table option and Start; table tokens 
 PB. `browser_table_select` selects only; `browser_start_ordering` selects the
 explicitly requested table and presses PB's Start button. A later voice turn may
 reuse the current rendered `selectedTable`, including PB's default, only after a customer Start request. This is context, not purchase consent. Menu entry
-does not establish cart ownership; the new page must read back table/cart.
+must be followed by a fresh table/cart read on the new page.
 Host-only recovery distinguishes `canRetry` from `canReset`. Explicit reset may retire a previous cart, `order:` submission, or `reset:` clear marker only after accepted calls settle and native clear/fresh empty-cart verification succeeds. It never repeats the old action or unlocks a current uncertain write. The Host records the retired kind in the ending reception, separately from the next visitor. A failed clear before dispatch retains retry eligibility; an uncertain dispatched clear retains the write barrier. Empty table-entry resets do not require menu navigation.
 
 Host-only `browser_cart_get forAdmission=true` also reads a versioned cart on
@@ -93,7 +93,12 @@ the fresh cart, form and manual-interaction revision. Public invoice/phone steps
 do not submit. Preparation can focus the invoice choices or the next unfinished
 field through the existing native operation follower, without changing its value.
 The Host owns segmented phone collection and read-back confirmation; the adapter
-fills only a complete number. The private submission control follows the shared
+fills only a complete number. Host-confirmed tax IDs use the private
+`browser_invoice_tax` draft action: exactly eight ASCII digits, with leading
+zeroes retained, and only while the tax invoice radio is selected. Native
+input/change events update the merchant field and the adapter reads it back
+before preparing the next step; this grants no order-submission consent.
+The private submission control follows the shared
 journey's explicit submission capability for the authorized merchant dining flow
 and owned fixture. Merchant native submission acceptance still needs live verification.
 Result acceptance
@@ -268,8 +273,9 @@ without it the existing Playwright browser default is unchanged.
 `browser_cart_review` opens the approved cart route and returns a fresh
 vendor-backed receipt with quantities, options, notes and subtotal. It never
 submits an order. `browser_cart_get` with catalog data stays a planning read;
-menu presentation is not a cart review. The Host must admit cart ownership
-before dispatching the visible review and before exposing its final receipt.
+menu presentation is not a cart review. The Host uses the currently visible
+cart without inferring its customer from a local reception ID; task/document
+scope and cart-version checks still protect operations and confirmations.
 
 `pbCart` supports partial configuration replacement through `retainQuantity` and
 equivalent-row totals/removal through `lineRefs`. An identical-configuration

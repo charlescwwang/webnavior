@@ -11,6 +11,7 @@ import { array, looseObject, parse, string } from 'valibot'
 import { afterEach, expect, it, vi } from 'vitest'
 import { readonly, shallowRef } from 'vue'
 
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { presentedQuestionSchema } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import { beginBrowserCartTask, executeBrowserCartTool, prepareBrowserQuestionAnswer, readBrowserConversation } from './browserCartTask'
 import { createBrowserDialogue } from './browserDialogue'
@@ -106,21 +107,27 @@ it.each(['off-topic', 'food-safety', 'promotion-policy', 'unsupported-budget', '
 })
 function setup(transcript: string, pending = false, labels: CatalogLabel[] = []) {
   const answer = vi.fn<Parameters<typeof createBrowserDialogue>[0]['answer']>(async () => ({ kind: 'UNCERTAIN', provider: 'unavailable' }))
-  const dialogue = createBrowserDialogue({ owner: () => 'visitor', documentId: () => 'document', answer, catalogLabels: () => labels })
+  const binding = { owner: 'visitor', documentId: 'document' }
+  const dialogue = createBrowserDialogue({ owner: () => binding.owner, documentId: () => binding.documentId, answer, catalogLabels: () => labels })
   const configuration: ProductConfiguration = { version: 'config', variantRef: '', name: '', unitPrice: 100, groups: [] }
   const lines: CartLine[] = [{ ref: 'line', productRef: 'chicken', name: '雞腿飯', quantity: 3, configuration: '', unitPrice: 100, note: '', options: [] }]
   const facts = { ok: true, source: 'browser', cart: { version: 'cart', lines }, products: [{ ref: 'chicken', name: '雞腿飯', price: 100, kind: 'product', priceType: 1, configurations: [configuration] }] }
   const checkout: PbCheckout = { methods: [{ method: 'none', label: '無載具', selected: true }, { method: 'carrier', label: '手機載具', selected: false }], fields: [], missing: ['請填寫通知手機或電子信箱。'], ready: false, orderNote: '', total: 300 }
-  const names = ['browser_state_get', 'browser_table_select', 'browser_start_ordering', 'browser_open_product', 'browser_clarify_product', 'browser_cart_get', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_cart_review', 'browser_product_get', 'browser_present', 'browser_close_product', 'browser_search', 'browser_return_menu', 'browser_return_table', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_order_submit']
+  const names = ['browser_state_get', 'browser_table_select', 'browser_start_ordering', 'browser_open_product', 'browser_clarify_product', 'browser_cart_get', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_cart_review', 'browser_product_get', 'browser_present', 'browser_close_product', 'browser_search', 'browser_return_menu', 'browser_return_table', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_invoice_tax', 'browser_order_submit']
   const tools = shallowRef<ServiceTool[]>(names.map(name => ({ name, description: '', inputSchema: { type: 'object' }, origin: 'http://127.0.0.1:5188' })))
   const execute = vi.fn<(tool: ServiceTool, input: Record<string, unknown>) => Promise<unknown>>(async (tool, input) => {
-    if (['browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation'].includes(tool.name)) {
+    if (['browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_invoice_tax'].includes(tool.name)) {
       if (tool.name === 'browser_invoice_select') {
         checkout.methods.forEach(method => method.selected = method.method === input.method)
         const method = checkout.methods.find(method => method.selected)!
         const contacts = checkout.fields.filter(field => field.kind === 'phone' || field.kind === 'email')
         checkout.fields = [...(method.method === 'none' ? [] : [{ kind: method.method, label: method.label, value: '', valid: false }]), ...contacts]
         checkout.ready = false
+      }
+      if (tool.name === 'browser_invoice_tax') {
+        checkout.fields = [...checkout.fields.filter(field => field.kind !== 'tax'), { kind: 'tax', label: '統一編號', value: String(input.code), valid: true }]
+        checkout.ready = checkout.fields.every(field => field.valid)
+        checkout.missing = checkout.fields.filter(field => !field.valid).map(field => `請填寫${field.label}。`)
       }
       if (tool.name === 'browser_invoice_donation') {
         checkout.fields = [...checkout.fields.filter(field => field.kind !== 'donation'), { kind: 'donation', label: '捐贈碼', value: String(input.code), valid: true }]
@@ -174,7 +181,7 @@ function setup(transcript: string, pending = false, labels: CatalogLabel[] = [])
       throw new Error('Expected JSON receipt.')
     return JSON.parse(result.message.content)
   }
-  return { call, execute, facts, dialogue, answer, checkout, publicTools, client: { tools: readonly(tools), execute } }
+  return { call, execute, facts, dialogue, answer, checkout, publicTools, binding, client: { tools: readonly(tools), execute } }
 }
 
 // Report: this chat, Nov18 — the website defaults to none before the customer chooses.
@@ -912,7 +919,9 @@ it.each(['好', '不要'])('binds checkout guidance after adding, and handles %s
   const receipt = await respond!()
   expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_review')).toHaveLength(reply === '好' ? 1 : 0)
   expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add')).toHaveLength(1)
-  expect(dialogue.hasPending()).toBe(false)
+  expect(dialogue.hasPending()).toBe(reply === '好')
+  if (reply === '好')
+    expect(dialogue.checkoutStep(facts)).toBe('cart-review')
   expect(await offerCheckout(client, dialogue, receipt, () => true)).toBeUndefined()
 })
 
@@ -1329,6 +1338,38 @@ it.each(['none', 'carrier'] as const)('announces the observed %s preselection wi
   expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_order_submit')).toBe(false)
 })
 
+// Report: this chat, Nov20 — entering the cart never asks the customer to verify it.
+it.each([true, false])('speaks the cart review question when invoice controls are ready=%s', async (ready) => {
+  const { call, facts, checkout, dialogue, execute } = setup('查看購物車')
+  Object.assign(facts, { page: 'cart', ...(ready ? { checkout } : {}) })
+  const result = await call('open_cart', {})
+  expect(result.customerMessage).toContain(orderingMessages['zh-Hant'].checkout.cartReview)
+  expect(result.customerMessage).toContain('購物車已開啟。')
+  expect(dialogue.checkoutStep(facts)).toBe('cart-review')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
+})
+
+// Report: this chat, Nov20 — cart confirmation must not wait for unrelated menu retrieval.
+it('opens and verifies the cart without retrieving the product catalog', async () => {
+  const { call, facts, checkout, execute } = setup('查看購物車')
+  Object.assign(facts, { page: 'cart', checkout })
+  const original = execute.getMockImplementation()!
+  execute.mockImplementation(async (tool, input) => {
+    if (tool.name === 'browser_cart_get' && input.includeCatalog)
+      throw new Error('Full menu retrieval is still pending')
+    const result = await original(tool, input)
+    if (tool.name === 'browser_cart_get' && result && typeof result === 'object') {
+      const { products: _products, ...snapshot } = result as Record<string, unknown>
+      return snapshot
+    }
+    return result
+  })
+  const result = await call('open_cart', {})
+  expect(result.customerMessage).toContain(orderingMessages['zh-Hant'].checkout.cartReview)
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_get').every(([, input]) => input.includeCatalog === false)).toBe(true)
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
+})
+
 // Report: this chat, Nov19 — confirmation must advance once instead of reopening cart review.
 it('advances cart confirmation to the observed invoice choice without reopening the cart', async () => {
   const { call, client, facts, checkout, execute, dialogue } = setup('查看購物車')
@@ -1652,4 +1693,126 @@ it('returns a repairable presentation-purpose conflict instead of calling an exi
   expect(result.customerMessage).not.toContain('無法確定')
   expect(await call('point_to_menu_items', { names: ['炸雞腿便當'], purpose: 'information' })).toMatchObject({ presentation: { products: [{ name: '炸雞腿便當' }] } })
   expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_present')).toHaveLength(1)
+})
+
+// Report: this chat, Nov20 — spoken tax IDs must accumulate across utterances and preserve leading zeroes.
+it.each([
+  ['我的統編是零零一二', '三四五六'],
+  ['００１２', '３４５６'],
+  ['00123456'],
+])('confirms a complete spoken tax ID from %j before filling once', async (...utterances) => {
+  const { call, client, facts, checkout, dialogue, execute } = setup('統一編號')
+  checkout.methods.push({ method: 'tax', label: '統一編號', selected: false })
+  checkout.fields = [{ kind: 'phone', label: '通知手機', value: '', valid: false }]
+  Object.assign(facts, { page: 'cart', checkout })
+  const introduction = await call('choose_invoice_method', { method: 'tax' })
+  expect(introduction.customerMessage).toContain('分段')
+  for (const [index, text] of utterances.entries()) {
+    cleanup.push(beginBrowserCartTask(text, { utteranceId: 2000 + index, dialogue, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }) }))
+    expect(dialogue.canAnswerLocally(facts, text)).toBe(true)
+    const respond = await prepareBrowserQuestionAnswer(client)
+    const result = await respond!()
+    expect(result).toMatchObject({ customerMessage: expect.stringContaining(index === utterances.length - 1 ? '0 0 1 2 3 4 5 6' : '4 碼') })
+    expect(checkout.fields.find(field => field.kind === 'tax')?.value).toBe('')
+    expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_invoice_tax')).toBe(false)
+  }
+  cleanup.push(beginBrowserCartTask('正確', { utteranceId: 2010, dialogue, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }) }))
+  const confirm = await prepareBrowserQuestionAnswer(client)
+  expect(await confirm!()).toMatchObject({ pendingCustomerChoice: { question: expect.stringContaining('通知手機') } })
+  expect(checkout.fields.find(field => field.kind === 'tax')?.value).toBe('00123456')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_tax')).toHaveLength(1)
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_invoice_tax' }), { code: '00123456' })
+  cleanup.push(beginBrowserCartTask('正確', { utteranceId: 2011, dialogue, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }) }))
+  const repeated = await prepareBrowserQuestionAnswer(client)
+  await repeated?.()
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_tax')).toHaveLength(1)
+  expect(execute.mock.calls.some(([tool]) => ['browser_order_submit', 'browser_notification_phone', 'browser_invoice_donation'].includes(tool.name))).toBe(false)
+})
+
+it('restarts, replaces and rejects overflowing tax ID fragments without writing', async () => {
+  const { call, client, facts, checkout, dialogue, execute } = setup('統一編號')
+  checkout.methods.push({ method: 'tax', label: '統一編號', selected: false })
+  Object.assign(facts, { page: 'cart', checkout })
+  await call('choose_invoice_method', { method: 'tax' })
+  for (const [index, [text, expected]] of [
+    ['1234', '4 碼'],
+    ['重來', '重新'],
+    ['12', '2 碼'],
+    ['3456789', '8 碼'],
+    ['00123456', '0 0 1 2 3 4 5 6'],
+    ['不對', '重新'],
+    ['123', '3 碼'],
+    ['改成00123456', '0 0 1 2 3 4 5 6'],
+    ['更正12', '2 碼'],
+    ['345678', '1 2 3 4 5 6 7 8'],
+  ].entries()) {
+    cleanup.push(beginBrowserCartTask(text, { utteranceId: 2100 + index, dialogue, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }) }))
+    const respond = await prepareBrowserQuestionAnswer(client)
+    expect(respond).toBeTypeOf('function')
+    expect(await respond!()).toMatchObject({ customerMessage: expect.stringContaining(expected) })
+  }
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_invoice_tax')).toBe(false)
+})
+
+it.each(['form', 'method', 'cart', 'document', 'owner'] as const)('retires spoken tax ID fragments and confirmation after %s changes', async (change) => {
+  const { call, client, facts, checkout, dialogue, execute, binding } = setup('統一編號')
+  checkout.methods.push({ method: 'tax', label: '統一編號', selected: false })
+  Object.assign(facts, { page: 'cart', checkout })
+  await call('choose_invoice_method', { method: 'tax' })
+  for (const [index, text] of ['0012', '3456'].entries()) {
+    cleanup.push(beginBrowserCartTask(text, { utteranceId: 2200 + index, dialogue, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }) }))
+    const respond = await prepareBrowserQuestionAnswer(client)
+    expect(await respond!()).toMatchObject({ pendingCustomerChoice: expect.anything() })
+    if (index === 0 && change === 'form') {
+      checkout.fields[0].value = '9999'
+      expect(dialogue.canAnswerLocally(facts, '3456')).toBe(true)
+    }
+  }
+  if (change === 'form')
+    checkout.fields[0].value = '8888'
+  if (change === 'method')
+    checkout.methods.forEach(method => method.selected = method.method === 'none')
+  if (change === 'cart')
+    facts.cart.version = 'changed'
+  if (change === 'document')
+    binding.documentId = 'changed'
+  if (change === 'owner')
+    binding.owner = 'changed'
+  cleanup.push(beginBrowserCartTask('正確', { utteranceId: 2210, dialogue, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }) }))
+  await call('continue_checkout', {})
+  expect(execute.mock.calls.some(([tool]) => ['browser_invoice_tax', 'browser_order_submit'].includes(tool.name))).toBe(false)
+})
+
+// Report: this chat, Nov20 — literal tax fragments must stay inside their issued invoice slot.
+it.each([
+  ['tax', '00123456再加一份雞腿飯'],
+  ['carrier', '00123456'],
+  ['donation', '00123456'],
+] as const)('does not fill a tax ID for %s with %s', async (method, transcript) => {
+  const { call, client, facts, checkout, dialogue, execute } = setup('發票')
+  checkout.methods.push({ method: 'tax', label: '統一編號', selected: false }, { method: 'donation', label: '捐贈發票', selected: false })
+  Object.assign(facts, { page: 'cart', checkout })
+  await call('choose_invoice_method', { method })
+  if (method === 'tax')
+    expect(dialogue.canAnswerLocally(facts, transcript)).toBe(false)
+  cleanup.push(beginBrowserCartTask(transcript, { utteranceId: 2300, dialogue, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }) }))
+  const respond = await prepareBrowserQuestionAnswer(client)
+  await respond?.()
+  expect(execute.mock.calls.some(([tool]) => ['browser_invoice_tax', 'browser_notification_phone', 'browser_order_submit'].includes(tool.name))).toBe(false)
+})
+
+it('discards partial tax digits after manual entry and only confirms the newly spoken number', async () => {
+  const { call, client, facts, checkout, dialogue, execute } = setup('統編')
+  checkout.methods.push({ method: 'tax', label: '統一編號', selected: false })
+  Object.assign(facts, { page: 'cart', checkout })
+  await call('choose_invoice_method', { method: 'tax' })
+  for (const [index, [text, expected]] of [['0012', '4 碼'], ['3456', '4 碼'], ['7890', '3 4 5 6 7 8 9 0']].entries()) {
+    if (index === 1)
+      checkout.fields[0].value = '9999'
+    cleanup.push(beginBrowserCartTask(text, { utteranceId: 2400 + index, dialogue, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }) }))
+    const respond = await prepareBrowserQuestionAnswer(client)
+    expect(await respond!()).toMatchObject({ customerMessage: expect.stringContaining(expected) })
+  }
+  expect(checkout.fields[0].value).toBe('9999')
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_invoice_tax')).toBe(false)
 })

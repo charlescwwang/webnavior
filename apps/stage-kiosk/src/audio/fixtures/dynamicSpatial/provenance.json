@@ -1,0 +1,6 @@
+{
+  "source": "/home/aimax/Downloads/UMA8_TTS_BargeIn_AutoSwitch_v4.html",
+  "sourceSha256": "ecc029ca10b98b6881eff0f42649871f6be1bdb3c57e6f3bc719d528818e1cc8",
+  "referenceSha256": "159caad0b0aaf377f632e069c12458cefa0f52092430be616d6ea0e9316f5156",
+  "scope": "Test-only original v4 DSP; no DOM, recording UI or live energy detector. Binary samples are compared; new Gate schedule is intentionally different."
+}

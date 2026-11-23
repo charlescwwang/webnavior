@@ -98,7 +98,7 @@ export function availableOrderingTools(context: BrowserConversation): OrderingTo
     return ['reply_to_customer']
   if (context.phase === 'selecting_table')
     return ['select_table', 'start_ordering_at_table', 'ask_customer_question', 'reply_to_customer']
-  if (context.phase === 'sign_in_required' || context.phase === 'review_required')
+  if (context.phase === 'sign_in_required')
     return ['reply_to_customer']
   const names: OrderingToolName[] = ['list_menu_items', 'get_menu_item_details', 'search_menu_items', 'point_to_menu_items', 'open_menu_item_details', 'list_cart_items', 'open_cart', 'return_to_menu', 'return_to_table', 'ask_customer_question', 'reply_to_customer']
   if (!context.readOnly && (context.page === 'cart' || context.page === 'checkout'))

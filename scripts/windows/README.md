@@ -1,6 +1,6 @@
 # Windows 遠端 Kiosk 建置與啟動
 
-0.7.5 Hush CPU 可攜版，可攜包啟動時提供現場區網
+0.7.8 十一月 master 收音回復版，可攜包啟動時提供現場區網
 `http://172.17.69.17:5169/kiosk/`、Tailscale
 `http://100.92.1.80:5169/kiosk/` 與既有公開 HTTPS 三入口。
 EXE 旁的 `kiosk.settings.json` 以 `connections` 設定選單名稱／網址；
@@ -15,7 +15,7 @@ EXE 的 HTTP 影音特例僅適用設定的 Kiosk 入口，普通瀏覽器仍須
 
 ## 想直接執行 EXE：使用可攜版 ZIP
 
-一般機台請使用本次提供的 `Webnavior-Kiosk-Hush-Windows-x64-*.zip`，將整包解壓縮，雙擊
+一般機台請使用本次提供的 `Webnavior-Kiosk-Windows-x64-*.zip`，將整包解壓縮，雙擊
 `Webnavior Kiosk.exe`。不需要安裝 Node、pnpm，也不必執行下方 Setup／Build。
 設定與簡單操作見包內「先看我.txt」及本目錄 [portableQuickStart.txt](portableQuickStart.txt)。
 這是 Intel x64、未簽章的可攜版；保留同一 Windows 使用者的
@@ -26,24 +26,21 @@ EXE 的 HTTP 影音特例僅適用設定的 Kiosk 入口，普通瀏覽器仍須
 
 ```bash
 pnpm -F @proj-airi/stage-kiosk-desktop build
-python3 scripts/windows/packagePortable.py --runtime-zip /path/to/electron-v46.0.0-alpha.2-win32-x64.zip --audio-runtime-dir /path/to/prepared-audio --output-dir /tmp
+python3 scripts/windows/packagePortable.py --runtime-zip /path/to/electron-v46.0.0-alpha.2-win32-x64.zip --output-dir /tmp
 ```
 
 腳本核對既有固定 SHA256、PE x64 標頭、必要檔案與成品 ZIP 內雜湊；產出 EXE 包及相鄰 `.zip.sha256`。
-只打包官方 Runtime、已編譯程式、預設設定與說明，不包含金鑰、登入、profile 或伺服器環境檔。
+0.7.8 已移除 Hush、Python 收音與獨立音訊程序實驗，更新需替換完整資料夾並搭配回復版前端。只打包官方 Runtime、已編譯程式、預設設定與說明，不包含金鑰、登入、profile 或伺服器環境檔。
 Windows 實體硬體與完整點餐仍須在目標機器驗收。
 
-### Hush CPU 收音（0.7.5）
+### 十一月 master 收音回復（0.7.8）
 
-目前可攜包為 `Webnavior-Kiosk-Hush-Windows-x64-*.zip`，使用 native bridge v9。
-UL-UNAS、OpenVINO GPU 及其測速／bypass 啟動器已移除。Hush 在 Electron
-隨附 Python 中呼叫原生 CPU 函式庫；使用者只啟動 EXE。LCMV／Spatial Mask
-保留且仍為預設，舊 GPU 選擇須明確重新套用。Hush 已移除 AEC、播放參考
-與配對等待；麥克風依自己的時鐘讀取，喇叭回錄可能重新進入辨識。
-
-詳見 [原生音訊指南](../../apps/stage-kiosk-desktop/audio/README.md)。
-`Test Hush Audio.cmd` 驗證無播放參考時的原生管線；`Test Native Eight Channel.cmd`
-驗證硬體輸入；兩者不保存錄音，也不能取代真實 TTS／雙向說話與持續運行驗收。
+依 master `b1a7f5b`／11月9日麥克風修正 `326ff95` 恢復 Electron Chromium
+收音：實際八聲道走 Spatial Mask，其餘恢復一般瀏覽器語音處理。動態方向處理
+依助手 TTS 播放切換；原有映射／半徑與增益保留。該基準的 LCMV 是比較路徑。
+Hush、Python／PortAudio 收音、原生模型與對應250ms傳輸鏈全部移除。
+包內不含 Python／Hush 模型或執行庫。需配套前端；原生點餐、統編代填保留。
+回復基準不等於完成 Windows 實體現場驗收。
 
 ## 原始碼部署（維護者適用）
 

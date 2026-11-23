@@ -5,7 +5,6 @@ import type { BrowserEffect, EffectDecision } from '../../../server/src/services
 import { afterEach, expect, it, vi } from 'vitest'
 import { readonly, shallowRef } from 'vue'
 
-import { createBrowserCartSession } from './browserCartSession'
 import { beginBrowserCartTask, executeBrowserCartTool, executeBrowserReply } from './browserCartTask'
 import { createBrowserDialogue } from './browserDialogue'
 import { createBrowserPresentation } from './browserPresentation'
@@ -343,40 +342,20 @@ it.each([{ includeCatalog: 'false' }, { quantity: 99, submit: true }, {}])('call
   client.execute.mockResolvedValue({ ok: true, source: 'browser', cart: { version: 'cart', lines: [{ name: '測試餐點', quantity: 2 }], subtotal: 20 }, customerMessage: '測試餐點2份，小計20元' })
   const result = await executeBrowserCartTool(client, review, input)
   expect(result).toMatchObject({ cart: { subtotal: 20 }, customerMessage: '測試餐點2份，小計20元' })
-  expect(client.execute).toHaveBeenCalledTimes(2)
-  expect(client.execute).toHaveBeenNthCalledWith(1, expect.objectContaining({ name: 'browser_cart_get' }), { includeCatalog: false })
-  expect(client.execute).toHaveBeenNthCalledWith(2, review, {})
+  expect(client.execute).toHaveBeenCalledExactlyOnceWith(review, {})
   expect(decide).not.toHaveBeenCalled()
 })
 
 // Report: output/playwright/pb-electron/restored-S13-nov4-normalized-sequence.json.
-it.each([false, true])('keeps dedicated cart review behind visitor ownership without consuming a question (owned=%s)', async (owned) => {
+it('reviews the visible nonempty cart without a reception-attribution preflight', async () => {
   const { client, tool, decide } = setup('核對一下，還不要送')
-  const records = new Map<string, string>()
-  const gate = createBrowserCartSession({ getItem: key => records.get(key) ?? null, setItem: (key, value) => {
-    records.set(key, value)
-  } })
-  const serviceUrl = 'https://app.esgpb.com/order/store/test/pick_up/menu'
-  if (owned)
-    expect(gate.check('current', serviceUrl, { cart: { version: 'empty', lines: [] } })).toBe(true)
-  disposals.push(beginBrowserCartTask('核對一下，還不要送', { ...allow, decide, cartSession: { gate, owner: () => 'current', serviceUrl: () => serviceUrl, message: '請先完成交接' } }))
   const review = { ...tool, name: 'browser_cart_review' }
   client.execute.mockResolvedValue({ ok: true, source: 'browser', cart: { version: 'cart', lines: [{ name: '測試餐點', quantity: 2 }], subtotal: 20 }, customerMessage: '測試餐點2份，小計20元' })
   const result = await executeBrowserCartTool(client, review, {})
-  if (owned) {
-    expect(result).toMatchObject({ cart: { subtotal: 20 }, customerMessage: '測試餐點2份，小計20元' })
-  }
-  else {
-    expect(result).toMatchObject({ customerBoundary: 'review-required', customerMessage: '請先完成交接' })
-    expect(result).not.toHaveProperty('cart')
-  }
-  expect(client.execute).toHaveBeenCalledTimes(owned ? 2 : 1)
-  expect(client.execute).toHaveBeenNthCalledWith(1, expect.objectContaining({ name: 'browser_cart_get' }), { includeCatalog: false })
-  if (owned)
-    expect(client.execute).toHaveBeenNthCalledWith(2, review, {})
+  expect(result).toMatchObject({ cart: { subtotal: 20 }, customerMessage: '測試餐點2份，小計20元' })
+  expect(client.execute).toHaveBeenCalledExactlyOnceWith(review, {})
   expect(decide).not.toHaveBeenCalled()
 })
-
 // Report: this chat, Nov15; searching 雞腿 found two dishes, but the Host dropped a previously recommended match.
 it.each(['recommendation', 'other-recommendations'])('preserves named matches unless the model requests other recommendations: %s', async (mode) => {
   const read: ServiceTool = { name: 'browser_cart_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }

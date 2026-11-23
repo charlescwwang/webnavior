@@ -162,3 +162,17 @@ it('revokes final submission consent after checkout data changes without affecti
   const entry = window.presentService(before, { purpose: 'invoice-details', request: '填發票', question: '填好說好了', choices: [{ id: 'yes', description: '重新讀取' }] })
   expect(window.consume(entry.questionId, 'yes', { ...before, checkoutVersion: 'filled' })).toMatchObject({ kind: 'service', purpose: 'invoice-details' })
 })
+
+// Report: this chat, Nov20 — partial tax IDs and consent share an expiring form-bound lifetime.
+it.each(['invoice-tax', 'invoice-tax-confirm'])('revokes %s after expiry or any form change', (purpose) => {
+  const { window, snapshot, advance } = setup()
+  const form = { ...snapshot, checkoutVersion: 'original-form' }
+  const question = window.presentService(form, { purpose, query: '0012', request: '統編', question: '請繼續或確認統編', choices: [{ id: 'yes', description: '確認' }] })
+  expect(window.pending(form)).toMatchObject({ query: '0012' })
+  expect(window.pending({ ...form, checkoutVersion: 'edited-form' })).toBeUndefined()
+  expect(window.consume(question.questionId, 'yes', form)).toEqual({ kind: 'invalid' })
+  const next = window.presentService(form, { purpose, query: '00123456', request: '統編', question: '正確嗎', choices: [{ id: 'yes', description: '確認' }] })
+  advance(120_001)
+  expect(window.pending(form)).toBeUndefined()
+  expect(window.consume(next.questionId, 'yes', form)).toEqual({ kind: 'invalid' })
+})

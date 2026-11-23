@@ -51,8 +51,8 @@ it.each(['menu', 'cart', 'checkout'] as const)('keeps cart edits available from 
     }
   }
 })
-it.each(['sign_in_required', 'review_required'] as const)('restricts %s to an explanation even if stale cart/selection fields are present', (phase) => {
-  expect(availableOrderingTools({ ...context, phase, itemSelectionOpen: true, search: '雞腿', readOnly: false })).toEqual(['reply_to_customer'])
+it('restricts sign-in failures to an explanation even if stale cart/selection fields are present', () => {
+  expect(availableOrderingTools({ ...context, phase: 'sign_in_required', itemSelectionOpen: true, search: '雞腿', readOnly: false })).toEqual(['reply_to_customer'])
 })
 it('retains cancellation in every live pending-question phase without treating the question as purchase consent', () => {
   const waitingFor = { questionId: 'q', purpose: 'browser-confirm-add', question: '要加入嗎？', choices: [{ id: 'confirm', description: '加入一份' }], expiresAt: Date.now() + 60000 }

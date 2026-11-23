@@ -152,6 +152,19 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
       }, () => notificationField('phone')?.value === value)
       return read()!
     },
+    /** Fills a selected tax invoice draft after the Host consumes spoken consent. */
+    async tax(code: string, controls: ReturnType<typeof createControls>) {
+      if (!/^\d{8}$/.test(code) || !read()?.methods.some(method => method.method === 'tax' && method.selected))
+        throw new Error('請先選擇統一編號，並提供完整 8 碼數字。')
+      confirmation = undefined
+      const field = () => unique(document.querySelectorAll<HTMLInputElement>('.order-create input[placeholder="請輸入統一編號"]'))
+      await controls.act('note', '填寫統一編號', 'draft', field, (target) => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(target, code)
+        target.dispatchEvent(new Event('input', { bubbles: true }))
+        target.dispatchEvent(new Event('change', { bubbles: true }))
+      }, () => field()?.value === code && read()?.methods.some(method => method.method === 'tax' && method.selected) === true)
+      return read()!
+    },
     /** Fills only a selected donation field; the Host owns spoken-code confirmation. */
     async donate(code: string, controls: ReturnType<typeof createControls>) {
       if (!/^\d{3,7}$/.test(code) || !read()?.methods.some(method => method.method === 'donation' && method.selected))

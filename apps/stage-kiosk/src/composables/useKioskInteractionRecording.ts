@@ -496,7 +496,7 @@ export function useKioskInteractionRecording() {
             const purpose = payload?.pendingCustomerChoice?.purpose
             return (nativeOrderingToolName(result.name).startsWith('browser_') && payload?.source === 'browser' && ['browser-product-choice', 'browser-order-quantity', 'browser-order-slot', 'browser-confirm-add', 'browser-service-question'].includes(purpose) && payload.dataOnly !== true)
               || (nativeOrderingToolName(result.name) === 'browser_respond' && payload?.ok === true && payload.source === 'browser' && payload.effect === 'none'
-                && ((payload.customerBoundary === 'review-required' && payload.status === 'clarification') || payload.status === 'checkout-guidance'))
+                && payload.status === 'checkout-guidance')
               // A Host question release ends this utterance; a model continuation
               // must not recreate the question that the customer just left.
               || (payload?.source === 'browser' && payload.ok === true && payload.effect === 'none' && ['QUESTION_RELEASED', 'QUESTION_RETRY_LIMIT', 'CHECKOUT_RECOVERY'].includes(payload.code))

@@ -5,7 +5,7 @@ import { useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
 import { Button, FieldSelect } from '@proj-airi/ui'
 import { useDevicesList, useLocalStorage } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, onScopeDispose, shallowRef, watch } from 'vue'
+import { computed, nextTick, onScopeDispose, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import KioskMicrophoneSettings from './KioskMicrophoneSettings.vue'
@@ -19,8 +19,6 @@ const { t } = useI18n()
 const devices = useSettingsAudioDevice()
 const microphone = useKioskMicrophone()
 const { audioInputs, selectedAudioInput, stream } = storeToRefs(devices)
-const nativeCapture = computed(() => Boolean(window.airiKioskDesktop) && microphone.settings.value.inputMode !== 'standard' && (microphone.nativeSelected.value || microphone.usesNativeLcmv(microphone.isArray(audioInputs.value.find(device => device.deviceId === selectedAudioInput.value)?.label || stream.value?.getAudioTracks()[0]?.label || ''))))
-watch([nativeCapture, microphone.backendAvailable], ([native]) => devices.browserCaptureEnabled = !native && microphone.backendAvailable.value, { immediate: true, flush: 'sync' })
 const refreshing = shallowRef(false)
 const error = shallowRef<string>()
 const testing = shallowRef(false)
@@ -60,12 +58,6 @@ async function refresh() {
   refreshing.value = true
   error.value = undefined
   try {
-    if (nativeCapture.value) {
-      devices.stopStream()
-      if (!props.textOnlyMode)
-        devices.enabled = true
-      return
-    }
     await devices.askPermission()
     if (!props.textOnlyMode) {
       devices.enabled = true
@@ -126,10 +118,10 @@ async function testOutput() {
   <section :class="['admin-section grid gap-3']">
     <h3>{{ t('stage.kiosk.media-devices.title') }}</h3>
     <p>{{ t('stage.kiosk.media-devices.description') }}</p>
-    <FieldSelect v-if="!nativeCapture" v-model="microphoneSelection" :label="t('stage.kiosk.media-devices.microphone')" :options="microphoneOptions" layout="vertical" />
+    <FieldSelect v-model="microphoneSelection" :label="t('stage.kiosk.media-devices.microphone')" :options="microphoneOptions" layout="vertical" />
     <FieldSelect v-model="outputSelection" :label="t('stage.kiosk.media-devices.output')" :options="outputOptions" layout="vertical" />
     <KioskMicrophoneSettings />
-    <p v-if="!nativeCapture" role="status">
+    <p role="status">
       {{ t(stream?.getAudioTracks().some(track => track.readyState === 'live') ? 'stage.kiosk.media-devices.connected' : 'stage.kiosk.media-devices.disconnected') }}
     </p>
     <Button :disabled="refreshing" @click="refresh">
@@ -138,7 +130,7 @@ async function testOutput() {
     <Button :disabled="testing" @click="testOutput">
       {{ t('stage.kiosk.media-devices.test-output') }}
     </Button>
-    <p v-if="error || (!nativeCapture && devices.inputError)" role="alert">
+    <p v-if="error || (devices.inputError)" role="alert">
       {{ error || devices.inputError?.message }}
     </p>
     <template v-if="devices.inputError && devices.inputConstraints?.channelCount">

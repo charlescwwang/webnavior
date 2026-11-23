@@ -20,7 +20,7 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def package(runtime_zip, output, audio_runtime):
+def package(runtime_zip, output):
     if digest(runtime_zip) != RUNTIME_SHA256:
         raise ValueError('Official Windows x64 runtime SHA256 mismatch; nothing was extracted.')
     outputs = ['main/index.js', 'preload/index.cjs', 'service/pb.js']
@@ -28,20 +28,11 @@ def package(runtime_zip, output, audio_runtime):
     for relative in outputs:
         if not (built / relative).is_file() or not (built / relative).stat().st_size:
             raise ValueError(f'Missing build output: {relative}; run the desktop build first.')
-    audio_manifest = json.loads((audio_runtime / 'AUDIO-MANIFEST.json').read_text())
-    if audio_manifest['provider'] != 'Hush / Tract' or audio_manifest['device'] != 'CPU':
-        raise ValueError('The audio package requires the Hush CPU runtime.')
-    for relative, expected in audio_manifest['files'].items():
-        path = (audio_runtime / relative).resolve()
-        if not path.is_relative_to(audio_runtime.resolve()) or digest(path) != expected:
-            raise ValueError(f'Audio runtime hash mismatch: {relative}')
-    audio_source = ROOT / 'apps/stage-kiosk-desktop/audio'
-    for source in (audio_source / 'src').rglob('*.py'):
-        if digest(source) != digest(audio_runtime / source.relative_to(audio_source)):
-            raise ValueError('Audio source changed after runtime preparation.')
+    # Include compiled JS only; source, maps and local profiles stay out.
+    outputs = sorted(set(outputs) | {str(path.relative_to(built)) for path in (built / 'main').rglob('*.js')})
     output.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')
-    archive = output / f'Webnavior-Kiosk-Hush-Windows-x64-{stamp}.zip'
+    archive = output / f'Webnavior-Kiosk-Windows-x64-{stamp}.zip'
     with tempfile.TemporaryDirectory(prefix='webnavior-portable-') as temporary:
         app = Path(temporary) / 'Webnavior Kiosk'
         app.mkdir()
@@ -69,17 +60,6 @@ def package(runtime_zip, output, audio_runtime):
             target = payload / 'out' / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(built / relative, target)
-        shutil.copy2(ROOT / 'scripts/windows/probeNativePipeline.py', app / 'probeNativePipeline.py')
-        pipeline_launcher = (ROOT / 'scripts/windows/testNativePipeline.cmd').read_text(encoding='ascii')
-        (app / 'Test Hush Audio.cmd').write_bytes(pipeline_launcher.replace('\n', '\r\n').encode('ascii'))
-        shutil.copy2(ROOT / 'scripts/windows/probeNativeCapture.py', app / 'probeNativeCapture.py')
-        native_launcher = (ROOT / 'scripts/windows/testNativeCapture.cmd').read_text(encoding='ascii')
-        (app / 'Test Native Eight Channel.cmd').write_bytes(native_launcher.replace('\n', '\r\n').encode('ascii'))
-        audio_target = app / 'resources/audio'
-        for relative in [*audio_manifest['files'], 'AUDIO-MANIFEST.json']:
-            target = audio_target / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(audio_runtime / relative, target)
         settings = json.loads((ROOT / 'apps/stage-kiosk-desktop/kiosk.settings.example.json').read_text(encoding='utf-8'))
         for name in ['kiosk.settings.json', 'kiosk.settings.example.json']:
             (app / name).write_text(json.dumps(settings, ensure_ascii=False, indent=2) + '\n', encoding='utf-8-sig')
@@ -88,7 +68,7 @@ def package(runtime_zip, output, audio_runtime):
         guide = (ROOT / 'scripts/windows/portableQuickStart.txt').read_text(encoding='utf-8')
         (app / '先看我.txt').write_text(guide.replace('\n', '\r\n'), encoding='utf-8-sig', newline='')
         # The whitelist above deliberately excludes source trees, environment files, keys and profiles.
-        manifest = {'version': app_version, 'createdAt': datetime.now().astimezone().isoformat(), 'gitCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'electron': VERSION, 'embeddedNode': '24.22.1', 'architecture': 'win32-x64', 'runtimeArchiveSha256': RUNTIME_SHA256, 'audioProvider': 'Hush / Tract', 'audioDevice': 'CPU', 'signed': False, 'windowsPhysicalValidation': False, 'files': {str(path.relative_to(app)): digest(path) for path in sorted(app.rglob('*')) if path.is_file()}}
+        manifest = {'version': app_version, 'createdAt': datetime.now().astimezone().isoformat(), 'gitCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'electron': VERSION, 'embeddedNode': '24.22.1', 'architecture': 'win32-x64', 'runtimeArchiveSha256': RUNTIME_SHA256, 'audioProvider': 'Chromium / November Spatial Mask', 'audioBaseline': 'master:b1a7f5b', 'signed': False, 'windowsPhysicalValidation': False, 'files': {str(path.relative_to(app)): digest(path) for path in sorted(app.rglob('*')) if path.is_file()}}
         (app / 'PACKAGE-MANIFEST.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
         with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=5) as target:
             for path in sorted(app.rglob('*')):
@@ -109,6 +89,5 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runtime-zip', type=Path, required=True)
     parser.add_argument('--output-dir', type=Path, default=Path('/tmp'))
-    parser.add_argument('--audio-runtime-dir', type=Path, required=True)
     arguments = parser.parse_args()
-    package(arguments.runtime_zip, arguments.output_dir, arguments.audio_runtime_dir)
+    package(arguments.runtime_zip, arguments.output_dir)

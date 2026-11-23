@@ -23,10 +23,9 @@ no customer prompt, loading overlay, retry or forced refresh.
 PB Start does not directly initialize a local AI model. The avatar mounts with
 the Kiosk, VAD initializes with the audio pipeline, and camera tasks start after
 microphone permission settles (conditional Face may initialize later).
-ASR and Kiosk TTS use server APIs. Native Hush audio loads its CPU model
-on its first status/start request; capture-only native LCMV does not load it. Character mounting no longer initializes the unused
-DuckDB test database. These are source-level trigger facts, not attribution of
-an intermittent field stall; correlate actual recorder timestamps first.
+ASR and Kiosk TTS use server APIs. Audio acquisition uses Chromium in both
+the Electron host and browser. No Hush/Python capture model is loaded.
+Existing VAD/avatar assets retain their own loading lifecycle.
 
 ## Run
 
@@ -129,89 +128,35 @@ Kiosk and does not change Stage Web preferences.
 
 ## UMA-8 microphone processing
 
-### Windows Electron Hush CPU capture (0.7.5)
+### November master audio restored (0.7.8)
 
-Select **Online RTF/MVDR + Hush CPU** explicitly; existing LCMV/Spatial Mask remain
-the default. Hush settings are independent. The microphone panel offers the documented 20 dB /
-30% and 20 dB / 10% MVDR dry-mix presets, plus the original 100 dB / 0% baseline.
-A selection takes effect only after Apply audio settings; switch while silent. Retired GPU preferences require
-explicit re-selection. Native bridge v9 requires the matching EXE and frontend.
-PortAudio captures UMA-8 RAW independently of browser playback. Hush has no AEC
-or playback-reference pairing. Seven mapped channels pass through resampling, common gain,
-online RTF/MVDR, mono OLA, Hush CPU, AGC and WebRTC VAD before existing Server ASR.
-There is no UL-UNAS/OpenVINO audio model, local Whisper or second Silero pass.
-Switching retires incomplete capture/ASR and releases native input ownership.
-See [the native audio guide](../stage-kiosk-desktop/audio/README.md) for clocks,
-Hush silence behavior, limitations, Windows packaging and physical acceptance.
+Reference: master `b1a7f5b` (2026-11-10), microphone correction `326ff95`.
+The original Worklet/Worker Spatial Mask, actual-channel detection and automatic
+standard-microphone recovery are restored. Eight actual channels select Mask;
+other inputs use browser speech processing. Dynamic spatial processing follows
+TTS playback. Hush/native capture and algorithm/backend selection are removed.
+The current Scene connects that browser boundary to current VAD/ASR and
+optional visual admission. Install the paired full Electron package; current
+ordering and tax-ID behavior remain. Physical Windows acceptance is required.
 
 ### Browser processing
 
-Open the Kiosk administrator panel (configured PIN `0000`) → **本機麥克風與喇叭**
-→ **UMA-8 收音處理**. Select the actual UMA-8 microphone. **自動辨識 UMA-8**
-uses its device label; choose **UMA-8 多聲道** if the driver uses another name.
-**一般麥克風（瀏覽器處理）** retains the original browser AEC/noise processing.
-This hardware choice is independent of the Server ASR Provider.
+In the administrator audio panel, select the physical microphone and use Auto
+capture. Actual discrete Worklet channels select eight-channel Spatial Mask or
+ordinary browser echo/noise/gain processing. Device labels never establish
+channel geometry. Standard mode explicitly requests ordinary browser capture.
 
-If capture has no live track, acquisition has failed before AEC/VAD/ASR. Device
-settings retain the browser error name, message and failed constraint even when
-Chromium supplies an empty message. `OverconstrainedError` may identify either
-`channelCount` or `deviceId` when the selected device cannot provide raw capture.
-An explicit **改用一般麥克風並重新連線** action selects standard browser processing
-and reconnects; it never upmixes mono/stereo as a physical array. Check the device
-and Windows channel configuration before re-enabling eight-channel array mode.
-Successful capture reuses its input consent for speaker enumeration, without a
-second microphone probe competing with the USB stream. Diagnostic snapshots
-include acquisition failure and requested constraints, never captured audio.
+The November master Spatial Mask defaults to playback-aware dynamic processing:
+directional Gate while listening, Binary Mask during TTS and its tail. Disabling
+that option restores its Soft Mask. Existing mapping and radius keys are kept;
+stop capture before changing them. Dynamic gain is +15 dB and Soft gain is
++65 dB, followed by the original shared PCM limiter. Physical echo quality and
+channel mapping still need on-device verification.
 
-UMA-8 requests eight raw channels with browser AEC/NS/AGC disabled. Its pipeline
-is **48 kHz multichannel → AEC3 → LCMV → 16 kHz gain/limiter → Silero VAD**.
-The customer and both suppression elevations default to **70°**, relative to
-the flat array plane (0° horizontal, 90° overhead; supported 0–85°). Defaults
-retain azimuths 0°/−90°/+90°, radius 44 mm, mapping `0,1,2,3,4,5,6`, loading
-0.03 and VAD gain 15 dB. Verify the physical mapping and array orientation on
-site before tuning. Changing a setting restarts capture and discards the active
-partial utterance; adjust while silent.
-
-Legacy ASR also offers **舊 ASR 陣列演算法 → Spatial Mask（11 月穩定版）**.
-Choose it in the same panel, set **啟用 AEC3 回音消除**, then press
-**套用演算法與 AEC3 設定**. LCMV remains the initial selection. Spatial Mask
-restores the numerical core from `f616ca4`: seven mapped microphones, built-in
-48→16 kHz FIR, front-versus-off-axis competition and smoothed spectral masking,
-without a hard Gate. With AEC3 enabled (default), seven-channel AEC runs before
-Mask; disabled capture owns no AEC instance or playback-reference subscription.
-Capture continues during TTS in either setting. Turning AEC3 off may admit the
-kiosk's own speech; on-site echo and interruption quality still require testing.
-
-Spatial Mask gain is independent: default **15 dB**, range **0–80 dB**. The
-historical 65 dB value is available for comparison, not an automatically calibrated
-level. Preferences use `kiosk/audio/legacy-array-algorithm` and
-`kiosk/audio/spatial-mask`; the existing hardware/LCMV JSON is unchanged.
-Applying algorithm/AEC/gain replaces capture and cancels incomplete speech and
-unsubmitted recognition. Already accepted ordering work is not replayed.
-Ordinary microphones retain browser processing. Current legacy mouth/presence rules
-remain in force, so this is not a full rollback to November's admission behavior.
-The diagnostic overlay shows the active algorithm/AEC state, processing lag,
-render-reference frames, input/output RMS in dBFS and limited-sample percentage.
-Reference activity confirms wiring, not successful acoustic echo cancellation.
-
-AEC3 receives the stereo playback reference for customer/admin TTS, receipt
-chimes and waiting music. The array and playback share a 48 kHz AudioContext.
-LCMV's 1024-sample latency is compensated before both branches are resampled.
-ASR records gained LCMV output. Microphone hardware choice remains independent of ordering authorization.
-
-When AEC3 is enabled, the Worker owns a fixed 16 MB AEC3 WASM heap plus DSP state. Transfer queues are
-bounded to approximately one second at each delivery boundary; a slow pipeline
-fails visibly instead of accumulating audio indefinitely. Existing VAD/mouth
-buffer and model memory costs still apply. A wrong channel count or DSP failure
-never silently selects another microphone or switches recognition modes.
-Scope disposal/device changes terminate the Worker and detach the playback bus.
-
-The reference implementation and upstream notices are preserved in `src/audio`
-and `/kiosk/audio/uma8-notices.txt`. `webrtcaec3.js@0.3.0` has a minimal pnpm patch
-for its undeclared embedded WASM variable under strict ESM. Browser tests run the
-real WASM and LCMV with synthetic eight-channel AudioNodes and verify cue/TTS
-reference routing; actual UMA-8 driver channels, echo suppression and barge-in
-still require Windows hardware acceptance. No native EXE change is involved.
+Source reference: master `b1a7f5b` and the Nov9 correction `326ff95`. The
+standalone LCMV/Mask comparison code is not the current production selector.
+Hush, Python acquisition and its 250 ms host transport are absent. This change
+does not roll back ordering, invoice, payment or tax-ID behavior.
 
 ## Development kiosk enrollment
 
@@ -456,7 +401,7 @@ Cart 加點 uses `browser_return_menu`, preserving the order and retiring pendin
 draft questions and website search. Existing-row 增加份數 remains a final-total quantity change.
 The Host now uses the same concept: before every Main round it reads fresh PB
 facts internally and replaces `browserContext` with the current catalog and
-configurations, owned cart, provided fields, unfinished dish, pending question
+configurations, visible cart, provided fields, unfinished dish, pending question
 and phase-legal tools. The Server presents this as a plain-language
 `currentActivity`, one `pendingItems` list and the actual `currentQuestion`;
 Host phase codes and private question tickets stay internal. Model-only tool
@@ -531,9 +476,9 @@ Declining cancel-and-search restores the previous question. Complex draft state
 remains Host-owned and is not public native `browser_order_draft` permission.
 
 Page/task/cart filtering is `availableOrderingTools`. Table selection exposes no
-cart tools; menu location does not prevent cart edits. Cart ownership is checked
-at the actual Agent tool boundary, without a startup preparation cover or global
-voice/input pause. An unowned or unreadable cart never hides PB's manual controls.
+cart tools; menu location does not prevent cart edits. The current visible cart
+is used without inferring its operator from a local reception ID. Unreadable
+cart data still prevents assisted writes and never hides PB's manual controls.
 Explicit Restart uses read-only preflight; only the table route requests private
 cart admission. Menu reads cannot dismiss announcements as a preflight side effect.
 If table cart reads require Start, Restart uses the actual selected table, then
@@ -633,6 +578,15 @@ capability is not a model-facing tool and requires Desktop 0.6.11 or later. It
 fills only the selected donation field, then rechecks checkout; no submission
 consent is granted. Email may be entered on the website; phone drafts must match
 the current customer text.
+Tax IDs support segmented spoken eight-digit input, including Chinese digits and
+leading zeroes. Short replies append; a complete eight-digit reply replaces the
+buffer. “重來” clears it; “更正／改成” starts a replacement. Host reads the complete
+number back before the one-use `browser_invoice_tax` draft action. Partial input
+and confirmation both expire after 120 seconds and are revoked by form, cart,
+visitor or document changes. Attached ordering requests are not parsed as digits;
+overflow clears the buffer without truncating or padding. Manual input remains
+available. This requires a rebuilt Desktop native bundle and matching Kiosk
+frontend; older installed executables do not acquire the tool by refreshing.
 Checkout recovery compares visitor/document/cart-bound form observations across
 utterances, excluding refreshed confirmation tokens. Two completed answers after
 an unchanged entry prompt rebuild invoice choices, or request a spoken contact
@@ -716,24 +670,23 @@ admission and canonical recording, closed count/confirm/cancel answers can be
 resolved directly by the Host; semantic answers retain the Main/Jev resolver. Main
 supplies its recorded structured tool call. The Server matches the current canonical `user_text`, rejects read-only or
 changed proposals, and consumes the issued plan once under a database row lock.
-The Host still checks visitor ownership, ambiguity and fresh vendor versions;
+The Host still checks active task/document scope, ambiguity and fresh vendor versions;
 only a verified browser receipt can claim an effect. Necessary follow-up answer
 resolution remains a separate semantic task. Uncertain ordering meaning may
 create a complete sealed confirmation question, without writing; factual
 read-only inquiries cannot create purchase confirmation. Background speech does
 not cancel accepted compound operations.
 
-Customer order checks use `browser_cart_review`: the Host checks a fresh
-cart snapshot before opening the native review and checks the resulting receipt
-again afterward. It does not resolve or consume a pending product question.
-An unowned cart is refused before its contents are opened or spoken.
+Customer order checks use `browser_cart_review`: the Host opens the native
+review directly, then checks the current cart version before asking for confirmation.
+It does not infer the cart's customer or consume a pending product question.
 Review has no model-controlled parameters: Host invokes the fixed native
 capability with `{}`, so extraneous model fields cannot change the operation or
 trigger a schema-repair loop. This policy applies only to the argument-free
 read-only review; cart writes retain their full argument validation.
 Pure review/preservation requests use the read-only cart review. If Main instead
 proposes setting an observed line to its existing count, an independent semantic
-check may recognize whole-order preservation and dispatch only a fresh owned
+check may recognize whole-order preservation and dispatch only a fresh
 review. Actual count changes and other write kinds keep their original policy;
 partial preservation alongside a requested change does not settle that change.
 
@@ -745,7 +698,7 @@ when only one candidate exists. Failed literal name queries first use the shared
 current-catalog fragment discovery to narrow related confirmation choices; no
 fragment is stored as an alias or accepted as purchase consent. Pending-answer understanding receives bounded
 cart labels and quantities, without executable row IDs; existing freshness and
-ownership checks still apply before any effect. Browser context failures use
+active task/document checks still apply before any effect. Browser context failures use
 the website recovery message rather than a Jev uncertainty message.
 
 For equivalent split rows, `browser_cart_quantity` and `browser_cart_remove`
@@ -768,7 +721,7 @@ manual retry compares fresh state with that anchor; later rounds cannot silently
 rebase it, and an effect attempt revokes it. Cart-only edits do not fetch product
 configurations. If the initial retry-evidence read fails, replay stays disabled
 for that demand; the new demand may still use tools with their normal fresh
-document/cart and ownership checks. Explicit recovery still requires a verified
+document/cart checks. Explicit recovery still requires a verified
 settled receipt. After Main selects and the browser verifies an exact, fully
 covered single removal/quantity utterance, Host may finish from that receipt
 without a prose-only model round. Compound/trailing requests, unknown results,
@@ -1272,7 +1225,7 @@ continuation cannot clear the next customer's conversation.
 Reception reset skips the illustrative hand's travel, dwell and press timing.
 An opaque loading cover masks native intermediate navigation while the Host
 announces that it is preparing a new order. Trusted input is blocked during this
-maintenance scope, but native target/occlusion, ownership and fresh-cart checks
+maintenance scope, but native target/occlusion, task/document scope and fresh-cart checks
 still run. The cover survives SPA navigation and is removed on success or failure.
 The store's **我知道了，開始點餐** announcement is optional: its exact visible
 control is handled only when present; it is not a mandatory step or a generic
@@ -1280,12 +1233,10 @@ confirmation handler.
 The old visitor/chat closes only after reset succeeds. Pending/unknown effects
 block reset; an uncertain clear is never automatically replayed. A failed return
 to the menu can be retried against the already empty cart without another clear.
-Local ownership stores only an opaque visitor ID scoped to service origin/path.
-A fresh empty cart can transfer automatically; a previous/unowned nonempty cart
-blocks assisted changes and hides old lines from Agent. The PIN-protected admin
-panel can review the fresh snapshot and explicitly resume that same cart, only
-if visitor/document/version remain unchanged and no effect is uncertain.
-This local gate does not isolate an account's cart across different devices.
+The visible cart remains available across local reception changes. Local visitor
+IDs do not identify its real operator and cannot require a staff handoff. Restart
+still cancels old tasks and expires old question/submission tickets; this lifecycle
+binding does not infer ownership of PB's cart.
 
 Each write requires the latest cart version, current product/line reference and
 whole-cart readback. Replacement verifies the new item before removing the original.
@@ -1487,18 +1438,13 @@ Cancelled, missing or changed cards retire that question instead of leaving an
 invisible choice that a later ordinal could consume.
 
 A normal reception end clears unfinished merchant rows before the next visitor.
-An abrupt reload/crash may still leave a cart and its persisted visitor ownership.
-Direct acknowledgement/clarification/information-fallback replies
-read the cart before responding, so Main cannot skip the handoff gate by choosing
-`browser_respond` immediately. Unowned unfinished items yield a short staff-review
-message without exposing their contents, clearing them or adopting them. A failed
-read is not an empty cart; typed sign-in failures retain their login prompt.
-`browser_respond kind=checkout-guidance` checks ownership and reviews the actual
-cart. Adapters with verified checkout controls advance through the staged invoice
-flow above; other adapters give manual guidance (or report an empty cart). This
-reply does not itself authorize submission or payment. Guidance receipts end the turn without another Main
-continuation. Staff may use **Settings → External cart handoff** to review and
-resume the same in-progress cart; a new visitor does not authorize that transfer.
+An abrupt reload/crash may still leave a cart. The assistant uses that visible
+cart without an ownership handoff. Generic replies do not reread the cart merely
+to authorize a response. A failed read is not an empty cart; typed sign-in failures
+retain their login prompt. `browser_respond kind=checkout-guidance` reviews the
+actual cart; adapters with verified checkout controls advance through the staged
+invoice flow above. This reply does not authorize submission or payment, and its
+receipt ends the turn without another Main continuation.
 
 Development device enrollment now sets a 30-day HttpOnly cookie so closing the
 desktop app does not discard enrollment. Server-side revocation still applies;
@@ -2103,31 +2049,11 @@ adopt or clear the replacement session. Dispatched browser writes still settle
 through the document's serialized operation queue; this is not permission to
 replay an uncertain write. Administrator microphone tests remain independent.
 
-An admitted PB cart retains its current visitor in memory for the reception;
-storage eviction alone does not interrupt active ordering. After reload or at a
-new reception, an unknown nonempty cart still requires review. Initial preparation
-checks before exposing ordering controls, including on the table page when PB
-allows it. For PB’s exact first-visit missing-table response, only table selection
-and Start remain available; no cart ownership is granted, and the menu must pass
-a fresh check before ordering. The host does not infer that the physical customer
-changed from page or speech changes.
-
-Covered admission reads the actual document with `includeCatalog: false` first.
-Only an observed approved table page receives the private `forAdmission` read
-needed to inspect an earlier cart. Menu admission never requests that flag:
-the native PB service also uses it to dismiss the store announcement, which
-requires the visible controls that preparation currently covers. The announcement
-remains available after admission and is dismissed by the next visible PB control
-operation or by the customer; preparation does not click behind its own cover.
-
-Preparation has its own cancellable read lifecycle. Navigation/reset retires a
-pending check immediately; its late result cannot hide or admit another page.
-A rejected read on an otherwise ready transport enters the same bounded
-automatic recovery as a disconnected transport. Recovery first checks the
-document's operation journal and live retry context, then retries preparation
-only. No add, edit, clear or submission is replayed. Preparation and restart
-failures retain their actual read error in `browser_cart_preparation` events;
-the customer screen does not replace that diagnostic with evidence of a write.
+PB cart availability follows the current readable page, not a persisted reception
+ID. A first-visit missing-table response still requires table selection and Start,
+because PB needs that table context before it can return cart facts. Reset keeps
+its cancellable read lifecycle and never replays uncertain writes; this is
+operation/readiness handling, not customer ownership inference.
 
 Proactive recommendation invitations have their own structured question receipts.
 They survive idle within the same order, renew a per-decision answer ticket, and
@@ -2221,7 +2147,12 @@ clear/delete edit only the phone draft. The guidance lists cart review, invoice,
 contact details and final submission in order. Scrolling and editing contact
 fields preserve the current checkout question; actual form changes still require
 fresh final-summary validation. A cart-review answer such as **這樣就好** advances
-to invoice selection and grants no submission consent.
+to invoice selection and grants no submission consent. Cart review speaks both the
+verified PB receipt and the explicit confirmation question, even while invoice
+controls are still loading; it rechecks the active task and cart version before speaking. Standalone cart/menu navigation
+reads only current page/cart facts before intent selection, so fetching the full
+menu does not hold up the visible action. Cart review also reads back without
+fetching the menu; compound requests and pending questions retain full interpretation.
 
 Customers are not asked to press a reconnect button. After a connection failure
 or unknown cart effect, the host waits for active work to settle, then makes a

@@ -6,15 +6,11 @@ import { dirname, resolve } from 'node:path'
 import { defineInvokeHandler } from '@moeru/eventa'
 import { createContext } from '@moeru/eventa/adapters/electron/main'
 import { errorMessageFrom } from '@moeru/std'
-import { arrayInputControlSchema, invokeArrayInput } from '@proj-airi/stage-shared/kiosk-array-input'
 import { desktopServiceRequestSchema, desktopSurfaceActivity, desktopSurfaceNavigation, desktopSurfaceRequestSchema, invokeDesktopService, updateDesktopSurface } from '@proj-airi/stage-shared/kiosk-desktop'
-import { invokeNativeAudio, nativeAudioRequestSchema } from '@proj-airi/stage-shared/kiosk-native-audio'
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { parse } from 'valibot'
 
-import { ArrayInput } from './arrayInput'
 import { Diagnostics } from './diagnostics'
-import { NativeAudio } from './nativeAudio'
 import { isHostClipboardWrite, isHostMediaRequest, isHostPage, parsePageUrl } from './policy'
 import { defaultConnections, readPortableSettings } from './portableSettings'
 import { ServiceSurface } from './surface'
@@ -119,94 +115,6 @@ async function start() {
       event.preventDefault()
   })
   const transport = createContext(ipcMain, window, { onlySameWindow: true, messageEventName: 'airi-kiosk-desktop', pushEventName: 'airi-kiosk-desktop-push', errorEventName: 'airi-kiosk-desktop-error' })
-  const audioDirectory = app.isPackaged ? resolve(process.resourcesPath, 'audio') : resolve(app.getAppPath(), 'audio')
-  const createAudio = (captureOnly = false) => new NativeAudio({
-    captureOnly,
-    executable: app.isPackaged ? resolve(audioDirectory, 'python/python.exe') : process.env.KIOSK_AUDIO_PYTHON ?? resolve(audioDirectory, '.venv/bin/python'),
-    entry: resolve(audioDirectory, 'src/entry.py'),
-    model: resolve(audioDirectory, 'hush'),
-    stateDirectory: resolve(app.getPath('userData'), 'audio'),
-  })
-  let audio = createAudio()
-  const arrayInput = new ArrayInput(window.webContents, () => createAudio(true))
-  let captureDocument = 0
-  let captureTransition: Promise<unknown> = Promise.resolve()
-  // Serialize cross-process device replacement in request order. Reference polls
-  // keep their own pipe lane; a failed transition cannot poison later selections.
-  function changeCapture<T>(change: (assertCurrent: () => void) => Promise<T>): Promise<T> {
-    const document = captureDocument
-    const assertCurrent = () => {
-      if (document !== captureDocument || window.isDestroyed())
-        throw new Error('Native capture request belongs to a retired document.')
-    }
-    const next = captureTransition.catch(() => {}).then(() => {
-      assertCurrent()
-      return change(assertCurrent)
-    })
-    captureTransition = next
-    return next
-  }
-  defineInvokeHandler(transport.context, invokeArrayInput, async (input, options) => {
-    const event = options?.raw?.ipcMainEvent
-    if (event?.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !isHostPage(event.senderFrame.url, entry))
-      throw new Error('Native array input belongs only to the trusted Kiosk main frame.')
-    const request = parse(arrayInputControlSchema, input)
-    if (request.kind === 'devices')
-      return arrayInput.devices()
-    if (request.kind === 'disconnect')
-      return arrayInput.disconnect(request.generation)
-    return changeCapture(async (assertCurrent) => {
-      await audio.release()
-      assertCurrent()
-      audio = createAudio()
-      const finish = diagnostics.operation('array-input-connect')
-      try {
-        return await arrayInput.connect(request.generation, request.inputDevice)
-      }
-      finally { finish() }
-    })
-  })
-  defineInvokeHandler(transport.context, invokeNativeAudio, async (request, options) => {
-    const event = options?.raw?.ipcMainEvent
-    if (event?.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !isHostPage(event.senderFrame.url, entry))
-      throw new Error('Native audio belongs only to the trusted Kiosk main frame.')
-    const input = parse(nativeAudioRequestSchema, request)
-    const finish = ['status', 'start', 'connect', 'open'].includes(input.kind) ? diagnostics.operation(`native-audio-${input.kind}`) : undefined
-    try {
-      if (input.kind === 'devices')
-        return await arrayInput.devices()
-      if (audio.isClosed && ['status', 'start'].includes(input.kind))
-        audio = createAudio()
-      if (input.kind === 'connect') {
-        return await changeCapture(async (assertCurrent) => {
-          await arrayInput.release()
-          await audio.release()
-          assertCurrent()
-          audio = createAudio()
-          const { inputDevice, ...settings } = input
-          return arrayInput.connect(input.generation, inputDevice, { audio, start: { ...settings, kind: 'start' } })
-        })
-      }
-      if (input.kind === 'stop') {
-        // Closing a generation-owned realtime port also releases its Python owner.
-        // A late stop cannot disconnect a replacement capture.
-        if (arrayInput.owns(input.generation))
-          return arrayInput.disconnect(input.generation)
-        return await audio.request(input)
-      }
-      if (input.kind === 'start') {
-        return await changeCapture(async (assertCurrent) => {
-          await arrayInput.release()
-          assertCurrent()
-          if (audio.isClosed)
-            audio = createAudio()
-          return audio.request(input)
-        })
-      }
-      return await audio.request(input)
-    }
-    finally { finish?.() }
-  })
   const surface = new ServiceSurface(window, activity => transport.context.emit(desktopSurfaceActivity, activity), await readFile(resolve(import.meta.dirname, '../service/pb.js'), 'utf8'), navigation => transport.context.emit(desktopSurfaceNavigation, navigation), diagnostics)
   defineInvokeHandler(transport.context, updateDesktopSurface, (request, options) => {
     const event = options?.raw?.ipcMainEvent
@@ -231,10 +139,6 @@ async function start() {
   })
   window.webContents.on('did-start-navigation', (event) => {
     if (event.isMainFrame && !event.isSameDocument) {
-      captureDocument++
-      arrayInput.dispose()
-      audio.dispose()
-      audio = createAudio()
       surface.resetHost()
     }
   })
@@ -244,9 +148,6 @@ async function start() {
     surface.resetHost()
   })
   window.on('close', () => {
-    captureDocument++
-    arrayInput.dispose()
-    audio.dispose()
     hostSession.setPermissionCheckHandler(() => false)
     hostSession.setPermissionRequestHandler((_contents, _permission, reply) => reply(false))
     transport.dispose()

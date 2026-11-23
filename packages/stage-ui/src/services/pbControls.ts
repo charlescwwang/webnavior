@@ -173,7 +173,15 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
     }
     if (couponLater())
       await act('notice', '暫時關閉領券提示', 'draft', couponLater, target => target.click(), () => !couponLater())
-    const locate = () => unique(Array.from(document.querySelectorAll<HTMLButtonElement>('button')).filter(button => button.textContent?.trim() === '我知道了，開始點餐'))
+    const locate = () => unique(Array.from(document.querySelectorAll<HTMLButtonElement>('button')).filter((button) => {
+      const label = button.textContent?.trim()
+      if (label === '我知道了，開始點餐')
+        return true
+      // PB's November announcement shortened its acknowledgement. Scope that
+      // generic label to the observed business dialog, never payment/consent UI.
+      const announcement = button.closest('.business-dialog')
+      return label === '我知道了' && announcement?.querySelector('.el-dialog__title,h2')?.textContent?.includes('線上點餐公告')
+    }))
     if (locate())
       await act('notice', '關閉營業公告', 'draft', locate, target => target.click(), () => !locate())
   }

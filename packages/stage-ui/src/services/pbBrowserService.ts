@@ -126,7 +126,7 @@ export function createPbService() {
       localStorage.removeItem(blockedKey)
   }, journey.canSubmit)
   let controlRevision = 0
-  const controlTools = new Set(['browser_return_table', 'browser_table_select', 'browser_start_ordering', 'browser_cart_review', 'browser_search', 'browser_open_product', 'browser_close_product', 'browser_set_note', 'browser_clarify_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_customer_reset', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_order_submit'])
+  const controlTools = new Set(['browser_return_table', 'browser_table_select', 'browser_start_ordering', 'browser_cart_review', 'browser_search', 'browser_open_product', 'browser_close_product', 'browser_set_note', 'browser_clarify_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_customer_reset', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_invoice_tax', 'browser_order_submit'])
   let activeVisual: AbortController | undefined
   for (const eventName of ['pointerdown', 'keydown', 'wheel']) {
     document.addEventListener(eventName, (event) => {
@@ -160,6 +160,7 @@ export function createPbService() {
     { name: 'browser_reception_reset', description: 'Host-only explicit staff initialization. Retires local operation warnings and consent; never reads, clears, submits or cancels a PB order/cart/payment. Reload the configured entry afterwards.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
     { name: 'browser_checkout_prepare', description: 'Read actual invoice/notification fields and prepare one expiring confirmation. No submission.', inputSchema: { type: 'object', properties: { focus: { type: 'string', enum: ['invoice', 'next'] } }, required: [], additionalProperties: false } },
     { name: 'browser_invoice_select', description: 'Select one actually offered native invoice method. No order submission.', inputSchema: { type: 'object', properties: { method: { type: 'string', enum: ['none', 'carrier', 'citizen', 'tax', 'donation'] } }, required: ['method'], additionalProperties: false } },
+    { name: 'browser_invoice_tax', description: 'Host-only fill of a confirmed eight-digit tax ID on the selected tax invoice. No order submission.', inputSchema: { type: 'object', properties: { code: { type: 'string', pattern: '^\\d{8}$' } }, required: ['code'], additionalProperties: false } },
     { name: 'browser_invoice_donation', description: 'Host-only fill of a confirmed 3–7 digit donation code on the selected donation invoice. No order submission.', inputSchema: { type: 'object', properties: { code: { type: 'string', pattern: '^\\d{3,7}$' } }, required: ['code'], additionalProperties: false } },
     { name: 'browser_notification_phone', description: 'Fill only the notification phone draft. No invoice carrier, email, submission or payment.', inputSchema: { type: 'object', properties: { phone: { type: 'string', pattern: '^\\d{10,15}$' } }, required: ['phone'], additionalProperties: false } },
     { name: 'browser_order_submit', description: 'Host-only: consume a native confirmation token after the customer answers the matching final summary. Never a Main tool.', inputSchema: { type: 'object', properties: { confirmationToken: { type: 'string' } }, required: ['confirmationToken'], additionalProperties: false } },
@@ -753,7 +754,7 @@ export function createPbService() {
         const checkoutState = checkout.read()
         return { ok: true, source: 'browser', observedAt: Date.now(), documentId, menuReady: location.pathname === journey.menuPath && observe().products.length > 0, itemSelectionOpen: productDialog.length > 0, productDialog, search: document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value ?? '', page: location.pathname === journey.cartPath ? 'cart' : 'menu', cart, ...(checkoutState ? { checkout: checkoutState } : {}), ...(products ? { products, dataOnly: true } : { customerMessage: cart.lines.length ? `目前購物車：${describeCartLines(cart.lines)}。小計 ${cart.subtotal} 元。` : '購物車目前沒有餐點。' }) }
       }
-      else if (name === 'browser_checkout_prepare' || name === 'browser_invoice_select' || name === 'browser_notification_phone' || name === 'browser_invoice_donation' || name === 'browser_order_submit') {
+      else if (name === 'browser_checkout_prepare' || name === 'browser_invoice_select' || name === 'browser_notification_phone' || name === 'browser_invoice_donation' || name === 'browser_invoice_tax' || name === 'browser_order_submit') {
         if (localStorage.getItem(blockedKey))
           return { ok: false, source: 'browser', status: 'unknown', effect: 'none', customerMessage: '先前操作仍在確認，請先查看目前訂單畫面，避免重複送出。' }
         if (name === 'browser_order_submit') {
@@ -767,6 +768,11 @@ export function createPbService() {
         if (name === 'browser_invoice_select') {
           state = await checkout.choose(parse(strictObject({ method: pbInvoiceMethodSchema }), input).method, controls)
           await checkout.focus('next', controls)
+        }
+        else if (name === 'browser_invoice_tax') {
+          await checkout.tax(parse(strictObject({ code: text }), input).code, controls)
+          await checkout.focus('next', controls)
+          state = await checkout.prepare()
         }
         else if (name === 'browser_invoice_donation') {
           await checkout.donate(parse(strictObject({ code: text }), input).code, controls)

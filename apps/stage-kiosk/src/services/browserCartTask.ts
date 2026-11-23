@@ -5,7 +5,6 @@ import type { ServicePolicyReply } from '@proj-airi/stage-shared/ordering-tools'
 import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/services/interactiveServiceClient'
 
 import type { BrowserEffect, BrowserPlan, EffectDecision } from '../../../server/src/services/domain/browser-ordering/contracts'
-import type { createBrowserCartSession } from './browserCartSession'
 import type { createBrowserDialogue, OrderEvidence, SelectedBrowserAnswer } from './browserDialogue'
 import type { createBrowserPresentation } from './browserPresentation'
 import type { AdditionProposal, QuestionSnapshot } from './browserQuestionWindow'
@@ -53,7 +52,6 @@ interface TaskQuestions {
   dialogue?: ReturnType<typeof createBrowserDialogue>
   presentation?: Pick<ReturnType<typeof createBrowserPresentation>, 'filterRecommendations'>
   catalogLabels?: () => OrderingSite['catalogLabels']
-  cartSession?: { gate: ReturnType<typeof createBrowserCartSession>, owner: () => string | undefined, serviceUrl: () => string | undefined, message: string }
 }
 
 interface VerifiedReceipt {
@@ -66,7 +64,7 @@ interface VerifiedReceipt {
 
 // Server admission compares transcript with this turn's stored customer text.
 // Matching text and orderEvidence may include prior answers; transcript may not.
-let active: TaskQuestions & { tableSelectionRequired?: boolean, cartOwner?: { owner: string, serviceUrl: string }, answerResolved?: boolean, selectedAnswer?: SelectedBrowserAnswer, selected?: { productRef: string, request: string, requestTarget?: string, requestedQuantity?: number, orderSelection?: true }, confirmed?: { proposal: AdditionProposal, binding: QuestionSnapshot }, confirmedOrder?: { proposals: AdditionProposal[], binding: QuestionSnapshot, evidence?: OrderEvidence }, text: string, readonly transcript: string, decide: (proposal: BrowserEffect, plan: Pick<BrowserPlan, 'toolName' | 'arguments'>) => Promise<EffectDecision>, isCurrent: () => boolean, orderEvidence?: OrderEvidence, receipts: Map<string, VerifiedReceipt> } | undefined
+let active: TaskQuestions & { tableSelectionRequired?: boolean, answerResolved?: boolean, selectedAnswer?: SelectedBrowserAnswer, selected?: { productRef: string, request: string, requestTarget?: string, requestedQuantity?: number, orderSelection?: true }, confirmed?: { proposal: AdditionProposal, binding: QuestionSnapshot }, confirmedOrder?: { proposals: AdditionProposal[], binding: QuestionSnapshot, evidence?: OrderEvidence }, text: string, readonly transcript: string, decide: (proposal: BrowserEffect, plan: Pick<BrowserPlan, 'toolName' | 'arguments'>) => Promise<EffectDecision>, isCurrent: () => boolean, orderEvidence?: OrderEvidence, receipts: Map<string, VerifiedReceipt> } | undefined
 const writes = new Set(['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'])
 const orderingAnswerFactsSchema = looseObject({ products: array(looseObject({ ref: string(), name: string(), configurations: array(productConfigurationSchema) })) })
 const tableEntrySchema = looseObject({ ok: literal(true), source: literal('browser'), page: literal('table'), code: literal('table-selection-required'), tableChoices: array(string()), selectedTable: optional(string()), customerMessage: string() })
@@ -123,44 +121,21 @@ function mentionsProduct(task: NonNullable<typeof active>, name: string, product
   return product?.aliases.some(alias => task.transcript.includes(alias) && catalog.filter(candidate => candidate.name === alias || candidate.aliases.includes(alias)).length === 1) === true
 }
 
-/** Keeps previous visitor details Host-only until this visitor owns the cart. */
-function admitCart(task: NonNullable<typeof active>, raw: unknown, catalogOnly = false) {
+/** Handles table entry and failed vendor reads without inferring who owns a cart. */
+function checkBrowserState(task: NonNullable<typeof active>, raw: unknown) {
   const tableEntry = safeParse(tableEntrySchema, raw)
   if (tableEntry.success) {
     const question = task.dialogue?.tables.offer(raw, task.transcript) ?? task.dialogue?.tables.pending(raw)
     return { ok: true, source: 'browser', status: 'clarification', page: 'table', code: 'table-selection-required', tableChoices: tableEntry.output.tableChoices, selectedTable: tableEntry.output.selectedTable, ...(question ? { pendingCustomerChoice: question } : {}), customerMessage: question?.question ?? missingTableMessage(tableEntry.output.tableChoices, task.transcript) ?? tableEntry.output.customerMessage, effect: 'none' }
   }
-  const session = task.cartSession
-  if (!session)
-    return
-  const owner = session.owner()
-  const serviceUrl = session.serviceUrl()
-  if (!owner || !serviceUrl || (task.cartOwner && (owner !== task.cartOwner.owner || serviceUrl !== task.cartOwner.serviceUrl)))
-    return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: session.message }
   if (raw && typeof raw === 'object' && 'ok' in raw && raw.ok === false) {
-    // A failed lookup is not a snapshot or proof of an empty order. Preserve
-    // only its public failure; attached cart data still belongs behind the gate.
     const signIn = safeParse(browserSignInRequiredSchema, raw)
     if (signIn.success)
       return signIn.output
+    // A failed read cannot provide usable cart facts, even if its response
+    // accidentally carries an older snapshot. Preserve the vendor's refusal.
     return { ok: false, source: 'browser', status: 'status' in raw && raw.status === 'unknown' ? 'unknown' : 'rejected', effect: 'none', ...('customerMessage' in raw && typeof raw.customerMessage === 'string' ? { customerMessage: raw.customerMessage } : {}) }
   }
-  task.cartOwner ??= { owner, serviceUrl }
-  if (session.gate.check(owner, serviceUrl, raw))
-    return
-  task.dialogue?.reset()
-  if (catalogOnly) {
-    const facts = parse(looseObject({ products: array(looseObject({ ref: string(), name: string() })) }), raw)
-    return { ok: true, source: 'browser', dataOnly: true, products: facts.products, customerBoundary: 'review-required', explanation: '購物車屬於尚未完成交接的其他接待，未提供任何原本的購物車內容。可繼續以最新商品工具回答菜單問題，但不可宣稱原本的購物車沒有餐點、推測內容或修改。嘗試寫入會由 Host 阻擋，請如實告知需現場確認。' }
-  }
-  return { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerBoundary: 'review-required', customerMessage: session.message }
-}
-
-function ownsCurrentCart(task: NonNullable<typeof active>) {
-  const session = task.cartSession
-  if (!session)
-    return true
-  return !!task.cartOwner && session.owner() === task.cartOwner.owner && session.serviceUrl() === task.cartOwner.serviceUrl && session.gate.owns(task.cartOwner.owner, task.cartOwner.serviceUrl)
 }
 
 /**
@@ -240,7 +215,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       if (active !== task || !task.isCurrent() || !entry.success)
         return { ok: false, source: 'host', status: 'rejected', effect: 'none', customerMessage: '目前選桌畫面已變更，請重新確認。' }
       if (task.dialogue?.tables.offer(entry.output, task.transcript))
-        return admitCart(task, entry.output)
+        return checkBrowserState(task, entry.output)
       const pending = task.dialogue?.tables.pending(entry.output)
       const confirmed = pending ? task.dialogue?.tables.answer(entry.output, task.transcript, task.selectedAnswer) : undefined
       if (confirmed) {
@@ -265,7 +240,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       const explicitlyNamed = resolveTableName(task.transcript.replaceAll(/[，,。！!]/g, ''), entry.output.tableChoices) === name || compact(task.transcript).includes(compact(name)) || spokenCodes.some(code => resolveTableName(code, entry.output.tableChoices) === name) || (name === '櫃台取餐' && task.transcript.includes('櫃台'))
       if (pending) {
         if (!explicitlyNamed || task.selectedAnswer)
-          return admitCart(task, entry.output)
+          return checkBrowserState(task, entry.output)
         task.dialogue?.tables.reset()
       }
       if (tool.name === 'browser_start_ordering' && task.intentSource !== 'jev' && !explicitlyNamed && entry.output.selectedTable && entry.output.selectedTable !== name)
@@ -369,7 +344,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         const raw = await client.execute(context, { includeCatalog: true })
         if (active !== task || !task.isCurrent())
           return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
-        const denied = admitCart(task, raw, true)
+        const denied = checkBrowserState(task, raw)
         if (denied)
           return denied
         const facts = parse(looseObject({ page: optional(string()), search: optional(string()), products: array(looseObject({ ref: string(), name: string(), price: optional(number()), configurations: array(productConfigurationSchema) })) }), raw)
@@ -406,17 +381,6 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
     if (tool.name === 'browser_cart_review' || tool.name === 'browser_return_menu') {
       if (!task || !task.isCurrent() || !context)
         return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
-      const session = task.cartSession
-      const owner = session?.owner()
-      const serviceUrl = session?.serviceUrl()
-      // Check ownership before the native review opens the cart on screen.
-      // Reading metadata here must not consume an outstanding product answer.
-      const before = await client.execute(context, { includeCatalog: false })
-      if (active !== task || !task.isCurrent() || session?.owner() !== owner || session?.serviceUrl() !== serviceUrl)
-        return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
-      const denied = admitCart(task, before)
-      if (denied)
-        return denied
       if (tool.name === 'browser_return_menu') {
         task.dialogue?.reset()
         task.confirmed = undefined
@@ -432,22 +396,33 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
       if (tool.name === 'browser_return_menu' && task.intentSource === 'jev')
         task.onRequestComplete?.()
-      // Navigation can outlive the first snapshot. The final fresh receipt must
-      // still belong to this visitor before any contents reach Main or speech.
-      const rejected = admitCart(task, result)
+      // A completed navigation still needs a readable vendor receipt before
+      // any cart contents can reach Main or speech.
+      const rejected = checkBrowserState(task, result)
       if (rejected)
         return rejected
-      if (tool.name === 'browser_cart_review' && task.dialogue && typeof result === 'object' && result && 'checkout' in result) {
-        const raw = await readBrowserOrderingFacts(client)
+      if (tool.name === 'browser_cart_review' && task.dialogue && typeof result === 'object' && result && 'ok' in result && result.ok === true && 'cart' in result) {
+        const raw = await client.execute(context, { includeCatalog: false })
         if (active !== task || !task.isCurrent())
           return { ok: false, source: 'host', effect: 'none' }
-        const fresh = parse(looseObject({ ...orderingAnswerFactsSchema.entries, cart: cartSnapshotSchema }), raw)
+        const denied = checkBrowserState(task, raw)
+        if (denied)
+          return denied
+        const fresh = parse(looseObject({ cart: cartSnapshotSchema }), raw)
+        // Cart consent is bound to the active task/document/cart, not menu products.
+        // Do not delay its read-back on unrelated full-catalog retrieval.
+        const questionFacts = { ...fresh, products: [] }
+        const receipt = parse(looseObject({ cart: cartSnapshotSchema, customerMessage: string() }), result)
+        if (receipt.cart.version !== fresh.cart.version)
+          return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '購物車內容已變更，請重新核對目前餐點。' }
         if (fresh.cart.lines.length) {
-          const old = task.dialogue.conversation(raw).waitingFor
+          const old = task.dialogue.conversation(questionFacts).waitingFor
           if (old)
-            task.dialogue.releaseService(raw, old.questionId)
-          const question = task.dialogue.presentService(raw, { purpose: 'cart-review', request: task.transcript, question: orderingMessages['zh-Hant'].checkout.cartReview, choices: [{ id: 'yes', description: '確認目前購物車餐點、份數與金額，繼續選擇發票；不送單。' }, { id: 'no', description: '先不繼續結帳，保留購物車並提出修改。' }] })
-          return { ...result, ...question, customerMessage: 'customerMessage' in result ? result.customerMessage : question.customerMessage }
+            task.dialogue.releaseService(questionFacts, old.questionId)
+          const question = task.dialogue.presentService(questionFacts, { purpose: 'cart-review', request: task.transcript, question: orderingMessages['zh-Hant'].checkout.cartReview, choices: [{ id: 'yes', description: '確認目前購物車餐點、份數與金額，繼續選擇發票；不送單。' }, { id: 'no', description: '先不繼續結帳，保留購物車並提出修改。' }] })
+          // Invoice controls can render after the cart. The observed receipt and
+          // its explicit question must both reach speech before asking for consent.
+          return { ...result, ...question, customerMessage: `${receipt.customerMessage}${question.customerMessage}` }
         }
       }
       return result
@@ -464,7 +439,6 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       const { customerMessage: _message, ...facts } = catalog.output
       return { ...facts, dataOnly: true, explanation: '這是當前完整菜單資料，不代表已完成原句的篩選。依完整需求選出商品參照，再用 browser_present 呈現；資料不足以確認條件時用 browser_respond kind=information-unavailable，不把全部商品說成符合。' }
     }
-    let cartRead: unknown
     if (tool.name === 'browser_quote' && task && context) {
       const fresh = parse(looseObject({ products: array(looseObject({ ref: string(), name: string(), kind: string(), priceType: number(), price: number(), configurations: array(productConfigurationSchema) })) }), await client.execute(context, { includeCatalog: true }))
       if (active !== task || !task.isCurrent())
@@ -498,7 +472,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       if (active !== task || !task.isCurrent())
         return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
       if (result && typeof result === 'object' && 'cart' in result)
-        return admitCart(task, result, true) ?? result
+        return checkBrowserState(task, result) ?? result
       const unresolved = safeParse(looseObject({ ok: boolean(), source: picklist(['browser']), status: picklist(['clarification']), effect: picklist(['none']) }), result)
       if (!unresolved.success || !unresolved.output.ok || !task.dialogue)
         return result
@@ -515,28 +489,19 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       const facts = await client.execute(context, { includeCatalog: true })
       if (active !== task || !task.isCurrent())
         return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
-      const denied = admitCart(task, facts, true)
+      const denied = checkBrowserState(task, facts)
       if (denied)
         return denied
       const query = names.output[0]
       return presentQuestion(facts, query)
-    }
-    if (task?.cartSession && context && ['browser_cart_get', 'browser_open_product', 'browser_set_note'].includes(tool.name)) {
-      const raw = await client.execute(context, { includeCatalog: input.includeCatalog === true || tool.name !== 'browser_cart_get' })
-      cartRead = raw
-      const denied = admitCart(task, raw, tool.name === 'browser_cart_get' && input.includeCatalog === true)
-      if (denied)
-        return denied
-      if (!task.dialogue || tool.name !== 'browser_cart_get')
-        return tool.name === 'browser_cart_get' ? raw : client.execute(tool, input)
     }
     if (!task?.dialogue || !context)
       return client.execute(tool, input)
     const observe = () => client.execute(context, { includeCatalog: true })
     if (tool.name === 'browser_cart_get' && input.includeCatalog === true && !task.answerResolved) {
       task.answerResolved = true
-      const facts = cartRead ?? await observe()
-      const denied = admitCart(task, facts, true)
+      const facts = await observe()
+      const denied = checkBrowserState(task, facts)
       if (denied)
         return denied
       const answer = await task.dialogue.answer(facts, task.transcript, observe, () => active === task && task.isCurrent(), task.utteranceId, { selectedAnswer: task.selectedAnswer })
@@ -639,7 +604,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
       // Table entry intentionally has no menu catalog. Preserve its question
       // before parsing product fields, including when Main asked about a dish.
-      const denied = admitCart(task, facts)
+      const denied = checkBrowserState(task, facts)
       if (denied)
         return denied
       const catalog = parse(looseObject({ products: array(looseObject({ ref: string(), name: string() })) }), facts)
@@ -651,17 +616,17 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       }
       return presentQuestion(facts, typeof input.query === 'string' ? input.query : '')
     }
-    return tool.name === 'browser_cart_get' && cartRead !== undefined ? cartRead : client.execute(tool, input)
+    return client.execute(tool, input)
   }
   if (!task || !context)
     throw new Error('Current browser cart task is unavailable.')
   if (task.readOnly) {
     if (task.clarifyOrder && task.dialogue && tool.name === 'browser_cart_add') {
       const raw = await client.execute(context, { includeCatalog: true })
-      const denied = admitCart(task, raw)
+      const denied = checkBrowserState(task, raw)
       if (denied)
         return denied
-      if (active !== task || !task.isCurrent() || !ownsCurrentCart(task))
+      if (active !== task || !task.isCurrent())
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
       const facts = parse(looseObject({ products: array(looseObject({ ref: string(), name: string() })) }), raw)
       const product = facts.products.find(product => product.ref === input.productRef)
@@ -675,7 +640,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
   }
   const needsProducts = tool.name === 'browser_cart_add' || tool.name === 'browser_cart_replace'
   const rawFacts = await client.execute(context, { includeCatalog: needsProducts })
-  const denied = admitCart(task, rawFacts)
+  const denied = checkBrowserState(task, rawFacts)
   if (denied)
     return denied
   const facts = parse(looseObject({ cart: looseObject({ version: string(), lines: array(looseObject({ ...cartLineLabelSchema.entries, ref: string(), productRef: optional(string()), configuration: optional(string()), unitPrice: optional(number()) })) }), products: optional(array(looseObject({ ref: string(), name: string(), configurations: array(looseObject({ variantRef: string(), name: string(), groups: array(looseObject({ choices: array(looseObject({ ref: string(), name: string(), unitPrice: number() })) })) })) })), []) }), rawFacts)
@@ -710,7 +675,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
   const previous = task.receipts.get(key)
   if (active === task && task.isCurrent() && previous?.version === facts.cart.version)
     return { ...previous.result, repeated: true }
-  if (active !== task || !task.isCurrent() || !ownsCurrentCart(task))
+  if (active !== task || !task.isCurrent())
     return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
   const action = tool.name === 'browser_cart_add' ? 'add' : tool.name === 'browser_cart_replace' ? 'replace' : tool.name === 'browser_cart_quantity' ? 'quantity' : 'remove'
   if (!task.confirmed && input.version !== facts.cart.version && [...task.receipts.values()].some(receipt => receipt.version === facts.cart.version)) {
@@ -732,8 +697,6 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       && ['version', 'productRef', 'quantity', 'unitPrice', 'note'].every(name => input[name] === expected[name as keyof typeof expected]) && Object.keys(input).length === Object.keys(expected).length
     if (!same)
       return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, requiredAction: 'add', confirmedAddition: proposal, cart: { version: binding.cartVersion }, explanation: '只允許執行剛才確認的完整設定，請使用這份回執參數。尚未寫入。' }
-    if (!ownsCurrentCart(task))
-      return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: task.cartSession?.message }
     const result = await dispatchCartWrite(client, tool, expected)
     if (result && typeof result === 'object' && 'status' in result && result.status === 'verified' && 'cart' in result && result.cart && typeof result.cart === 'object' && 'version' in result.cart && typeof result.cart.version === 'string') {
       task.receipts.set(key, { version: result.cart.version, toolName: 'browser_cart_add', result: { ...result }, ...(servingKey ? { addition: { servingKey, note: proposal.note, quantity: proposal.quantity } } : {}) })
@@ -824,7 +787,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
     return { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '本輪已有核實新增，但尚無法辨識完整配置；請先核對購物車，避免重複加餐。' }
   const completedAdditions = [...task.receipts.values()].flatMap(receipt => receipt.addition ? [receipt.addition] : [])
   const semanticDecision = await task.decide({ transcript: task.transcript, action, completedEffects, completedAdditions, servingKey, deltas, cartContext: { version: facts.cart.version, lines: facts.cart.lines.map(line => ({ name: line.name, quantity: line.quantity, description: line.description ?? '', note: line.note ?? '', options: line.options })) }, cartTarget, serving, copySource: copySource ? { name: copySource.name, quantity: copySource.quantity, configuration: copySource.description ?? '', note: copySource.note ?? '', options: copySource.options } : undefined, note: typeof input.note === 'string' ? input.note : '', storeFacts: [...selectedFacts, ...(task.orderEvidence ? [`原始點餐需求：${task.orderEvidence.request}。已確認的問題與顧客回答：${task.orderEvidence.answers.map(item => `問題「${item.question}」，顧客回答「${item.answer}」`).join('；')}。`] : []), ...(original ? [`PB 現在指定的購物車行／同配置群組是「${original.name}」合計 ${originalQuantity} 份。整組移除代表移除目前這 ${originalQuantity} 份；這個原有數量不是顧客對新餐指定的份數。`] : [])].join(' '), description: `${description} 每份餐點的選項：${selectedLabels.join('、') || '沒有加購'}。單份售價 ${input.unitPrice ?? '沿用原行'}。備註：${input.note ?? ''}。` }, { toolName: parse(browserWriteToolNameSchema, tool.name), arguments: JSON.stringify(input) })
-  if (active !== task || !task.isCurrent() || !ownsCurrentCart(task))
+  if (active !== task || !task.isCurrent())
     return { ok: false, source: 'browser', status: 'rejected', customerMessage: '這次需求已結束，尚未變更購物車。' }
   const issuedPlan = semanticDecision.choice === 'ALLOW' && semanticDecision.admission === 'issued-plan'
   if (!issuedPlan)
@@ -882,11 +845,11 @@ export async function readBrowserOrderingFacts(client: Pick<ReturnType<typeof cr
   const raw = await client.execute(read, { includeCatalog: true })
   if (active !== task || !task.isCurrent())
     throw new Error('目前點餐需求已結束。')
-  const denied = admitCart(task, raw, true)
+  const denied = checkBrowserState(task, raw)
   if (denied && 'page' in denied && denied.page === 'table')
     return denied
   if (denied)
-    throw new Error('目前購物車尚未完成確認。')
+    throw new Error('目前購物車資料讀取未完成。')
   const facts = parse(orderingAnswerFactsSchema, raw)
   return { ...facts, products: labelCatalog(facts.products, task.catalogLabels?.()) }
 }
@@ -1004,11 +967,6 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
   }
   const order = safeParse(looseObject({ ok: literal(true), source: literal('browser'), page: picklist(['payment', 'order-result']), observedAt: number(), order: pbOrderStateSchema }), raw)
   if (order.success) {
-    const session = task.cartSession
-    const owner = session?.owner()
-    const serviceUrl = session?.serviceUrl()
-    if (session && (!owner || !serviceUrl || !session.gate.owns(owner, serviceUrl)))
-      return parse(browserConversationSchema, { taskId, sourceUtterance: task.transcript, phase: 'review_required', readOnly: true, catalog: { complete: false, products: [] }, allowedToolNames: ['browser_respond'] })
     if (task.orderReference && task.orderReference !== order.output.order.reference)
       throw new Error('Order context belongs to a different order.')
     task.orderReference = order.output.order.reference
@@ -1024,11 +982,10 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
     return parse(browserConversationSchema, { taskId, sourceUtterance: task.transcript, ...state, page: 'table', tableChoices: tableEntry.output.tableChoices, selectedTable: tableEntry.output.selectedTable, waitingFor: task.dialogue?.tables.pending(raw), catalog: { complete: false, products: [] }, allowedToolNames: browserToolNames(state, toolNames) })
   }
   const facts = parse(looseObject({ itemSelectionOpen: optional(boolean()), ok: literal(true), source: literal('browser'), page: optional(picklist(['table', 'menu', 'cart', 'checkout'])), cart: looseObject({ version: string(), lines: array(looseObject({ ref: string(), name: string(), quantity: number() })) }), products: array(object({ ref: string(), name: string(), price: optional(number()), configurations: array(productConfigurationSchema) })) }), raw)
-  const denied = admitCart(task, raw, true)
-  const reviewRequired = denied && 'customerBoundary' in denied && denied.customerBoundary === 'review-required'
-  if (denied && !reviewRequired)
-    throw new Error('Current cart ownership cannot be established.')
-  if (!reviewRequired && !task.selected) {
+  const denied = checkBrowserState(task, raw)
+  if (denied)
+    throw new Error('Current browser state cannot be read.')
+  if (!task.selected) {
     const accepted = task.dialogue?.selectionForTurn(raw, task.utteranceId)
     if (accepted) {
       task.selected = accepted.selection
@@ -1056,12 +1013,9 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
     target = mentioned[0]
   const quantities = explicitServingQuantities(selected?.request ?? task.transcript, { productName: target?.name })
   const quantity = selected?.requestedQuantity ?? (quantities.length === 1 ? quantities[0] : undefined)
-  const providedSlots = !reviewRequired && target ? { productRef: target.ref, name: target.name, quantity } : undefined
+  const providedSlots = target ? { productRef: target.ref, name: target.name, quantity } : undefined
   let dialogue: Pick<BrowserConversation, 'phase' | 'draft' | 'drafts' | 'waitingFor'> = { phase: 'browsing' }
-  if (reviewRequired) {
-    dialogue = { phase: 'review_required' }
-  }
-  else if (task.confirmedOrder && task.dialogue) {
+  if (task.confirmedOrder && task.dialogue) {
     if (!task.dialogue.accepts(task.confirmedOrder.binding, raw))
       throw new Error('Confirmed order no longer matches the current browser.')
     dialogue = { phase: 'ready_to_add', drafts: task.confirmedOrder.proposals.map((proposal, index) => ({ id: String(index), productRef: proposal.productRef, name: proposal.productName, quantity: proposal.quantity, choices: proposal.selection.choices, note: proposal.note, missing: [] })) }
@@ -1093,9 +1047,9 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
     itemSelectionOpen: facts.itemSelectionOpen,
     checkoutStep: task.dialogue?.checkoutStep(raw),
     checkout: typeof raw === 'object' && raw && 'checkout' in raw ? safeParse(pbCheckoutSchema, raw.checkout).output : undefined,
-    // Preserve native row/configuration identity and subtotal through the owning
-    // shared projection, but never expose another visitor's cart to the model.
-    cart: reviewRequired ? undefined : facts.cart,
+    // Preserve the visible cart's row/configuration identity and subtotal
+    // through the shared projection; local reception IDs do not identify its operator.
+    cart: facts.cart,
     search: typeof raw === 'object' && raw && 'search' in raw && typeof raw.search === 'string' ? raw.search : '',
     catalog: { complete: true, products: labelCatalog(facts.products, task.catalogLabels?.()) },
     allowedToolNames: browserToolNames({ phase: dialogue.phase, readOnly, providedSlots }, toolNames),
@@ -1143,7 +1097,7 @@ export async function prepareBrowserQuestionAnswer(client: Pick<ReturnType<typeo
   }
   // Keep the exact already-selected Jev answer. Question consumption still
   // checks visitor, document, cart and expiry; another model gets no vote.
-  if (active !== task || !task.isCurrent() || admitCart(task, facts) || (task.intentSource !== 'jev' && !task.dialogue.canAnswerLocally(facts, task.transcript)))
+  if (active !== task || !task.isCurrent() || checkBrowserState(task, facts) || (task.intentSource !== 'jev' && !task.dialogue.canAnswerLocally(facts, task.transcript)))
     return
   if (task.intentSource === 'jev' && input && Object.keys(input).length) {
     const selected = safeParse(strictObject({ questionId: string(), choiceId: string() }), input)
@@ -1182,7 +1136,7 @@ export async function executeBrowserQuantityQuestion(client: Pick<ReturnType<typ
   const facts = await client.execute(context, { includeCatalog: true })
   if (active !== task || !task.isCurrent())
     return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
-  const denied = admitCart(task, facts)
+  const denied = checkBrowserState(task, facts)
   if (denied)
     return denied
   const catalog = parse(looseObject({ products: array(looseObject({ ref: string(), name: string() })) }), facts)
@@ -1214,7 +1168,7 @@ export async function executeBrowserOrderDraft(client: Pick<ReturnType<typeof cr
   const facts = await client.execute(read, { includeCatalog: true })
   if (active !== task || !task.isCurrent())
     return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
-  const denied = admitCart(task, facts)
+  const denied = checkBrowserState(task, facts)
   if (denied)
     return denied
   const result = task.dialogue.collectOrder(facts, input, task.selected?.request || task.transcript, task.selected ? { productRef: task.selected.productRef, quantity: task.selected.requestedQuantity, answer: task.transcript } : undefined)
@@ -1254,7 +1208,7 @@ export async function executeBrowserConfirmedAddition(client: Pick<ReturnType<ty
           failure = { ...fresh }
           break
         }
-        if (active !== task || !task.isCurrent() || !ownsCurrentCart(task) || !task.dialogue.accepts(binding, fresh)) {
+        if (active !== task || !task.isCurrent() || !task.dialogue.accepts(binding, fresh)) {
           failure = { status: 'rejected', customerMessage: '畫面、餐點或購物車已變更，剩餘餐點尚未加入，請重新核對。' }
           break
         }
@@ -1304,7 +1258,7 @@ export async function executeBrowserConfirmedAddition(client: Pick<ReturnType<ty
 }
 
 /** Checkout drafts and final questions remain bound to the current visitor and native cart. */
-export async function executeBrowserCheckout(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, action: 'continue' | 'invoice-options' | 'invoice' | 'phone' | 'phone-confirmed' | 'donation-confirmed', input: { method?: string, phone?: string, code?: string, afterRejectedSubmit?: true } = {}) {
+export async function executeBrowserCheckout(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, action: 'continue' | 'invoice-options' | 'invoice' | 'phone' | 'phone-confirmed' | 'donation-confirmed' | 'tax-confirmed', input: { method?: string, phone?: string, code?: string, afterRejectedSubmit?: true } = {}) {
   const task = active
   if (!task?.dialogue || !task.isCurrent())
     return { ok: false, source: 'host', effect: 'none' }
@@ -1320,7 +1274,7 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   const raw = await readBrowserOrderingFacts(client)
   if (active !== task || !task.isCurrent())
     return { ok: false, source: 'host', effect: 'none' }
-  const denied = admitCart(task, raw)
+  const denied = checkBrowserState(task, raw)
   if (denied)
     return denied
   const facts = parse(looseObject({ ...orderingAnswerFactsSchema.entries, cart: cartSnapshotSchema }), raw)
@@ -1355,6 +1309,8 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
     name = 'browser_notification_phone'
   else if (action === 'donation-confirmed')
     name = 'browser_invoice_donation'
+  else if (action === 'tax-confirmed')
+    name = 'browser_invoice_tax'
   const tool = client.tools.value.find(tool => tool.name === name)
   if (!tool)
     throw new Error('目前網站尚未提供這項結帳操作。')
@@ -1366,6 +1322,12 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
     if (!input.phone || !/^\d{10,15}$/.test(input.phone) || (action === 'phone' && input.phone !== digits))
       return { ok: true, source: 'browser', effect: 'none', customerMessage: '請說完整通知手機號碼，可以分段說。' }
     parameters = { phone: input.phone }
+  }
+  if (action === 'tax-confirmed') {
+    const form = safeParse(looseObject({ checkout: pbCheckoutSchema }), raw)
+    if (!input.code || !/^\d{8}$/.test(input.code) || !form.success || !form.output.checkout.methods.some(method => method.method === 'tax' && method.selected))
+      return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: orderingMessages['zh-Hant'].checkout.taxId.invalid }
+    parameters = { code: input.code }
   }
   if (action === 'donation-confirmed') {
     const form = safeParse(looseObject({ checkout: pbCheckoutSchema }), raw)
@@ -1385,7 +1347,7 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
       const fresh = await readBrowserOrderingFacts(client)
       if (active !== task || !task.isCurrent())
         return result
-      const denied = admitCart(task, fresh)
+      const denied = checkBrowserState(task, fresh)
       if (denied)
         return denied
       const recovery = task.dialogue.observeCheckout(fresh, `${name}:${action === 'invoice' ? input.method : pendingStep ?? 'invoice-method'}`, true, task.utteranceId ?? task)
@@ -1420,6 +1382,9 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
     let question: string
     if (selected.method === 'donation') {
       question = invoiceField?.value ? copy.donationCode.invalid : copy.donationCode.introduction
+    }
+    else if (selected.method === 'tax') {
+      question = invoiceField?.value ? copy.taxId.invalid : copy.taxId.introduction
     }
     else if (selected.method === 'carrier' || selected.method === 'citizen') {
       question = `${copy.scanInvoice.replace('{method}', selected.label)}，掃好後告訴我「好了」。`
@@ -1479,11 +1444,6 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
     return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
   const stateReader = client.tools.value.find(tool => tool.name === 'browser_state_get')
   if (stateReader && (task.orderReference || !client.tools.value.some(tool => tool.name === 'browser_cart_get'))) {
-    const session = task.cartSession
-    const owner = session?.owner()
-    const serviceUrl = session?.serviceUrl()
-    if (session && (!owner || !serviceUrl || !session.gate.owns(owner, serviceUrl)))
-      return { ok: true, source: 'host', status: 'conversation', effect: 'none', customerMessage: session.message }
     const fresh = await client.execute(stateReader, { includeCatalog: false })
     if (active !== task || !task.isCurrent())
       return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
@@ -1513,7 +1473,7 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
     const fresh = await client.execute(read, { includeCatalog: false })
     if (active !== task || !task.isCurrent())
       return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
-    const denied = admitCart(task, fresh)
+    const denied = checkBrowserState(task, fresh)
     if (denied)
       return denied
     task.tableSelectionRequired = false
@@ -1531,8 +1491,8 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
     const review = client.tools.value.find(tool => tool.name === 'browser_cart_review')
     if (!review || !task.checkoutGuidance)
       throw new Error('Checkout guidance requires native cart review and the current Kiosk translation context.')
-    // The review gate checks ownership before opening or exposing a prior cart.
-    // This never submits an order, selects payment or grants new cart ownership.
+    // Review the currently visible cart without inferring its operator.
+    // This never submits an order or selects payment.
     const result = await executeBrowserCartTool(client, review, {})
     if (active !== task || !task.isCurrent())
       return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
@@ -1540,23 +1500,6 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
     if (!reviewed.success)
       return result
     return { ...reviewed.output, status: 'checkout-guidance', effect: 'none', customerMessage: task.checkoutGuidance(reviewed.output.cart.lines.length === 0) }
-  }
-  if (task.cartSession && !['greeting', 'hearing-check'].includes(selected)) {
-    const session = task.cartSession
-    const owner = session.owner()
-    const serviceUrl = session.serviceUrl()
-    const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')
-    if (!read)
-      throw new Error('Browser replies require a fresh cart boundary check.')
-    // New chat clears the visible block, not the merchant cart or its persisted
-    // owner. Check fresh facts even when Main chose a generic fallback directly;
-    // this read must not consume an outstanding product/confirmation answer.
-    const fresh = await client.execute(read, { includeCatalog: false })
-    if (active !== task || !task.isCurrent() || session.owner() !== owner || session.serviceUrl() !== serviceUrl)
-      return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
-    const denied = admitCart(task, fresh)
-    if (denied)
-      return denied
   }
   if (task.dialogue?.hasPending()) {
     const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')

@@ -18,7 +18,7 @@ export interface QuestionSnapshot {
   owner: string
   documentId: string
   cartVersion: string
-  /** Form values bind final consent only; filling a field must not discard its entry step. */
+  /** Form values bind consent and spoken tax fragments; entry progress can be re-established without them. */
   checkoutVersion?: string
   products: QuestionProduct[]
 }
@@ -73,7 +73,7 @@ export function createBrowserQuestionWindow(now = Date.now) {
       return
     const previous = ticket.binding
     const sameProducts = previous.products.every(product => snapshot.products.some(candidate => JSON.stringify(candidate) === JSON.stringify(product)))
-    const formChanged = ticket.kind === 'service' && ['submit-order', 'invoice-donation-confirm'].includes(ticket.purpose) && previous.checkoutVersion !== snapshot.checkoutVersion
+    const formChanged = ticket.kind === 'service' && ['submit-order', 'invoice-donation-confirm', 'invoice-tax', 'invoice-tax-confirm'].includes(ticket.purpose) && previous.checkoutVersion !== snapshot.checkoutVersion
     if (formChanged || ticket.question.expiresAt <= now() || previous.owner !== snapshot.owner || previous.documentId !== snapshot.documentId || previous.cartVersion !== snapshot.cartVersion || !sameProducts) {
       ticket = undefined
       return
@@ -85,7 +85,7 @@ export function createBrowserQuestionWindow(now = Date.now) {
     /** A hint only; authority still requires pending(snapshot) to recheck freshness. */
     hasPending: () => ticket !== undefined,
     /** Recovery hint only; fresh snapshot/token checks still own submission authority. */
-    hasSubmissionQuestion: () => ticket?.kind === 'service' && ['submit-order', 'invoice-donation-confirm'].includes(ticket.purpose),
+    hasSubmissionQuestion: () => ticket?.kind === 'service' && ['submit-order', 'invoice-donation-confirm', 'invoice-tax', 'invoice-tax-confirm'].includes(ticket.purpose),
     /** A different service request drops this offer, preserving any unfinished dish underneath. */
     releaseService(snapshot: QuestionSnapshot, questionId: string) {
       const pending = current(snapshot)
@@ -104,7 +104,7 @@ export function createBrowserQuestionWindow(now = Date.now) {
       // Checkout answers authorize the observed cart, not every menu item's
       // pickup-dependent configuration. Final submission independently checks
       // the native form/token; owner, document, cart and expiry still bind here.
-      const cartQuestion = ['review-checkout', 'cart-review', 'invoice-method', 'invoice-details', 'invoice-donation-confirm', 'notification-details', 'notification-phone', 'notification-phone-confirm', 'checkout-details', 'submit-order'].includes(input.purpose)
+      const cartQuestion = ['review-checkout', 'cart-review', 'invoice-method', 'invoice-details', 'invoice-donation-confirm', 'invoice-tax', 'invoice-tax-confirm', 'notification-details', 'notification-phone', 'notification-phone-confirm', 'checkout-details', 'submit-order'].includes(input.purpose)
       const binding = structuredClone({ ...snapshot, products: cartQuestion ? [] : snapshot.products })
       // Replacing a service offer retires it permanently. Only an unfinished
       // product/quantity task underneath can resume after the new offer ends.

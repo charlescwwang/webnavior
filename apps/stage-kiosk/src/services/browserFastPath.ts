@@ -81,6 +81,16 @@ export function createBrowserFastPathSource(io: {
     async context(input) {
       issued = undefined
       const transcript = typeof input.transcript === 'string' ? input.transcript : ''
+      // A standalone navigation request needs the current cart/page, not every
+      // menu configuration. This only narrows the read; Jev still admits and
+      // selects the action, and task/document scope is checked before execution.
+      let navigation: { id: string, name: string, description: string } | undefined
+      if (!io.hasPendingQuestion()) {
+        if (/^(?:我點了什麼|看購物車|查看購物車|購物車|核對購物車|總共多少|總金額多少)[。！!？?\s]*$/.test(transcript) && io.tools.some(tool => tool.name === 'browser_cart_review'))
+          navigation = { id: 'intent:view-cart', name: 'browser_cart_review', description: '查看購物車裡的餐點與網站總額，不修改或送出訂單。' }
+        else if (/^(?:回去看菜單|回到菜單|返回菜單|回主菜單|繼續點餐)[。！!？?\s]*$/.test(transcript) && io.tools.some(tool => tool.name === 'browser_return_menu'))
+          navigation = { id: 'intent:return-menu', name: 'browser_return_menu', description: '回到完整菜單，清除搜尋，保留購物車裡的餐點。' }
+      }
       const candidates = [{ id: 'intent:search-menu', description: '讀取目前 PB 菜單與實際售價，不改購物車；需要條件篩選、比較或其他操作則交接 Main。' }]
       // Admission must still run, but Main must append this utterance before
       // the bound answer resolver runs.
@@ -88,15 +98,10 @@ export function createBrowserFastPathSource(io: {
       // return a question receipt with no cart and mislabel it as a Jev failure.
       let raw: unknown
       try {
-        raw = await io.read(tool('browser_state_get'), { includeCatalog: true })
+        raw = await io.read(tool('browser_state_get'), { includeCatalog: !navigation })
       }
       catch (error) {
         return { contextError: errorMessageFrom(error) ?? 'PB context read failed.' }
-      }
-      if (raw && typeof raw === 'object' && 'customerBoundary' in raw && raw.customerBoundary === 'review-required') {
-        // Private prior-customer cart data is intentionally absent. Keep only
-        // service admission available; Main retains the existing handoff gate.
-        return { phase: 'ordering', requiresPlanner: true, customerBoundary: 'review-required', candidates }
       }
       if (raw && typeof raw === 'object' && 'ok' in raw && raw.ok === false)
         return { contextError: 'customerMessage' in raw && typeof raw.customerMessage === 'string' ? raw.customerMessage : 'PB context read was rejected.' }
@@ -141,6 +146,14 @@ export function createBrowserFastPathSource(io: {
         const plans = Object.fromEntries(offered.map(choice => [choice.id, { name: choice.id === 'start' || (requested && /開始/.test(transcript)) ? 'browser_start_ordering' : 'browser_table_select', input: { name: choice.id === 'start' ? table.output.selectedTable! : choice.description } }]))
         issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans, answerIds: offered.map(choice => choice.id) }
         return { phase: 'selecting_table', tableSelectionRequired: true, tableSelection: { choices: table.output.tableChoices, selectedTable: table.output.selectedTable }, candidates: offered.map(choice => ({ ...choice, description: plans[choice.id].name === 'browser_start_ordering' ? `使用${plans[choice.id].input.name}開始點餐` : `選擇${choice.description}，留在選桌頁，尚未開始點餐` })) }
+      }
+
+      if (navigation) {
+        const observed = safeParse(looseObject({ ok: literal(true), source: literal('browser'), page: string(), cart: looseObject({ version: string(), lines: array(looseObject({ ref: string(), name: string(), quantity: number() })) }) }), raw)
+        if (!observed.success)
+          return { contextError: '目前無法取得購物車與頁面狀態，請確認畫面。' }
+        issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans: { [navigation.id]: { name: navigation.name, input: {} } } }
+        return { phase: 'ordering', candidates: [{ id: navigation.id, description: navigation.description }] }
       }
 
       const checkout = safeParse(pbCheckoutSchema, raw && typeof raw === 'object' && 'checkout' in raw ? raw.checkout : undefined)

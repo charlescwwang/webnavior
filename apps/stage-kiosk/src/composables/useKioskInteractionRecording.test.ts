@@ -344,10 +344,10 @@ describe('useKioskInteractionRecording', () => {
     finally { scope.stop() }
   })
 
-  it.each(['handoff', 'checkout'])('ends with the verified %s receipt without another Main continuation', async (kind) => {
-    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'cart-handoff', state: 'active' } })
+  it('ends with the verified checkout receipt without another Main continuation', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'cart-checkout', state: 'active' } })
     kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'checkout', type: 'function', function: { name: 'browser_respond', arguments: '{"kind":"information-unavailable"}' } }] })
-    const payload = { ok: true, source: 'browser', effect: 'none', ...(kind === 'handoff' ? { status: 'clarification', customerBoundary: 'review-required', customerMessage: '購物車裡還留著未完成的餐點，需要請現場人員先確認。' } : { status: 'checkout-guidance', customerMessage: '請核對購物車，再依畫面提示自行結帳。' }) }
+    const payload = { ok: true, source: 'browser', effect: 'none', status: 'checkout-guidance', customerMessage: '請核對購物車，再依畫面提示自行結帳。' }
     const tool = rawTool({ name: 'browser_respond', description: 'Reply', parameters: { type: 'object', properties: {} }, execute: async () => payload })
     const scope = effectScope()
     try {

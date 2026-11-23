@@ -5,7 +5,6 @@ import type { InteractionLifecycleMessage } from '@proj-airi/stage-shared/intera
 import type { VADEvents } from '@proj-airi/stage-ui/libs/audio/vad'
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
-import type { ArrayProcessing } from '../audio/captureProtocol'
 import type { KioskMotionName } from '../composables/useKioskCharacterMotion'
 import type { KioskInteractionTurn } from '../composables/useKioskInteractionTurn'
 import type { CustomerRequestStatus } from '../services/conversationMessages'
@@ -28,6 +27,7 @@ import { serviceOperationSchema } from '@proj-airi/stage-shared/service-operatio
 import { CustomerSessionCompletion, CustomerSessionIdleConfirmation } from '@proj-airi/stage-ui/components'
 import { DeviceSettingsPanel } from '@proj-airi/stage-ui/components/scenarios/kiosk/deviceSettings'
 import { WidgetStage } from '@proj-airi/stage-ui/components/scenes'
+import { InputGain, measurePcmLevel } from '@proj-airi/stage-ui/libs/audio/inputGain'
 import { useVAD } from '@proj-airi/stage-ui/stores/ai/models/vad'
 import { useAudioContext } from '@proj-airi/stage-ui/stores/audio'
 import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
@@ -43,7 +43,6 @@ import { computed, nextTick, onMounted, onScopeDispose, onUnmounted, shallowReac
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
-import BrowserCartHandoff from './browserCartHandoff.vue'
 import KioskActivityGlow from './KioskActivityGlow.vue'
 import KioskAdminAccess from './KioskAdminAccess.vue'
 import KioskAdminPanel from './KioskAdminPanel.vue'
@@ -58,10 +57,9 @@ import KioskSessionNotice from './KioskSessionNotice.vue'
 import KioskVoiceDiagnostics from './KioskVoiceDiagnostics.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
-import { createArrayCapture } from '../audio/capture'
-import { InputGain } from '../audio/inputGain'
-import { createNativeCapture } from '../audio/nativeCapture'
+import { arrayCaptureConstraints, standardCaptureConstraints } from '../audio/microphoneInput'
 import { connectPlaybackReference } from '../audio/playbackReference'
+import { useArrayMicrophone } from '../composables/useArrayMicrophone'
 import { useFeedbackInvitationSettings } from '../composables/useFeedbackInvitationSettings'
 import { useKioskCameraPreview } from '../composables/useKioskCameraPreview'
 import { useKioskCharacterMotion } from '../composables/useKioskCharacterMotion'
@@ -82,7 +80,6 @@ import { useKioskStreamingReply } from '../composables/useKioskStreamingReply'
 import { useKioskVoiceTest } from '../composables/useKioskVoiceTest'
 import { setKioskLocale } from '../modules/i18n'
 import { endKioskAdminSession, isKioskAdminSessionActive } from '../services/admin-session'
-import { createBrowserCartSession } from '../services/browserCartSession'
 import { beginBrowserCartTask, cancelBrowserItemSelection, executeBrowserCartTool, executeBrowserQuantityQuestion, prepareBrowserQuestionAnswer, readBrowserConversation } from '../services/browserCartTask'
 import { createBrowserDialogue } from '../services/browserDialogue'
 import { createBrowserFastPathSource } from '../services/browserFastPath'
@@ -169,39 +166,21 @@ const settingsAudioDeviceStore = useSettingsAudioDevice()
 const { language } = storeToRefs(useSettings())
 const fixedGreetings = createFixedGreetings(synthesizeKioskSpeech)
 const greetingDelivery = createGreetingDelivery()
-const { enabled, stream, selectedAudioInput, audioInputs } = storeToRefs(settingsAudioDeviceStore)
+const { enabled, stream: rawMicrophoneStream } = storeToRefs(settingsAudioDeviceStore)
 const microphone = useKioskMicrophone()
-const arrayMicrophone = computed(() => microphone.isArray(audioInputs.value.find(device => device.deviceId === selectedAudioInput.value)?.label || stream.value?.getAudioTracks()[0]?.label || ''))
-const nativeArrayMicrophone = computed(() => desktopHost && microphone.settings.value.inputMode !== 'standard' && microphone.nativeSelected.value)
-const nativeLcmvMicrophone = computed(() => desktopHost && microphone.usesNativeLcmv(arrayMicrophone.value))
-const nativeHardwareMicrophone = computed(() => nativeArrayMicrophone.value || nativeLcmvMicrophone.value)
-watch([arrayMicrophone, nativeHardwareMicrophone, microphone.backendAvailable], ([array, native]) => {
-  settingsAudioDeviceStore.browserCaptureEnabled = !native && microphone.backendAvailable.value
-  settingsAudioDeviceStore.inputConstraints = array && !native
-    ? { channelCount: { exact: 8 }, sampleRate: { ideal: 48000 }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-    : undefined
+// Electron's Chromium owns microphone permission and tracks, as in November master.
+const browserCaptureMode = computed(() => microphone.settings.value.inputMode === 'standard' ? 'standard' as const : 'raw' as const)
+watch(browserCaptureMode, (mode) => {
+  settingsAudioDeviceStore.browserCaptureEnabled = true
+  settingsAudioDeviceStore.inputConstraints = mode === 'standard' ? standardCaptureConstraints : arrayCaptureConstraints
 }, { immediate: true, flush: 'sync' })
 onScopeDispose(() => {
   settingsAudioDeviceStore.inputConstraints = undefined
   settingsAudioDeviceStore.browserCaptureEnabled = true
 })
 const audioInputStarted = shallowRef(false)
-const nativeIsSpeech = shallowRef(false)
-const nativeProbability = shallowRef(0)
-let arrayCapture: Awaited<ReturnType<typeof createArrayCapture>> | Awaited<ReturnType<typeof createNativeCapture>> | undefined
-const activeArrayProcessing = shallowRef<ArrayProcessing>()
 const arrayDiagnostics = shallowRef<{ inputDb: number, outputDb: number, peak: number, limitedPercent: number, lagMs: number, referenceSignalFrames: number, inputFrames: number, outputFrames: number }>()
 let arrayLevels = { inputDb: -Infinity, outputDb: -Infinity, peak: 0, limited: 0, samples: 0 }
-const arrayProcessingLabel = computed(() => {
-  if (nativeArrayMicrophone.value && audioInputStarted.value)
-    return 'Hush CPU · RTF / MVDR'
-  const processing = activeArrayProcessing.value
-  if (!processing)
-    return undefined
-  if (processing.algorithm === 'lcmv')
-    return 'LCMV · AEC3 ON'
-  return `Spatial Mask · AEC3 ${processing.aec3Enabled ? 'ON' : 'OFF'}`
-})
 let audioCaptureController: AbortController | undefined
 let audioCaptureAttempt = 0
 const mouthAssistanceEnabled = computed(() => props.deviceSettings?.mouthDetectionEnabled ?? defaultDeviceSettingsValues.mouthDetectionEnabled)
@@ -276,8 +255,25 @@ let receptionGeneration = 0
 const interactionTurn = useKioskInteractionTurn()
 const transcriptionCount = shallowRef(0)
 const speechPreparationCount = shallowRef(0)
-const processingSpeechActive = shallowRef(false)
 const audioStartupError = shallowRef<string>()
+const processingSpeechActive = shallowRef(false)
+const arrayActive = computed(() => enabled.value && (props.voiceConversationOnly || adminVoiceTestActive.value))
+const arrayRoute = useArrayMicrophone(rawMicrophoneStream, arrayActive, processingSpeechActive, {
+  mode: browserCaptureMode,
+  requestStandardCapture: () => {
+    // The master fallback must reacquire the SAME selected device when Chromium
+    // cannot restore AEC with applyConstraints after a raw acquisition.
+    microphone.settings.value.inputMode = 'standard'
+    settingsAudioDeviceStore.stopStream()
+    void nextTick().then(() => settingsAudioDeviceStore.startStream()).catch((error) => {
+      audioStartupError.value = errorMessageFrom(error) ?? 'Microphone could not restart.'
+    })
+  },
+})
+const { stream } = arrayRoute
+const arrayMicrophone = computed(() => arrayRoute.mode.value === 'mask')
+const arrayProcessingLabel = computed(() => arrayMicrophone.value ? `Spatial Mask · ${arrayRoute.dynamicProcessing.value ? 'Dynamic' : 'Soft'}` : undefined)
+
 // Decision progress is display-only, so an unverified utterance cannot own or
 // cancel an interaction turn. Agent progress takes precedence during handoff.
 const visibleProgress = computed(() => conversationProgress.value ?? (decisionStatus.value?.pending
@@ -440,7 +436,6 @@ function updateVoiceDiagnostic(id: number, patch: Omit<Partial<KioskVoiceDiagnos
     return
   voiceDiagnosticEntries.value = voiceDiagnosticEntries.value.map(entry => entry.id === id ? { ...entry, ...patch, events: patch.status && patch.status !== entry.status ? [...(entry.events ?? []), { status: patch.status, at: Date.now() }] : entry.events } : entry)
 }
-const browserCartSession = createBrowserCartSession(window.localStorage)
 const conversationActivityStatus = computed(() => {
   if (utteranceQueueState.value.pending.some(utterance => utterance.source === 'simulation'))
     return t('stage.kiosk.service-recovery.queued')
@@ -784,8 +779,6 @@ const processingCue = useKioskProcessingCue(
 )
 const voiceEvents = {
   onSpeechStart: () => {
-    if (nativeArrayMicrophone.value)
-      nativeIsSpeech.value = true
     if (discardSpeechUntilBoundary)
       return
     const blocked = adminVoiceTestActive.value ? undefined : voiceBlockReason()
@@ -808,8 +801,6 @@ const voiceEvents = {
     speechInterruption.begin(activeVoiceCandidate.id)
   },
   onSpeechProbability: (probability: number, timeMs: number) => {
-    if (nativeArrayMicrophone.value)
-      nativeProbability.value = probability
     if (adminVoiceTestActive.value)
       return
     const interrupt = speechInterruption.observe(activeVoiceCandidate?.id, timeMs, probability, props.voiceVadSettings.threshold, !discardSpeechUntilBoundary && !voiceBlockReason() && mouthActivity.complete(activeMouthLease, timeMs), backgroundSpeechMode.value)
@@ -820,7 +811,6 @@ const voiceEvents = {
     }
   },
   onSpeechEnd: () => {
-    nativeIsSpeech.value = false
     if (captureDiagnosticId !== undefined)
       updateVoiceDiagnostic(captureDiagnosticId, { status: 'speech-end' })
   },
@@ -888,45 +878,43 @@ const { dispose, inferenceError, init, loaded, start, processAudio, isSpeech: va
   speechPadMs: computed(() => adminVoiceTestActive.value ? props.voiceVadSettings.speechPadMs : Math.max(400, props.voiceVadSettings.speechPadMs)),
   ...voiceEvents,
 })
-const isSpeech = computed(() => nativeArrayMicrophone.value ? nativeIsSpeech.value : vadIsSpeech.value)
-const isSpeechProb = computed(() => nativeArrayMicrophone.value ? nativeProbability.value : vadProbability.value)
+const isSpeech = computed(() => vadIsSpeech.value)
+const isSpeechProb = computed(() => vadProbability.value)
 
 // Poll only while operator diagnostics are visible; samples themselves remain
 // owned by the capture/VAD path and are never retained for this snapshot.
 useIntervalFn(() => {
-  if (!adminPanelOpen.value || !arrayCapture)
+  if (!adminPanelOpen.value || !arrayRoute.pcmSource.value)
     return
-  const statistics = arrayCapture.statistics
+  const statistics = arrayRoute.pcmSource.value.statistics
   arrayDiagnostics.value = {
     inputDb: arrayLevels.inputDb,
     outputDb: arrayLevels.outputDb,
     peak: arrayLevels.peak,
     limitedPercent: arrayLevels.samples ? arrayLevels.limited * 100 / arrayLevels.samples : 0,
-    lagMs: arrayCapture.lagMs,
-    referenceSignalFrames: statistics.referenceSignalFrames,
+    lagMs: statistics.lagSeconds * 1000,
+    referenceSignalFrames: 0,
     inputFrames: statistics.inputFrames,
     outputFrames: statistics.outputFrames,
-    ...('levels' in arrayCapture ? arrayCapture.levels : {}),
   }
 }, 250)
-const isAudioListening = computed(() => enabled.value && audioInputStarted.value && (nativeArrayMicrophone.value || !inferenceError.value) && customerSessionState.value !== 'completing' && customerSessionState.value !== 'resetting')
+const isAudioListening = computed(() => enabled.value && audioInputStarted.value && !inferenceError.value && customerSessionState.value !== 'completing' && customerSessionState.value !== 'resetting')
 
 // Diagnostic snapshots contain lifecycle state only, never audio, images or
 // device identifiers. An existing visitor session owns each persisted snapshot.
 watch([interactionRecording.visitorSessionId, () => JSON.stringify({
   enabled: enabled.value,
   mode: 'asr',
-  processing: nativeArrayMicrophone.value ? 'native-rtf-mvdr-hush' : arrayMicrophone.value ? activeArrayProcessing.value : 'browser-vad',
-  requestedLegacyAlgorithm: arrayMicrophone.value && !nativeArrayMicrophone.value ? microphone.algorithm.value : undefined,
-  vadLoaded: nativeArrayMicrophone.value ? audioInputStarted.value : loaded.value,
+  processing: arrayMicrophone.value ? 'master-spatial-mask' : 'browser-vad',
+  vadLoaded: loaded.value,
   listening: isAudioListening.value,
   microphoneTracks: stream.value?.getAudioTracks().map(track => ({ state: track.readyState, muted: track.muted })) ?? [],
-  captureSource: nativeHardwareMicrophone.value ? 'portaudio' : 'browser',
-  physicalChannels: nativeHardwareMicrophone.value && audioInputStarted.value ? 8 : undefined,
-  inputFailure: nativeHardwareMicrophone.value ? undefined : settingsAudioDeviceStore.inputError,
+  captureSource: 'browser',
+  physicalChannels: arrayRoute.channelCount.value,
+  inputFailure: settingsAudioDeviceStore.inputError,
   inputConstraints: settingsAudioDeviceStore.inputConstraints,
-  microphonePermission: nativeHardwareMicrophone.value ? undefined : settingsAudioDeviceStore.permissionState,
-  error: ((nativeHardwareMicrophone.value ? undefined : settingsAudioDeviceStore.inputError?.message || inferenceError.value) || audioStartupError.value)?.slice(0, 300),
+  microphonePermission: settingsAudioDeviceStore.permissionState,
+  error: ((settingsAudioDeviceStore.inputError?.message || inferenceError.value) || audioStartupError.value)?.slice(0, 300),
 })], ([sessionId, snapshot]) => {
   if (sessionId && voiceDiagnosticsEnabled.value)
     void interactionRecording.append('service_event', snapshot, { source: 'audio_runtime' })
@@ -940,48 +928,7 @@ async function startAudioInteraction() {
   const input = stream.value
   audioStartupError.value = undefined
   try {
-    if (!microphone.backendAvailable.value)
-      throw new Error(t('stage.kiosk.array-audio.backendRetired'))
-    if (controller.signal.aborted || attempt !== audioCaptureAttempt || (!nativeHardwareMicrophone.value && (!input || input !== stream.value)) || !enabled.value || (!props.voiceConversationOnly && !adminVoiceTestActive.value))
-      return
-    if (nativeArrayMicrophone.value) {
-      const bridge = window.airiKioskAudio
-      if (!bridge)
-        throw new Error('Hush audio requires the matching Kiosk executable.')
-      const capture = await createNativeCapture({
-        bridge,
-        signal: controller.signal,
-        ...microphone.nativeConfiguration(),
-        silenceMs: Math.max(100, Math.min(3000, props.voiceVadSettings.minSilenceDurationMs)),
-        minSpeechMs: Math.max(20, Math.min(1000, props.voiceVadSettings.minSpeechDurationMs)),
-        ...voiceEvents,
-        onSpeechCancelled: () => {
-          nativeIsSpeech.value = false
-          nativeProbability.value = 0
-          if (activeVoiceCandidate) {
-            speechInterruption.release(activeVoiceCandidate.id)
-            interactionTurn.completeVoiceCandidate(activeVoiceCandidate)
-            activeVoiceCandidate = undefined
-          }
-          updateVoiceDiagnostic(captureDiagnosticId ?? startVoiceDiagnostic(), { status: 'ignored' })
-        },
-        onError: (reason) => {
-          if (attempt === audioCaptureAttempt) {
-            audioInputStarted.value = false
-            audioStartupError.value = reason
-            controller.abort()
-          }
-        },
-      })
-      if (controller.signal.aborted || attempt !== audioCaptureAttempt) {
-        capture.dispose()
-        return
-      }
-      arrayCapture = capture
-      audioInputStarted.value = true
-      return
-    }
-    if (!input && !nativeLcmvMicrophone.value)
+    if (controller.signal.aborted || attempt !== audioCaptureAttempt || !input || input !== stream.value || !enabled.value || (!props.voiceConversationOnly && !adminVoiceTestActive.value))
       return
     const modelStartedAt = loaded.value ? undefined : performance.now()
     if (modelStartedAt !== undefined)
@@ -995,61 +942,28 @@ async function startAudioInteraction() {
     }
     if (!loaded.value)
       throw new Error(inferenceError.value || 'VAD initialization failed.')
-    if (arrayMicrophone.value) {
-      const track = input?.getAudioTracks()[0]
-      const actual = track?.getSettings()
-      // Browser processing must not mix the physical array before custom AEC3.
-      // A pending VueUse reacquisition will trigger another startup for its stream.
-      if (!nativeLcmvMicrophone.value && (!actual || actual.channelCount !== 8 || actual.echoCancellation !== false))
-        throw new Error(t('stage.kiosk.array-audio.raw-unavailable'))
-      const config = microphone.configuration()
+    const pcm = arrayRoute.pcmSource.value
+    if (pcm) {
       const gain = new InputGain()
-      const bridge = window.airiKioskArrayInput
-      if (nativeLcmvMicrophone.value && !bridge)
-        throw new Error(t('stage.kiosk.array-audio.native-update'))
-      const capture = await createArrayCapture(audioContext, nativeLcmvMicrophone.value ? undefined : audioContext.createMediaStreamSource(input!), {
-        ...(nativeLcmvMicrophone.value && bridge ? { nativeInput: { bridge, inputDevice: microphone.arrayInputDevice.value } } : {}),
-        ...config,
-        signal: controller.signal,
-        onPcm: async (packet, endTimeMs) => {
-          if (controller.signal.aborted || attempt !== audioCaptureAttempt)
-            return
-          const result = gain.process(packet.mask, config.gainDb)
-          const scaled = result.samples
-          let inputPower = 0
-          let outputPower = 0
-          let peak = 0
-          for (let index = 0; index < scaled.length; index++) {
-            inputPower += packet.mask[index]! ** 2
-            outputPower += scaled[index]! ** 2
-            peak = Math.max(peak, Math.abs(scaled[index]!))
-          }
-          // Digital full-scale RMS, not acoustic SPL; silence remains -Infinity.
-          arrayLevels.inputDb = 10 * Math.log10(inputPower / scaled.length)
-          arrayLevels.outputDb = 10 * Math.log10(outputPower / scaled.length)
-          arrayLevels.peak = peak
-          arrayLevels.limited += result.clippedSamples
-          arrayLevels.samples += scaled.length
-          await processAudio(scaled, endTimeMs, scaled)
-        },
-        onError: (reason) => {
-          if (attempt === audioCaptureAttempt) {
-            audioInputStarted.value = false
-            audioStartupError.value = reason
-            controller.abort()
-            dispose()
-          }
-        },
+      const origin = performance.now()
+      let outputFrames = 0
+      pcm.start(async (samples) => {
+        if (controller.signal.aborted || attempt !== audioCaptureAttempt)
+          return
+        const result = gain.process(samples, arrayRoute.inputGainDb.value)
+        const inputLevel = measurePcmLevel(samples)
+        const outputLevel = measurePcmLevel(result.samples)
+        arrayLevels.inputDb = inputLevel.rmsDbfs ?? -Infinity
+        arrayLevels.outputDb = outputLevel.rmsDbfs ?? -Infinity
+        arrayLevels.peak = outputLevel.peakDbfs === null ? 0 : 10 ** (outputLevel.peakDbfs / 20)
+        arrayLevels.limited += result.clippedSamples
+        arrayLevels.samples += result.samples.length
+        outputFrames += result.samples.length
+        await processAudio(result.samples, origin + outputFrames / 16, result.samples)
       })
-      if (controller.signal.aborted || attempt !== audioCaptureAttempt) {
-        capture.dispose()
-        return
-      }
-      arrayCapture = capture
-      activeArrayProcessing.value = config.processing
     }
     else {
-      await start(input!)
+      await start(input)
     }
     if (!controller.signal.aborted && attempt === audioCaptureAttempt)
       audioInputStarted.value = true
@@ -1277,16 +1191,8 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
         ? createBrowserFastPathSource({
             tools: interactiveServiceClient.tools.value,
             read: async (tool, args) => {
-              const owner = await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
-              const serviceUrl = scenarioRegistry.activeScenario.value?.serviceUrl
-              // Result-only documents still belong to the visitor admitted to
-              // this cart. A new reception cannot inherit the previous order.
-              const raw = await interactiveServiceClient.execute(tool, args)
-              if (raw && typeof raw === 'object' && 'order' in raw
-                && (!owner || !serviceUrl || !browserCartSession.owns(owner, serviceUrl))) {
-                return { customerBoundary: 'review-required' }
-              }
-              return raw
+              await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
+              return interactiveServiceClient.execute(tool, args)
             },
             hasPendingQuestion: browserDialogue.hasPending,
             canAnswerLocally: (raw, transcript) => browserDialogue.canAnswerLocally(raw, transcript),
@@ -1314,7 +1220,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
                 dialogue: browserDialogue,
                 presentation: productPresentation,
                 catalogLabels: () => activeCatalogLabels.value,
-                cartSession: { gate: browserCartSession, owner: () => interactionRecording.visitorSessionId.value, serviceUrl: () => scenarioRegistry.activeScenario.value?.serviceUrl, message: t('stage.kiosk.cart-handoff.required') },
+
                 isCurrent: ticket.isCurrent,
                 decide: async (proposal, plan) => {
                   const sessionId = interactionRecording.visitorSessionId.value
@@ -1994,7 +1900,6 @@ function clearConversationPresentation() {
   cancelReceptionWork()
   invitationWindow.reset()
   browserDialogue.reset()
-  browserCartSession.resetView()
   fastPathProgress.value = undefined
   serviceClarificationWindow.reset()
   utteranceTimings.clear()
@@ -2099,19 +2004,14 @@ function stopAudioInteraction() {
   audioCaptureAttempt++
   audioCaptureController?.abort()
   audioCaptureController = undefined
-  arrayCapture?.dispose()
-  arrayCapture = undefined
-  activeArrayProcessing.value = undefined
-  nativeIsSpeech.value = false
-  nativeProbability.value = 0
   arrayDiagnostics.value = undefined
   arrayLevels = { inputDb: -Infinity, outputDb: -Infinity, peak: 0, limited: 0, samples: 0 }
   dispose()
   audioInputStarted.value = false
 }
 
-// A changed mode starts a fresh bounded VAD processor. If a person is already
-// speaking, discard through the next silence rather than ordering from a tail.
+// Changing optional visual admission retires its current phrase lease. The
+// master browser DSP keeps its generation; it must not be started twice.
 watch(mouthAssistanceEnabled, (assisted, previouslyAssisted) => {
   if (assisted === previouslyAssisted)
     return
@@ -2119,18 +2019,10 @@ watch(mouthAssistanceEnabled, (assisted, previouslyAssisted) => {
   if (activeVoiceCandidate)
     interactionTurn.completeVoiceCandidate(activeVoiceCandidate)
   activeVoiceCandidate = undefined
-  stopAudioInteraction()
 }, { flush: 'sync' })
 
-watch(nativeHardwareMicrophone, () => {
-  // The selector already points to the new backend. Inspect both speech flags
-  // before disposing the old capture so its unfinished sentence cannot leak.
-  discardSpeechUntilBoundary = props.voiceConversationOnly && (nativeIsSpeech.value || vadIsSpeech.value)
-  stopAudioInteraction()
-}, { flush: 'sync' })
-
-watch([enabled, () => props.voiceConversationOnly, adminVoiceTestActive, stream, microphone.backendAvailable, () => JSON.stringify([microphone.settings.value, microphone.nativeSettings.value, microphone.arrayInputDevice.value]), nativeArrayMicrophone, nativeLcmvMicrophone, arrayMicrophone, () => arrayMicrophone.value ? JSON.stringify([microphone.algorithm.value, microphone.spatialMask.value]) : undefined, mouthAssistanceEnabled], async ([isEnabled, voiceConversationOnly, testing]) => {
-  if (isEnabled && (voiceConversationOnly || testing)) {
+watch([arrayActive, stream, arrayRoute.pcmSource], async ([active]) => {
+  if (active) {
     await startAudioInteraction().catch((error) => {
       audioStartupError.value = errorMessageFrom(error) ?? 'Microphone startup failed.'
       console.error('Failed to start kiosk audio interaction:', error)
@@ -2146,11 +2038,6 @@ watch([enabled, () => props.voiceConversationOnly, adminVoiceTestActive, stream,
 let microphonePreparation = 0
 async function prepareMicrophone() {
   const attempt = ++microphonePreparation
-  if (!microphone.backendAvailable.value) {
-    settingsAudioDeviceStore.stopStream()
-    initialMicrophonePermission.settle()
-    return
-  }
   if (!props.voiceConversationOnly && !adminVoiceTestActive.value) {
     // A profile can change from voice-only to text mode while this browser
     // retains its previous local preference. Keep that stale preference from
@@ -2162,11 +2049,6 @@ async function prepareMicrophone() {
 
   try {
     audioStartupError.value = undefined
-    if (nativeHardwareMicrophone.value) {
-      settingsAudioDeviceStore.stopStream()
-      enabled.value = true
-      return
-    }
     await prepareKioskMicrophonePermission({
       audioInputEnabled: enabled.value,
       requestPermission: requestMicrophonePermission,
@@ -2193,21 +2075,9 @@ async function prepareMicrophone() {
   }
 }
 
-watch([() => props.voiceConversationOnly, adminVoiceTestActive, nativeHardwareMicrophone, microphone.backendAvailable], () => void prepareMicrophone(), { immediate: true })
+watch([() => props.voiceConversationOnly, adminVoiceTestActive], () => void prepareMicrophone(), { immediate: true })
 
 watch(language, locale => setKioskLocale(locale), { immediate: true })
-
-watch([stream, loaded], async ([audioStream, vadLoaded]) => {
-  if (enabled.value && !nativeHardwareMicrophone.value && vadLoaded && audioStream) {
-    await start(audioStream)
-      .then(() => audioInputStarted.value = true)
-      .catch((error) => {
-        audioInputStarted.value = false
-        audioStartupError.value = errorMessageFrom(error) ?? 'Microphone connection failed.'
-        console.error('Failed to connect kiosk VAD to audio input:', error)
-      })
-  }
-})
 
 watch(() => JSON.stringify(proactiveSettings.value), () => {
   voicePresence.reset()
@@ -2817,7 +2687,7 @@ async function sendConversationMessage(
         dialogue: browserDialogue,
         presentation: productPresentation,
         catalogLabels: () => activeCatalogLabels.value,
-        cartSession: { gate: browserCartSession, owner: () => interactionRecording.visitorSessionId.value, serviceUrl: () => scenarioRegistry.activeScenario.value?.serviceUrl, message: t('stage.kiosk.cart-handoff.required') },
+
         isCurrent: () => interactionTurn.isCurrent(turn) && !turn.signal.aborted && (!options.deadlineAt || Date.now() < options.deadlineAt),
         decide: async (proposal, plan) => {
           const sessionId = interactionRecording.visitorSessionId.value
@@ -3263,18 +3133,11 @@ async function restartCustomerSession() {
 }
 
 async function startOrRestartCustomerSession() {
-  if (customerSessionState.value === 'standby' && !browserCartSession.blocked.value) {
+  if (customerSessionState.value === 'standby') {
     await recordCustomerActivity('manual')
     return
   }
   await restartCustomerSession()
-}
-
-async function recordBrowserCartResume() {
-  customerResetError.value = undefined
-  browserDialogue.reset()
-  retryableConversationRequest.value = undefined
-  await interactionRecording.append('service_event', 'browser_cart_reviewed', { source: 'staff' })
 }
 
 function reloadKiosk() {
@@ -3338,17 +3201,6 @@ onUnmounted(() => {
             :disabled="serviceRecovering || conversationSending"
             :label="t('stage.kiosk-agent.service-reconnect')"
             @click="recoverOrderingService()"
-          />
-          <BrowserCartHandoff
-            v-if="scenarioRegistry.activeScenario.value && interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get')"
-            :bridge="interactiveServiceClient"
-            :gate="browserCartSession"
-            :owner="interactionRecording.visitorSessionId.value"
-            :service-url="scenarioRegistry.activeScenario.value.serviceUrl"
-            :authorized="isKioskAdminSessionActive"
-            :operation-pending="conversationSending"
-            @prepare="interactionRecording.start(scenarioRegistry.activeScenario.value.id)"
-            @resumed="recordBrowserCartResume"
           />
           <DeviceSettingsPanel :endpoint="deviceSettingsEndpoint" mode="local" @updated="emit('deviceSettingsUpdated', $event)" />
         </template>
@@ -3422,7 +3274,7 @@ onUnmounted(() => {
         :output-db="arrayDiagnostics?.outputDb"
         :limited-percent="arrayDiagnostics?.limitedPercent"
         :blocked-reason="voiceBlockReason()"
-        :error="(nativeHardwareMicrophone ? undefined : settingsAudioDeviceStore.inputError?.message || inferenceError) || audioStartupError"
+        :error="(settingsAudioDeviceStore.inputError?.message || inferenceError) || audioStartupError"
         :target="customerTarget"
         :interruption="interruptionDiagnostic"
         :background-speech-mode="backgroundSpeechMode"

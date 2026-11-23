@@ -7,7 +7,6 @@ import { looseObject, parse, string } from 'valibot'
 import { afterEach, expect, it, vi } from 'vitest'
 import { readonly, shallowRef } from 'vue'
 
-import { createBrowserCartSession } from './browserCartSession'
 import { askBrowserCustomerQuestion, beginBrowserCartTask, executeBrowserCartTool, executeBrowserConfirmedAddition, executeBrowserOrderDraft, executeBrowserQuantityQuestion, executeBrowserReply, prepareBrowserQuestionAnswer, readBrowserConversation } from './browserCartTask'
 import { createBrowserDialogue } from './browserDialogue'
 
@@ -235,18 +234,15 @@ it('retires an old question when fresh cart evidence changes before the next mod
   expect(context.draft).toBeUndefined()
 })
 
-it('keeps a previous visitor cart out of the model snapshot and removes write tools', async () => {
+// Report: this chat, Nov20 — the visible cart does not prove who is operating it.
+it('uses the visible nonempty cart without inferring customer ownership', async () => {
   const { facts, client, dialogue, decide } = setup()
-  client.execute.mockResolvedValueOnce({ ...facts, cart: { version: 'other-cart', subtotal: 20, lines: [{ ref: 'line-old', name: '上一位的餐', quantity: 2, unitPrice: 10 }] } })
-  const gate = createBrowserCartSession({ getItem: () => JSON.stringify({ owner: 'previous' }), setItem: vi.fn() })
-  release.push(beginBrowserCartTask('推薦什麼', { dialogue, decide, isCurrent: () => true, cartSession: { gate, owner: () => 'current', serviceUrl: () => 'https://app.esgpb.com/menu', message: '請現場人員確認。' } }))
-  const context = await readBrowserConversation(client, 'owned-turn', modelTools)
-  expect(context.phase).toBe('review_required')
-  expect(context.cart).toBeUndefined()
-  expect(JSON.stringify(context)).not.toContain('上一位的餐')
-  expect(context.allowedToolNames).not.toContain('browser_cart_add')
+  client.execute.mockResolvedValueOnce({ ...facts, cart: { version: 'visible-cart', subtotal: 20, lines: [{ ref: 'line-existing', name: '蛋花湯', quantity: 2, unitPrice: 10 }] } })
+  release.push(beginBrowserCartTask('推薦什麼', { dialogue, decide, isCurrent: () => true }))
+  const context = await readBrowserConversation(client, 'visible-cart-turn', modelTools)
+  expect(context.phase).not.toBe('review_required')
+  expect(context.cart).toMatchObject({ version: 'visible-cart', lines: [{ name: '蛋花湯', quantity: 2 }] })
 })
-
 it('does not turn a sign-in requirement into an empty cart or an empty complete catalog', async () => {
   const { client, begin } = setup()
   begin('推薦什麼')
@@ -340,7 +336,7 @@ it('treats 加點 as navigation and retires an old quantity question without dis
     : original(tool, input))
   expect(await executeBrowserCartTool(client, navigation, {})).toMatchObject({ page: 'menu', effect: 'none' })
   expect(dialogue.hasPending()).toBe(false)
-  expect(client.execute.mock.calls.map(([tool]) => tool.name)).toEqual(['browser_cart_get', 'browser_return_menu'])
+  expect(client.execute.mock.calls.map(([tool]) => tool.name)).toEqual(['browser_return_menu'])
   expect(decide).not.toHaveBeenCalled()
 })
 
@@ -936,25 +932,20 @@ it('provides fresh order facts to Main and keeps payment replies read-only', asy
   await expect(executeBrowserReply(client, 'checkout-guidance')).rejects.toThrow('different order')
 })
 
-// Report: this chat, Nov17 — a replacement reception must not inherit the previous customer's order.
-it('withholds order facts and payment replies from an unadmitted reception', async () => {
+// Report: this chat, Nov20 — local reception IDs do not identify the operator.
+it('reads the visible order without inferring customer ownership or granting write tools', async () => {
   const { client } = setup()
-  const records = new Map<string, string>()
-  const gate = createBrowserCartSession({ getItem: key => records.get(key) ?? null, setItem: (key, value) => records.set(key, value) })
-  const serviceUrl = 'https://app.esgpb.com/order/store/1kgJeql/internal_use/menu'
-  gate.check('previous', serviceUrl, { cart: { version: 'v', lines: [] } })
   release.push(beginBrowserCartTask('這張發票是什麼', { decide: async () => {
-    throw new Error('Unadmitted order must not request a write.')
-  }, isCurrent: () => true, cartSession: { gate, owner: () => 'new', serviceUrl: () => serviceUrl, message: '請現場人員確認前一張訂單。' } }))
-  client.execute.mockResolvedValue({ ok: true, source: 'browser', page: 'payment', observedAt: 123, order: { reference: 'previous-order', status: 20, total: 64, paymentStatus: 'pending', paymentMethods: ['信用卡'], invoice: { method: 'donation', code: '12345' } } })
+    throw new Error('An order-result read must not request a write.')
+  }, isCurrent: () => true }))
+  client.execute.mockResolvedValue({ ok: true, source: 'browser', page: 'payment', observedAt: 123, order: { reference: 'visible-order', status: 20, total: 64, paymentStatus: 'pending', paymentMethods: ['信用卡'], invoice: { method: 'donation', code: '12345' } } })
   const resultClient = { ...client, tools: readonly(shallowRef(client.tools.value.filter(tool => tool.name === 'browser_state_get'))) }
-  const context = await readBrowserConversation(resultClient, 'new-visitor', modelTools)
-  expect(context.phase).toBe('review_required')
-  expect(context.order).toBeUndefined()
-  expect(await executeBrowserReply(resultClient, 'checkout-guidance')).toMatchObject({ customerMessage: '請現場人員確認前一張訂單。', effect: 'none' })
-  expect(client.execute).toHaveBeenCalledOnce()
+  const context = await readBrowserConversation(resultClient, 'visible-order-turn', modelTools)
+  expect(context.phase).toBe('viewing_order')
+  expect(context.order?.reference).toBe('visible-order')
+  expect(context.allowedToolNames).not.toContain('add_items_to_cart')
+  expect(await executeBrowserReply(resultClient, 'checkout-guidance')).toMatchObject({ effect: 'none', customerMessage: expect.stringContaining('信用卡') })
 })
-
 // Report: this chat, Nov17 case 12 — persistent entry position is scoped to one reception/document.
 it.each(['owner', 'document', 'reset'] as const)('does not restore checkout progress after %s changes', (change) => {
   const { dialogue, state, facts } = setup()

@@ -520,3 +520,35 @@ it('offers another verified recommendation batch while the previous recommendati
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_present' }), { productRefs: expect.arrayContaining(['soup', 'rice']), mode: 'other-recommendations' })
   expect(execute.mock.calls.some(([_tool, input]) => 'criteria' in input)).toBe(false)
 })
+
+// Report: this chat, Nov20 — navigation waits for the entire catalog before anything moves.
+it.each([
+  ['看購物車', 'intent:view-cart', 'browser_cart_review'],
+  ['回到菜單', 'intent:return-menu', 'browser_return_menu'],
+])('prepares %s without waiting for menu retrieval and executes only the selected action', async (transcript, candidateId, name) => {
+  const read = vi.fn(async (_tool: ServiceTool, input: Record<string, unknown>) => {
+    if (input.includeCatalog)
+      throw new Error('Full menu retrieval is still pending')
+    return { ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] } }
+  })
+  const execute = vi.fn(async () => ({ ok: true, status: 'verified', effect: 'none' }))
+  const navigationTools = [...tools, ...['browser_cart_review', 'browser_return_menu'].map(name => ({ ...tools[0], name }))]
+  const source = createBrowserFastPathSource({ tools: navigationTools, read, execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const context = await source.context({ transcript })
+  expect(context).not.toHaveProperty('contextError')
+  expect(context).toMatchObject({ candidates: [expect.objectContaining({ id: candidateId })] })
+  expect(read).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_state_get' }), { includeCatalog: false })
+  expect(execute).not.toHaveBeenCalled()
+  await source.execute({ candidateId })
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name }), {})
+})
+
+it.each(['先不要看購物車', '看購物車再加一份', '購物車裡的水餃幾顆', '回到菜單再點兩份'])('keeps full interpretation for the compound or informational request %s', async (transcript) => {
+  const read = vi.fn(async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }))
+  const execute = vi.fn(async () => ({}))
+  const navigationTools = [...tools, ...['browser_cart_review', 'browser_return_menu'].map(name => ({ ...tools[0], name }))]
+  const source = createBrowserFastPathSource({ tools: navigationTools, read, execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  await source.context({ transcript })
+  expect(read).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_state_get' }), { includeCatalog: true })
+  expect(execute).not.toHaveBeenCalled()
+})

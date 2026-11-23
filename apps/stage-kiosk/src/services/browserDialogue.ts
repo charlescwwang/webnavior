@@ -32,6 +32,15 @@ function donationCodeInput(transcript: string) {
   return /^\d+$/.test(code) ? code : undefined
 }
 
+// Tax fragments belong only to the issued invoice question. Eight digits replace
+// the buffer; shorter replies append unless the customer explicitly restarts.
+function taxIdInput(transcript: string) {
+  if (/^(?:重來|重新輸入|重新說|重新報)[。！!\s]*$/.test(transcript.trim()))
+    return { digits: '', replace: true }
+  const text = normalizeSlotNumbers(transcript).replaceAll(/[零〇]/g, '0').replaceAll(/幺/g, '1').replace(/^(?:我的)?(?:統一編號|統編)是?[：:\s]*/, '').replace(/^(?:更正|改成)[：:\s]*/, '').replaceAll(/[\s，,。！!、]/g, '')
+  return /^\d+$/.test(text) ? { digits: text, replace: text.length === 8 || /^(?:更正|改成)/.test(transcript.trim()) } : undefined
+}
+
 // Phone fragments are literal data only inside a bound notification question.
 // Keep leading zeroes; never pull digits from an unrelated ordering sentence.
 function notificationPhoneInput(transcript: string) {
@@ -174,11 +183,11 @@ export function createBrowserDialogue(io: {
       && /^(?:這樣就好|就這樣|餐點正確|餐點沒問題)[。！!，,\s]*$/.test(transcript.trim())) {
       return 'yes'
     }
-    if (pending.kind === 'service' && ['cart-review', 'notification-phone-confirm', 'invoice-donation-confirm'].includes(pending.purpose)
+    if (pending.kind === 'service' && ['cart-review', 'notification-phone-confirm', 'invoice-donation-confirm', 'invoice-tax-confirm'].includes(pending.purpose)
       && /^(?:正確|沒錯|對|是的|確認|確認無誤|好|好的|好了)[。！!，,\s]*$/.test(transcript.trim())) {
       return 'yes'
     }
-    if (pending.kind === 'service' && ['notification-phone-confirm', 'invoice-donation-confirm'].includes(pending.purpose)
+    if (pending.kind === 'service' && ['notification-phone-confirm', 'invoice-donation-confirm', 'invoice-tax-confirm'].includes(pending.purpose)
       && /^(?:不對|不正確|錯了|錯誤|不是)[。！!，,\s]*$/.test(transcript.trim())) {
       return 'no'
     }
@@ -251,7 +260,7 @@ export function createBrowserDialogue(io: {
       const pending = pendingQuestion(raw, binding)
       if (pending) {
         const step = safeParse(pbCheckoutStepSchema, pending.kind === 'service' ? pending.purpose : undefined)
-        return pending.kind === 'service' && pending.purpose === 'invoice-donation-confirm' ? 'invoice-details' : step.success ? step.output : undefined
+        return pending.kind === 'service' && ['invoice-donation-confirm', 'invoice-tax', 'invoice-tax-confirm'].includes(pending.purpose) ? 'invoice-details' : step.success ? step.output : undefined
       }
       return binding ? checkoutProgress?.purpose : undefined
     },
@@ -303,6 +312,7 @@ export function createBrowserDialogue(io: {
       return !!browserQuestionChoice(transcript, pending.question)
         || (pending.kind === 'service' && !!choice)
         || (pending.kind === 'service' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pending.purpose) && notificationPhoneInput(transcript) !== undefined)
+        || (pending.kind === 'service' && ['invoice-details', 'invoice-tax', 'invoice-tax-confirm'].includes(pending.purpose) && checkout.success && checkout.output.checkout.methods.some(method => method.method === 'tax' && method.selected) && taxIdInput(transcript) !== undefined)
         || (pending.kind === 'service' && ['invoice-details', 'invoice-donation-confirm'].includes(pending.purpose) && checkout.success && checkout.output.checkout.methods.some(method => method.method === 'donation' && method.selected) && donationCodeInput(transcript) !== undefined)
         || !!namedAnswer
         || (pending.kind === 'service' && pending.purpose === 'purchase-recommendation' && purchaseAnswerCount(transcript) !== undefined)
@@ -454,7 +464,7 @@ export function createBrowserDialogue(io: {
       let purpose = input.purpose
       if (purpose === 'submit-order')
         purpose = 'checkout-details'
-      else if (purpose === 'invoice-donation-confirm')
+      else if (['invoice-donation-confirm', 'invoice-tax', 'invoice-tax-confirm'].includes(purpose))
         purpose = 'invoice-details'
       else if (['notification-phone', 'notification-phone-confirm'].includes(purpose))
         purpose = 'notification-details'
@@ -483,6 +493,36 @@ export function createBrowserDialogue(io: {
       if (unresolvedQuestion?.signature !== signature)
         unresolvedQuestion = undefined
       const checkout = safeParse(looseObject({ checkout: pbCheckoutSchema }), raw)
+      if (pending.kind === 'service' && ['invoice-details', 'invoice-tax', 'invoice-tax-confirm'].includes(pending.purpose) && checkout.success && checkout.output.checkout.methods.some(method => method.method === 'tax' && method.selected)) {
+        const input = taxIdInput(transcript)
+        if (input) {
+          unresolvedQuestion = undefined
+          // The bound, expiring ticket is the only fragment buffer. Form edits
+          // revoke partial data as well as consent before another reply is read.
+          const previous = pending.purpose === 'invoice-tax' ? pending.query ?? '' : ''
+          const digits = input.replace ? input.digits : previous + input.digits
+          const complete = digits.length === 8
+          const invalid = digits.length > 8
+          const copy = orderingMessages['zh-Hant'].checkout.taxId
+          let message: string
+          if (invalid)
+            message = copy.invalid
+          else if (complete)
+            message = copy.confirm.replace('{digits}', digits.split('').join(' '))
+          else if (digits)
+            message = copy.partial.replace('{digits}', digits.split('').join(' ')).replace('{count}', String(digits.length))
+          else
+            message = copy.restart
+          const question = questions.presentService(binding, {
+            purpose: complete ? 'invoice-tax-confirm' : 'invoice-tax',
+            query: invalid ? '' : digits,
+            request: pending.request,
+            question: message,
+            choices: complete ? [{ id: 'yes', description: '統編正確，只填入剛才覆誦的八碼統一編號，不送出訂單。' }, { id: 'no', description: '號碼不正確，清除暫存統編，重新報。' }] : [],
+          })
+          return { kind: 'receipt' as const, result: receipt(question) }
+        }
+      }
       if (pending.kind === 'service' && ['invoice-details', 'invoice-donation-confirm'].includes(pending.purpose) && checkout.success && checkout.output.checkout.methods.some(method => method.method === 'donation' && method.selected)) {
         const code = donationCodeInput(transcript)
         if (code !== undefined) {
@@ -619,6 +659,12 @@ export function createBrowserDialogue(io: {
       if (selected.kind === 'service') {
         answeredUtteranceId = utteranceId
         answeredQuestion = { question: selected.question, answer: transcript, selectedChoice: selected.answer, name: selected.name, purpose: selected.purpose }
+        if (selected.purpose === 'invoice-tax-confirm') {
+          if (selected.choiceId === 'yes' && selected.query && /^\d{8}$/.test(selected.query))
+            return { kind: 'checkout' as const, action: 'tax-confirmed' as const, code: selected.query }
+          const question = questions.presentService(fresh, { purpose: 'invoice-tax', query: '', request: selected.request, question: orderingMessages['zh-Hant'].checkout.taxId.restart, choices: [] })
+          return { kind: 'receipt' as const, result: receipt(question) }
+        }
         if (selected.purpose === 'invoice-donation-confirm') {
           if (selected.choiceId === 'yes' && selected.query && /^\d{3,7}$/.test(selected.query))
             return { kind: 'checkout' as const, action: 'donation-confirmed' as const, code: selected.query }

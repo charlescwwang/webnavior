@@ -548,3 +548,32 @@ it('continues when PB naturally finishes closing the product dialog before the c
   expect(clicked).not.toHaveBeenCalled()
   expect(document.querySelector('[role=dialog]')).toBeNull()
 })
+
+// Report: this chat, 2026-11-20; live PB .business-dialog now says 我知道了.
+it('dismisses PB November announcement with its current short acknowledgement without accepting another dialog', async () => {
+  const { controls, operation } = setup()
+  document.body.insertAdjacentHTML('beforeend', '<div id="announcement" role="dialog" style="position:fixed;inset:0;z-index:100;background:white"><div class="business-dialog"><h2>📢 線上點餐公告</h2><button>我知道了</button></div></div><div id="coupon" role="dialog" style="position:fixed;inset:0;z-index:101;background:white"><button>稍後再領</button><button>立即領取</button><label><input type="checkbox">不再顯示此優惠</label></div>')
+  const clicked: string[] = []
+  document.querySelector('#announcement button')!.addEventListener('click', () => {
+    clicked.push('announcement')
+    document.querySelector('#announcement')!.remove()
+  })
+  document.querySelector('#coupon button')!.addEventListener('click', () => {
+    clicked.push('later')
+    document.querySelector('#coupon')!.remove()
+  })
+  const claim = vi.fn()
+  const preference = vi.fn()
+  document.querySelectorAll('#coupon button')[1]!.addEventListener('click', claim)
+  document.querySelector('#coupon input')!.addEventListener('change', preference)
+  document.body.insertAdjacentHTML('beforeend', '<div id="unrelated" role="dialog" style="position:fixed;inset:0;z-index:99;background:white"><h2>付款提醒</h2><button>我知道了</button></div>')
+  const unrelated = vi.fn()
+  document.querySelector('#unrelated button')!.addEventListener('click', unrelated)
+  await controls.navigate(location.pathname)
+  expect(clicked).toEqual(['later', 'announcement'])
+  expect(unrelated).not.toHaveBeenCalled()
+  expect(document.querySelector('#unrelated')).not.toBeNull()
+  expect(claim).not.toHaveBeenCalled()
+  expect(preference).not.toHaveBeenCalled()
+  expect(operation.snapshot().steps.map(step => step.effect)).toEqual(['draft', 'draft'])
+})

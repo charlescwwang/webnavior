@@ -65,7 +65,6 @@ it('keeps a pending question from exposing purchase tools and preserves immutabl
   expect(browserToolNames({ phase: 'collecting_quantity', readOnly: false }, tools)).toEqual(['browser_observe', 'browser_cart_get'])
   expect(browserToolNames({ phase: 'ready_to_add', readOnly: false }, tools)).toContain('browser_confirm_add')
   expect(browserToolNames({ phase: 'ready_to_add', readOnly: true }, tools)).not.toContain('browser_confirm_add')
-  expect(browserToolNames({ phase: 'review_required', readOnly: false }, tools)).not.toContain('browser_cart_remove')
 })
 
 it('uses draft collection instead of exposing raw native additions to Main', () => {

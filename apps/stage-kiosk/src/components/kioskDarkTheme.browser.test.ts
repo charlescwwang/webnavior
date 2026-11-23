@@ -1,9 +1,11 @@
+import { useAudioContext } from '@proj-airi/stage-ui/stores/audio'
+import { createPinia, disposePinia } from 'pinia'
 import { expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
 import { createI18n } from 'vue-i18n'
 
 import kioskHtml from '../../index.html?raw'
-import NativeMicrophoneSettings from './NativeMicrophoneSettings.vue'
+import KioskMicrophoneSettings from './KioskMicrophoneSettings.vue'
 
 import '../styles/main.css'
 import 'uno.css'
@@ -14,15 +16,14 @@ it('uses light control text on dark Kiosk panels and teleported options even wit
   const previousClass = html.className
   // Use the real application's theme declaration, including body-level portals.
   html.className = new DOMParser().parseFromString(kioskHtml, 'text/html').documentElement.className
-  vi.stubGlobal('airiKioskAudio', { version: 9, request: vi.fn().mockResolvedValue({ runtime: 'Hush / Tract' }) })
-  const screen = render(NativeMicrophoneSettings, { global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} }, missingWarn: false })] } })
+  const pinia = createPinia()
+  const screen = render(KioskMicrophoneSettings, { global: { plugins: [pinia, createI18n({ legacy: false, locale: 'en', messages: { en: {} }, missingWarn: false })] } })
   try {
-    const apply = screen.getByRole('button', { name: 'stage.kiosk.native-audio.apply', exact: true })
     const input = screen.getByRole('textbox', { name: 'stage.kiosk.array-audio.channelMap', exact: true })
-    const select = screen.getByRole('combobox', { name: 'stage.kiosk.native-audio.input', exact: true })
-    const controls = [apply.element(), input.element(), select.element()]
+    const select = screen.getByRole('combobox', { name: 'stage.kiosk.array-audio.mode', exact: true })
+    const controls = [input.element(), select.element()]
     await select.click()
-    const option = screen.getByRole('option', { name: 'stage.kiosk.native-audio.automatic', exact: true })
+    const option = screen.getByRole('option', { name: 'stage.kiosk.array-audio.auto', exact: true })
     for (const control of [...controls, option.element()]) {
       const rgb = getComputedStyle(control).color.match(/[\d.]+/g)!.slice(0, 3).map(Number)
       // Near-white text, independent of the primary accent or OS preference.
@@ -32,6 +33,9 @@ it('uses light control text on dark Kiosk panels and teleported options even wit
   }
   finally {
     screen.unmount()
+    const context = useAudioContext(pinia).audioContext
+    disposePinia(pinia)
+    await context.close()
     html.className = previousClass
     vi.unstubAllGlobals()
   }
@@ -48,14 +52,14 @@ it.each([false, true])('keeps Kiosk dropdown foreground and background paired wh
   else
     html.setAttribute('data-kiosk-theme', appTheme)
   html.classList.toggle('dark', dark)
-  vi.stubGlobal('airiKioskAudio', { version: 9, request: vi.fn().mockResolvedValue({ runtime: 'Hush / Tract' }) })
-  const screen = render(NativeMicrophoneSettings, { global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} }, missingWarn: false })] } })
+  const pinia = createPinia()
+  const screen = render(KioskMicrophoneSettings, { global: { plugins: [pinia, createI18n({ legacy: false, locale: 'en', messages: { en: {} }, missingWarn: false })] } })
   try {
-    const select = screen.getByRole('combobox', { name: 'stage.kiosk.native-audio.hush-preset', exact: true })
+    const select = screen.getByRole('combobox', { name: 'stage.kiosk.array-audio.mode', exact: true })
     const trigger = select.element()
     await select.click()
     const list = screen.getByRole('listbox').element()
-    const option = screen.getByRole('option', { name: 'stage.kiosk.native-audio.preset-a', exact: true })
+    const option = screen.getByRole('option', { name: 'stage.kiosk.array-audio.auto', exact: true })
     for (const control of [trigger, list]) {
       await expect.poll(() => {
         const background = getComputedStyle(control).backgroundColor.match(/[\d.]+/g)!.map(Number)
@@ -70,7 +74,7 @@ it.each([false, true])('keeps Kiosk dropdown foreground and background paired wh
     }
     await option.click()
     await select.click()
-    const selected = screen.getByRole('option', { name: 'stage.kiosk.native-audio.preset-a', exact: true })
+    const selected = screen.getByRole('option', { name: 'stage.kiosk.array-audio.auto', exact: true })
     await expect.element(selected).toHaveAttribute('data-state', 'checked')
     await expect.poll(() => {
       const style = getComputedStyle(selected.element())
@@ -84,6 +88,9 @@ it.each([false, true])('keeps Kiosk dropdown foreground and background paired wh
   }
   finally {
     screen.unmount()
+    const context = useAudioContext(pinia).audioContext
+    disposePinia(pinia)
+    await context.close()
     html.className = previousClass
     if (previousTheme === null)
       html.removeAttribute('data-kiosk-theme')

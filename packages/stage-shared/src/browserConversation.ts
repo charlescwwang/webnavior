@@ -18,7 +18,7 @@ export const browserConversationSchema = pipe(object({
   sourceUtterance: pipe(string(), maxLength(8000)),
   /** Verified native page role, independent from the pending conversational task. */
   page: optional(picklist(['table', 'menu', 'cart', 'checkout', 'payment', 'order-result'])),
-  phase: picklist(['selecting_table', 'browsing', 'choosing_product', 'collecting_quantity', 'configuring', 'confirming_add', 'ready_to_add', 'review_required', 'sign_in_required', 'viewing_order']),
+  phase: picklist(['selecting_table', 'browsing', 'choosing_product', 'collecting_quantity', 'configuring', 'confirming_add', 'ready_to_add', 'sign_in_required', 'viewing_order']),
   tableChoices: optional(pipe(array(label), maxLength(200))),
   selectedTable: optional(label),
   itemSelectionOpen: optional(boolean()),
@@ -52,7 +52,7 @@ export const browserConversationSchema = pipe(object({
   providedSlots: optional(object({ productRef: reference, name: label, quantity: optional(number()) })),
   waitingFor: optional(conversationQuestionSchema),
   allowedToolNames: pipe(array(reference), maxLength(100)),
-}), check(value => (value.phase !== 'review_required' || !value.cart) && JSON.stringify(value).length <= 256 * 1024, 'External conversation context is oversized or exposes an unowned cart.'))
+}), check(value => JSON.stringify(value).length <= 256 * 1024, 'External conversation context is oversized.'))
 
 export type BrowserConversation = InferOutput<typeof browserConversationSchema>
 
@@ -123,7 +123,6 @@ export function browserConversationInstructions(context: BrowserConversation) {
     configuring: context.waitingFor ? '等待顧客回答餐點客製化問題' : '正在完成已選餐點的選項設定',
     confirming_add: '等待顧客確認這批完整餐點與價格，尚未加入購物車',
     ready_to_add: '顧客已確認完整餐點，使用 add_items_to_cart 加入已確認的餐點',
-    review_required: '購物車交接尚未完成，暫停改單，需現場人員確認',
     sign_in_required: '點餐網站尚未登入，暫停改單，請先在機台登入',
   }
   const missingFields = { quantity: '餐點份數', configuration: '餐點選項設定', confirmation: '顧客確認加入' }
@@ -186,7 +185,7 @@ export function browserToolResult(name: string, payload: Record<string, unknown>
   else if (payload.status === 'proposal_rejected') {
     outcome = 'proposal_needs_correction'
   }
-  else if (payload.ok === false || payload.status === 'rejected' || payload.customerBoundary === 'review-required') {
+  else if (payload.ok === false || payload.status === 'rejected') {
     outcome = 'action_blocked'
   }
   else if (name === 'browser_respond' && payload.ok === true && payload.status === 'conversation' && payload.effect === 'none' && typeof payload.customerMessage === 'string') {
@@ -390,11 +389,11 @@ export function browserToolNames(state: Pick<BrowserConversation, 'phase' | 'rea
       return false
     if (name === 'browser_cart_add' && names.includes('browser_order_draft'))
       return false
-    if (name === 'browser_order_draft' && ['choosing_product', 'collecting_quantity', 'confirming_add', 'ready_to_add', 'review_required', 'sign_in_required'].includes(state.phase))
+    if (name === 'browser_order_draft' && ['choosing_product', 'collecting_quantity', 'confirming_add', 'ready_to_add', 'sign_in_required'].includes(state.phase))
       return false
     if (name === 'browser_ask_quantity' && (!state.providedSlots || state.providedSlots.quantity !== undefined))
       return false
-    if (state.readOnly || ['review_required', 'sign_in_required'].includes(state.phase))
+    if (state.readOnly || ['sign_in_required'].includes(state.phase))
       return !writes.has(name) && name !== 'browser_ask_quantity'
     if (['choosing_product', 'collecting_quantity', 'confirming_add'].includes(state.phase))
       return !writes.has(name) && name !== 'browser_ask_quantity'
