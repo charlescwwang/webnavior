@@ -345,7 +345,7 @@ function setup(labels: { name: string, aliases: string[], category: string }[] =
   const answer = vi.fn<(input: BrowserAnswer) => Promise<AnswerDecision>>(async () => ({ kind: 'ANSWER', choiceId: 'product:2', provider: 'system-one' }))
   const dialogue = createBrowserDialogue({ owner: () => state.owner, documentId: () => state.document, answer, catalogLabels: () => labels })
   const cartLines: CartLine[] = []
-  const facts = { ok: true, source: 'browser', dataOnly: true, cart: { version: 'cart', lines: cartLines }, products: ['甲餐', '乙餐'].map((name, index) => ({ ref: `p-${index}`, name, price: 10 + index, configurations: [{ version: `config-${index}`, variantRef: '', name, unitPrice: 10 + index, groups: [] }] })) }
+  const facts = { ok: true, source: 'browser', page: 'menu', dataOnly: true, cart: { version: 'cart', lines: cartLines }, products: ['甲餐', '乙餐'].map((name, index) => ({ ref: `p-${index}`, name, price: 10 + index, configurations: [{ version: `config-${index}`, variantRef: '', name, unitPrice: 10 + index, groups: [] }] })) }
   const context: ServiceTool = { name: 'browser_cart_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
   const add = { ...context, name: 'browser_cart_add' }
   const clarify = { ...context, name: 'browser_clarify_product' }
@@ -353,6 +353,8 @@ function setup(labels: { name: string, aliases: string[], category: string }[] =
   const execute = vi.fn(async (tool: ServiceTool, input: Record<string, unknown>): Promise<unknown> => {
     if (tool.name === context.name || tool.name === 'browser_state_get')
       return facts
+    if (tool.name === 'browser_return_menu')
+      return { ok: true, source: 'browser', page: 'menu', cart: facts.cart }
     if (tool.name === present.name)
       return { ok: true, source: 'browser', presentation: { cue: 'shown', products: facts.products.filter(product => Array.isArray(input.productRefs) && input.productRefs.includes(product.ref)).map(({ ref, name, price }) => ({ ref, name, price })) } }
     return { ok: true, source: 'browser', status: 'verified', cart: { version: 'after-add' } }
@@ -750,7 +752,7 @@ it('waits for the native menu before replacing the entry acknowledgement with or
   begin('開始點餐')
   let entered = false
   client.execute.mockImplementation(async tool => tool.name === 'browser_cart_get'
-    ? entered ? { ok: true, source: 'browser', page: 'menu', menuReady: true, cart: { tableName: 'A2' } } : { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A2'], selectedTable: 'A2', customerMessage: '請開始。' }
+    ? entered ? { ok: true, source: 'browser', page: 'menu', menuReady: true, cart: { version: 'cart-ready', lines: [], tableName: 'A2' } } : { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A2'], selectedTable: 'A2', customerMessage: '請開始。' }
     : { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: 'A2', customerMessage: '正在準備菜單。' })
   const ready = Promise.withResolvers<void>()
   const waitUntilReady = vi.fn(() => ready.promise)
@@ -813,7 +815,7 @@ it('does not announce menu ready when the replacement document has no menu evide
   let entered = false
   client.execute.mockImplementation(async (tool) => {
     if (tool.name === 'browser_cart_get')
-      return entered ? { ok: true, source: 'browser', page: 'table' } : { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A2'], selectedTable: 'A2', customerMessage: '請開始。' }
+      return entered ? { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A2'], selectedTable: 'A2', customerMessage: '請開始。' } : { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A2'], selectedTable: 'A2', customerMessage: '請開始。' }
     entered = true
     return { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: 'A2', customerMessage: '正在準備菜單。' }
   })

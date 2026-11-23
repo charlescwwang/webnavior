@@ -17,6 +17,7 @@ import { contextReplySchema, replyToConversation } from '@proj-airi/stage-shared
 import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { explicitServingQuantities, normalizeSlotNumbers } from '@proj-airi/stage-shared/ordering-slots'
 import { customerReplySchema, servicePolicyReplySchema } from '@proj-airi/stage-shared/ordering-tools'
+import { pbBrowserStateSchema, pbCatalogStateSchema, pbEditorStateSchema, pbTableStateSchema } from '@proj-airi/stage-shared/pb-browser-state'
 import { pbCheckoutSchema, pbInvoiceMethodSchema, pbOrderStateSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { menuEntryReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
 import { describePbMeal, pbBasicServing, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
@@ -67,7 +68,22 @@ interface VerifiedReceipt {
 let active: TaskQuestions & { tableSelectionRequired?: boolean, answerResolved?: boolean, selectedAnswer?: SelectedBrowserAnswer, selected?: { productRef: string, request: string, requestTarget?: string, requestedQuantity?: number, orderSelection?: true }, confirmed?: { proposal: AdditionProposal, binding: QuestionSnapshot }, confirmedOrder?: { proposals: AdditionProposal[], binding: QuestionSnapshot, evidence?: OrderEvidence }, text: string, readonly transcript: string, decide: (proposal: BrowserEffect, plan: Pick<BrowserPlan, 'toolName' | 'arguments'>) => Promise<EffectDecision>, isCurrent: () => boolean, orderEvidence?: OrderEvidence, receipts: Map<string, VerifiedReceipt> } | undefined
 const writes = new Set(['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'])
 const orderingAnswerFactsSchema = looseObject({ products: array(looseObject({ ref: string(), name: string(), configurations: array(productConfigurationSchema) })) })
-const tableEntrySchema = looseObject({ ok: literal(true), source: literal('browser'), page: literal('table'), code: literal('table-selection-required'), tableChoices: array(string()), selectedTable: optional(string()), customerMessage: string() })
+const tableEntrySchema = looseObject({ ...pbTableStateSchema.entries, code: literal('table-selection-required'), customerMessage: string() })
+
+/** Validates native context reads before any Main planning or answer resolution. */
+async function executeBrowserTool(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'execute'>, tool: ServiceTool, input: Record<string, unknown>): Promise<unknown> {
+  const result = await client.execute(tool, input)
+  if (!['browser_state_get', 'browser_cart_get', 'browser_cart_review', 'browser_return_menu'].includes(tool.name))
+    return result
+  // Failure receipts keep their sign-in/vendor explanation. Successful reads
+  // must carry a complete page-specific snapshot, including explicit cart rows.
+  if (result && typeof result === 'object' && 'ok' in result && result.ok === false)
+    return result
+  const state = parse(pbBrowserStateSchema, result)
+  if (input.includeCatalog === true && ['menu', 'cart', 'checkout'].includes(state.page))
+    parse(pbCatalogStateSchema, result)
+  return result
+}
 
 // Dispatch is the uncertainty boundary: a thrown transport or missing receipt
 // may follow an applied merchant effect. Preserve it for both Main and Jev;
@@ -75,7 +91,7 @@ const tableEntrySchema = looseObject({ ok: literal(true), source: literal('brows
 async function dispatchCartWrite(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'execute'>, tool: ServiceTool, input: Record<string, unknown>): Promise<unknown> {
   let error: string | undefined
   try {
-    const receipt = await client.execute(tool, input)
+    const receipt = await executeBrowserTool(client, tool, input)
     if (receipt && typeof receipt === 'object' && 'status' in receipt
       && ['verified', 'preserved', 'rejected', 'proposal_rejected', 'clarification', 'unknown'].includes(String(receipt.status))) {
       return receipt
@@ -173,7 +189,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
     let result: unknown
     try {
       if (present)
-        result = await client.execute(present, { productRefs: question.presentationRefs, mode: 'information' })
+        result = await executeBrowserTool(client, present, { productRefs: question.presentationRefs, mode: 'information' })
     }
     catch { /* An unshown question must retire below, including transport failures. */ }
     if (active !== task || !task.isCurrent())
@@ -197,7 +213,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       if (!task || !task.isCurrent())
         return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
       parse(strictObject({}), input)
-      const result = await client.execute(tool, {})
+      const result = await executeBrowserTool(client, tool, {})
       if (safeParse(looseObject({ ok: literal(true), code: literal('table-selection-starting') }), result).success) {
         // Questions/drafts belong to the previous page; no merchant cart write
         // is implied by abandoning those local conversation owners.
@@ -211,7 +227,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
     if (tool.name === 'browser_table_select' || tool.name === 'browser_start_ordering') {
       if (!task || !task.isCurrent() || !context)
         return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
-      const entry = safeParse(tableEntrySchema, await client.execute(context, { includeCatalog: false }))
+      const entry = safeParse(tableEntrySchema, await executeBrowserTool(client, context, { includeCatalog: false }))
       if (active !== task || !task.isCurrent() || !entry.success)
         return { ok: false, source: 'host', status: 'rejected', effect: 'none', customerMessage: '目前選桌畫面已變更，請重新確認。' }
       if (task.dialogue?.tables.offer(entry.output, task.transcript))
@@ -227,7 +243,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         const select = client.tools.value.find(tool => tool.name === 'browser_table_select')
         if (!select)
           return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: orderingMessages['zh-Hant'].tableConfirmation.stale }
-        return client.execute(select, { name: confirmed.name })
+        return executeBrowserTool(client, select, { name: confirmed.name })
       }
       const missing = missingTableMessage(entry.output.tableChoices, task.transcript)
       if (missing)
@@ -247,7 +263,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         return { ok: true, source: 'host', status: 'proposal_rejected', effect: 'none', dataOnly: true, selectedTable: entry.output.selectedTable, tableChoices: entry.output.tableChoices, explanation: '這次提案使用的桌號與畫面目前選擇不同，尚未執行。顧客未要求換桌，請沿用這次回傳的 selectedTable；呼叫 start_ordering_at_table 時省略 tableName，即會使用畫面目前選擇。不必要求顧客重新選桌。' }
       if (!name || !entry.output.tableChoices.includes(name) || (!explicitlyNamed && task.intentSource !== 'jev' && (tool.name === 'browser_table_select' || entry.output.selectedTable !== name)))
         return { ok: true, source: 'host', status: 'clarification', effect: 'none', customerMessage: '內用請先找到座位，再告訴我您的桌號；外帶請選櫃台自取。' }
-      let result = await client.execute(tool, { name })
+      let result = await executeBrowserTool(client, tool, { name })
       if (safeParse(menuEntryReceiptSchema, result).success && client.waitUntilReady) {
         await client.waitUntilReady()
         if (active !== task || !task.isCurrent())
@@ -257,7 +273,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         const deadline = Date.now() + 5000
         while (true) {
           const reader = client.tools.value.find(tool => tool.name === 'browser_cart_get')
-          const menu = safeParse(looseObject({ ok: literal(true), page: literal('menu'), menuReady: boolean(), cart: looseObject({ tableName: string() }) }), reader ? await client.execute(reader, { includeCatalog: false, forAdmission: true }) : undefined)
+          const menu = safeParse(looseObject({ ok: literal(true), page: literal('menu'), menuReady: boolean(), cart: looseObject({ tableName: string() }) }), reader ? await executeBrowserTool(client, reader, { includeCatalog: false, forAdmission: true }) : undefined)
           if (active !== task || !task.isCurrent())
             return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
           if (!menu.success || menu.output.cart.tableName !== name || (!menu.output.menuReady && Date.now() >= deadline))
@@ -296,7 +312,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
           return { ok: true, source: 'browser', dataOnly: true, excludedProductRefs: proposed.output.productRefs, explanation: '這批品項剛剛已成功介紹過，尚未重複呈現。請依顧客需求從最新菜單選其他品項；若顧客指定餐點或餐類，改用 recommendation 呈現符合餐點供選擇；只要資訊時用 information。' }
         parameters = { ...proposed.output, productRefs, deferVisual: true }
       }
-      const result = await client.execute(tool, parameters)
+      const result = await executeBrowserTool(client, tool, parameters)
       if (active !== task || !task.isCurrent())
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
       const presented = safeParse(looseObject({ ok: literal(true), source: literal('browser'), presentation: productPresentationSchema, customerMessage: optional(string()) }), result)
@@ -323,7 +339,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
       const query = typeof input.query === 'string' ? input.query.trim() : ''
       if (task.dialogue.hasPending() && context) {
-        const raw = await client.execute(context, { includeCatalog: true })
+        const raw = await executeBrowserTool(client, context, { includeCatalog: true })
         if (active !== task || !task.isCurrent())
           return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
         const current = task.dialogue.conversation(raw, task.utteranceId)
@@ -341,7 +357,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       if (query) {
         if (!context)
           return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
-        const raw = await client.execute(context, { includeCatalog: true })
+        const raw = await executeBrowserTool(client, context, { includeCatalog: true })
         if (active !== task || !task.isCurrent())
           return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
         const denied = checkBrowserState(task, raw)
@@ -357,7 +373,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         const present = client.tools.value.find(tool => tool.name === 'browser_present')
         const exact = matches.length === 1 && [matches[0].name, ...matches[0].aliases].some(label => label.toLocaleLowerCase() === normalized)
         if ((exact || knownCategory) && matches.length <= 10 && present)
-          return client.execute(present, { productRefs: matches.map(product => product.ref), mode: 'information' })
+          return executeBrowserTool(client, present, { productRefs: matches.map(product => product.ref), mode: 'information' })
         if (matches.length) {
           // A substring is retrieval evidence, not a verified category: 湯 also
           // matches 湯餃 and meal sets. Main must select actual dishes before cues.
@@ -366,17 +382,17 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         // Inquiries consult the full current catalog instead of blanking PB's
         // view. Restore an older/manual filter and retire old visual choices.
         if (facts.search && facts.page === 'menu') {
-          const restored = await client.execute(tool, { query: '' })
+          const restored = await executeBrowserTool(client, tool, { query: '' })
           if (!safeParse(looseObject({ ok: literal(true) }), restored).success)
             return restored
         }
         if (present)
-          await client.execute(present, { productRefs: [] })
+          await executeBrowserTool(client, present, { productRefs: [] })
         return { ok: true, source: 'browser', status: 'not-found', effect: 'none', search: query, catalogScope: 'full-current-catalog', products: [], alternatives: filterBrowserRecommendations(catalog).map(({ ref, name, price, category }) => ({ ref, name, price, category })), customerMessage: `目前菜單沒有「${query}」。`, originalRequest: task.transcript, explanation: '這是本輪完整菜單查詢，畫面保留完整菜單。只處理originalRequest這次的問題，不重查前一題。可依目前菜單推薦相近品項；沒有相關品項時詢問是否看其他推薦，不把替代品當成原品項。' }
       }
       // Only an empty query clears a previous/manual native search. Customer
       // category requests also use full-catalog highlighting above.
-      return client.execute(tool, { query })
+      return executeBrowserTool(client, tool, { query })
     }
     if (tool.name === 'browser_cart_review' || tool.name === 'browser_return_menu') {
       if (!task || !task.isCurrent() || !context)
@@ -391,7 +407,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       // There are no model-controlled arguments: never forward invented
       // planning/write fields (S13 emitted includeCatalog="false" repeatedly).
       // Native strict validation still receives exactly its advertised {}.
-      const result = await client.execute(tool, {})
+      const result = await executeBrowserTool(client, tool, {})
       if (active !== task || !task.isCurrent())
         return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
       if (tool.name === 'browser_return_menu' && task.intentSource === 'jev')
@@ -402,7 +418,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       if (rejected)
         return rejected
       if (tool.name === 'browser_cart_review' && task.dialogue && typeof result === 'object' && result && 'ok' in result && result.ok === true && 'cart' in result) {
-        const raw = await client.execute(context, { includeCatalog: false })
+        const raw = await executeBrowserTool(client, context, { includeCatalog: false })
         if (active !== task || !task.isCurrent())
           return { ok: false, source: 'host', effect: 'none' }
         const denied = checkBrowserState(task, raw)
@@ -428,7 +444,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       return result
     }
     if (task && tool.name === 'browser_observe' && input.purpose === 'information') {
-      const result = await client.execute(tool, input)
+      const result = await executeBrowserTool(client, tool, input)
       if (active !== task || !task.isCurrent())
         return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
       const catalog = safeParse(looseObject({ ok: boolean(), source: string(), products: array(looseObject({ name: string() })) }), result)
@@ -440,7 +456,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       return { ...facts, dataOnly: true, explanation: '這是當前完整菜單資料，不代表已完成原句的篩選。依完整需求選出商品參照，再用 browser_present 呈現；資料不足以確認條件時用 browser_respond kind=information-unavailable，不把全部商品說成符合。' }
     }
     if (tool.name === 'browser_quote' && task && context) {
-      const fresh = parse(looseObject({ products: array(looseObject({ ref: string(), name: string(), kind: string(), priceType: number(), price: number(), configurations: array(productConfigurationSchema) })) }), await client.execute(context, { includeCatalog: true }))
+      const fresh = parse(looseObject({ products: array(looseObject({ ref: string(), name: string(), kind: string(), priceType: number(), price: number(), configurations: array(productConfigurationSchema) })) }), await executeBrowserTool(client, context, { includeCatalog: true }))
       if (active !== task || !task.isCurrent())
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
       const targets = fresh.products.filter(product => product.name === input.name)
@@ -451,7 +467,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         // the Host must not turn a mention into either selection or consent.
         return { ok: true, source: 'browser', dataOnly: true, requiredTool: 'browser_quote_selection', products: targets, explanation: '本句提到這項商品的現有規格／加購，基本價不足以回答整句。請依原句決定包含或排除哪些選項，以最新 selection 呼叫 browser_quote_selection；不要把基本價當成配置後合計。尚未加入購物車。' }
       }
-      const result = await client.execute(tool, input)
+      const result = await executeBrowserTool(client, tool, input)
       const quoted = safeParse(looseObject({ ok: boolean(), source: string(), customerMessage: string() }), result)
       if (!quoted.success || !quoted.output.ok || quoted.output.source !== 'browser')
         return result
@@ -468,7 +484,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       return facts.length ? { ...quoted.output, relatedProducts: related, customerMessage: `${quoted.output.customerMessage} 另外，當前菜單列有：${facts.join('；')}。` } : result
     }
     if (task && context && tool.name === 'browser_product_get') {
-      const result = await client.execute(tool, input)
+      const result = await executeBrowserTool(client, tool, input)
       if (active !== task || !task.isCurrent())
         return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
       if (result && typeof result === 'object' && 'cart' in result)
@@ -486,7 +502,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       // Exact-name lookup and choose-product are different Main routes to the
       // same discovery problem. A miss cannot end an alias request with "not
       // found" when today's labels provide a related confirmation candidate.
-      const facts = await client.execute(context, { includeCatalog: true })
+      const facts = await executeBrowserTool(client, context, { includeCatalog: true })
       if (active !== task || !task.isCurrent())
         return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
       const denied = checkBrowserState(task, facts)
@@ -496,8 +512,8 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       return presentQuestion(facts, query)
     }
     if (!task?.dialogue || !context)
-      return client.execute(tool, input)
-    const observe = () => client.execute(context, { includeCatalog: true })
+      return executeBrowserTool(client, tool, input)
+    const observe = () => executeBrowserTool(client, context, { includeCatalog: true })
     if (tool.name === 'browser_cart_get' && input.includeCatalog === true && !task.answerResolved) {
       task.answerResolved = true
       const facts = await observe()
@@ -522,7 +538,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
             throw new Error('目前網站尚未提供助手送出訂單。')
           // Only a consumed, current final-summary ticket reaches this branch.
           // Main has no public submission tool or model-controlled token.
-          const result = await client.execute(submit, { confirmationToken: answer.confirmationToken })
+          const result = await executeBrowserTool(client, submit, { confirmationToken: answer.confirmationToken })
           if (active !== task || !task.isCurrent())
             return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
           const rejection = safeParse(looseObject({ ok: literal(false), source: literal('browser'), status: literal('rejected'), effect: literal('none') }), result)
@@ -616,13 +632,13 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       }
       return presentQuestion(facts, typeof input.query === 'string' ? input.query : '')
     }
-    return client.execute(tool, input)
+    return executeBrowserTool(client, tool, input)
   }
   if (!task || !context)
     throw new Error('Current browser cart task is unavailable.')
   if (task.readOnly) {
     if (task.clarifyOrder && task.dialogue && tool.name === 'browser_cart_add') {
-      const raw = await client.execute(context, { includeCatalog: true })
+      const raw = await executeBrowserTool(client, context, { includeCatalog: true })
       const denied = checkBrowserState(task, raw)
       if (denied)
         return denied
@@ -639,7 +655,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
     return { ok: true, source: 'browser', status: 'rejected', effect: 'none', customerMessage: task.clarifyOrder ? '目前尚未確認完整操作，請重新說明要調整的餐點；尚未變更購物車。' : '本次僅查詢，未變更購物車。' }
   }
   const needsProducts = tool.name === 'browser_cart_add' || tool.name === 'browser_cart_replace'
-  const rawFacts = await client.execute(context, { includeCatalog: needsProducts })
+  const rawFacts = await executeBrowserTool(client, context, { includeCatalog: needsProducts })
   const denied = checkBrowserState(task, rawFacts)
   if (denied)
     return denied
@@ -842,7 +858,7 @@ export async function readBrowserOrderingFacts(client: Pick<ReturnType<typeof cr
   const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')
   if (!task || !read || !task.isCurrent())
     throw new Error('目前點餐需求已結束。')
-  const raw = await client.execute(read, { includeCatalog: true })
+  const raw = await executeBrowserTool(client, read, { includeCatalog: true })
   if (active !== task || !task.isCurrent())
     throw new Error('目前點餐需求已結束。')
   const denied = checkBrowserState(task, raw)
@@ -850,6 +866,7 @@ export async function readBrowserOrderingFacts(client: Pick<ReturnType<typeof cr
     return denied
   if (denied)
     throw new Error('目前購物車資料讀取未完成。')
+  parse(pbEditorStateSchema, raw)
   const facts = parse(orderingAnswerFactsSchema, raw)
   return { ...facts, products: labelCatalog(facts.products, task.catalogLabels?.()) }
 }
@@ -937,10 +954,10 @@ export async function cancelBrowserItemSelection(client: Pick<ReturnType<typeof 
   const close = client.tools.value.find(tool => tool.name === 'browser_close_product')
   if (!task || !task.isCurrent() || !close)
     throw new Error('目前無法取消選餐。')
-  let result = await client.execute(close, {})
+  let result = await executeBrowserTool(client, close, {})
   const search = client.tools.value.find(tool => tool.name === 'browser_search')
   if (result && typeof result === 'object' && 'ok' in result && result.ok === true && search)
-    result = await client.execute(search, { query: '' })
+    result = await executeBrowserTool(client, search, { query: '' })
   const receipt = parse(looseObject({ ok: boolean() }), result)
   if (active === task && task.isCurrent() && receipt.ok) {
     task.dialogue?.reset()
@@ -959,7 +976,7 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
     throw new Error('Current browser conversation is unavailable.')
   // This is an internal read, like master's host-only conversation-context read.
   // Answer resolution must wait for the canonical customer turn to be recorded.
-  const raw = await client.execute(read, { includeCatalog: true })
+  const raw = await executeBrowserTool(client, read, { includeCatalog: true })
   if (active !== task || !task.isCurrent())
     throw new Error('Browser context belongs to a superseded task.')
   if (safeParse(browserSignInRequiredSchema, raw).success) {
@@ -981,7 +998,7 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
     const state = { phase: 'selecting_table' as const, readOnly: true }
     return parse(browserConversationSchema, { taskId, sourceUtterance: task.transcript, ...state, page: 'table', tableChoices: tableEntry.output.tableChoices, selectedTable: tableEntry.output.selectedTable, waitingFor: task.dialogue?.tables.pending(raw), catalog: { complete: false, products: [] }, allowedToolNames: browserToolNames(state, toolNames) })
   }
-  const facts = parse(looseObject({ itemSelectionOpen: optional(boolean()), ok: literal(true), source: literal('browser'), page: optional(picklist(['table', 'menu', 'cart', 'checkout'])), cart: looseObject({ version: string(), lines: array(looseObject({ ref: string(), name: string(), quantity: number() })) }), products: array(object({ ref: string(), name: string(), price: optional(number()), configurations: array(productConfigurationSchema) })) }), raw)
+  const facts = parse(looseObject({ ...pbEditorStateSchema.entries, itemSelectionOpen: optional(boolean()), products: array(object({ ref: string(), name: string(), price: optional(number()), configurations: array(productConfigurationSchema) })) }), raw)
   const denied = checkBrowserState(task, raw)
   if (denied)
     throw new Error('Current browser state cannot be read.')
@@ -1068,7 +1085,7 @@ export async function prepareBrowserQuestionAnswer(client: Pick<ReturnType<typeo
   const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')
   if (!task?.dialogue?.hasPending() || task.answerResolved || !task.isCurrent() || !read)
     return
-  const facts = await client.execute(read, { includeCatalog: true })
+  const facts = await executeBrowserTool(client, read, { includeCatalog: true })
   if (active !== task || !task.isCurrent())
     return
   const tableQuestion = task.dialogue.tables.pending(facts)
@@ -1133,7 +1150,7 @@ export async function executeBrowserQuantityQuestion(client: Pick<ReturnType<typ
     return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
   if (task.dialogue.hasPending() && !task.answerResolved)
     return executeBrowserCartTool(client, context, { includeCatalog: true })
-  const facts = await client.execute(context, { includeCatalog: true })
+  const facts = await executeBrowserTool(client, context, { includeCatalog: true })
   if (active !== task || !task.isCurrent())
     return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
   const denied = checkBrowserState(task, facts)
@@ -1146,7 +1163,7 @@ export async function executeBrowserQuantityQuestion(client: Pick<ReturnType<typ
   }
   const present = client.tools.value.find(tool => tool.name === 'browser_present')
   if (product && present) {
-    const shown = await client.execute(present, { productRefs: [productRef], mode: 'information' })
+    const shown = await executeBrowserTool(client, present, { productRefs: [productRef], mode: 'information' })
     if (active !== task || !task.isCurrent())
       return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
     if (shown && typeof shown === 'object' && 'ok' in shown && shown.ok === false)
@@ -1165,7 +1182,7 @@ export async function executeBrowserOrderDraft(client: Pick<ReturnType<typeof cr
     return executeBrowserCartTool(client, read, { includeCatalog: true })
   if (task.readOnly && !task.clarifyOrder)
     return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, explanation: '顧客目前只要求查詢，不能建立購買草稿。請依原始問題使用查詢工具取得資料並回答，尚未變更購物車。' }
-  const facts = await client.execute(read, { includeCatalog: true })
+  const facts = await executeBrowserTool(client, read, { includeCatalog: true })
   if (active !== task || !task.isCurrent())
     return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
   const denied = checkBrowserState(task, facts)
@@ -1203,7 +1220,7 @@ export async function executeBrowserConfirmedAddition(client: Pick<ReturnType<ty
     let awaitingWrite = false
     try {
       for (const proposal of order.proposals) {
-        const fresh = await client.execute(read, { includeCatalog: true })
+        const fresh = await executeBrowserTool(client, read, { includeCatalog: true })
         if (fresh && typeof fresh === 'object' && 'ok' in fresh && fresh.ok === false) {
           failure = { ...fresh }
           break
@@ -1335,7 +1352,7 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
       return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: orderingMessages['zh-Hant'].checkout.donationCode.invalid }
     parameters = { code: input.code }
   }
-  const result = await client.execute(tool, parameters)
+  const result = await executeBrowserTool(client, tool, parameters)
   if (active !== task || !task.isCurrent())
     return { ok: false, source: 'host', effect: 'none' }
   const parsed = safeParse(looseObject({ ok: literal(true), source: literal('browser'), checkout: pbCheckoutSchema, cart: looseObject({ version: string(), lines: array(looseObject({ ...cartLineLabelSchema.entries, unitPrice: number() })), subtotal: optional(number()), tableName: optional(string()) }) }), result)
@@ -1444,7 +1461,7 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
     return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
   const stateReader = client.tools.value.find(tool => tool.name === 'browser_state_get')
   if (stateReader && (task.orderReference || !client.tools.value.some(tool => tool.name === 'browser_cart_get'))) {
-    const fresh = await client.execute(stateReader, { includeCatalog: false })
+    const fresh = await executeBrowserTool(client, stateReader, { includeCatalog: false })
     if (active !== task || !task.isCurrent())
       return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
     const state = parse(looseObject({ ok: literal(true), order: pbOrderStateSchema }), fresh).order
@@ -1470,7 +1487,7 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
     const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')
     if (!read)
       throw new Error('Table entry requires the current native page.')
-    const fresh = await client.execute(read, { includeCatalog: false })
+    const fresh = await executeBrowserTool(client, read, { includeCatalog: false })
     if (active !== task || !task.isCurrent())
       return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
     const denied = checkBrowserState(task, fresh)
@@ -1481,7 +1498,7 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
   if (selected === 'checkout-guidance') {
     if (client.tools.value.some(tool => tool.name === 'browser_checkout_prepare')) {
       const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')!
-      const raw = await client.execute(read, { includeCatalog: false })
+      const raw = await executeBrowserTool(client, read, { includeCatalog: false })
       const page = safeParse(looseObject({ page: string() }), raw)
       if (page.success && page.output.page === 'cart')
         return executeBrowserCheckout(client, 'continue')

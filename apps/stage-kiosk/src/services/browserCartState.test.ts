@@ -12,7 +12,7 @@ function setup() {
   const cart = { version: 'visible-cart', lines: [{ ref: 'line', name: '蛋花湯', quantity: 1 }] }
   const context: ServiceTool = { name: 'browser_cart_get', origin: 'https://app.esgpb.com', description: '', inputSchema: { type: 'object' } }
   const review = { ...context, name: 'browser_cart_review' }
-  const execute = vi.fn<(tool: ServiceTool, input: Record<string, unknown>) => Promise<unknown>>(async () => ({ ok: true, source: 'browser', cart, products: [] }))
+  const execute = vi.fn<(tool: ServiceTool, input: Record<string, unknown>) => Promise<unknown>>(async () => ({ ok: true, source: 'browser', page: 'menu', cart, products: [] }))
   const informationUnavailable = vi.fn(() => '目前沒有這項資訊。')
   const checkoutGuidance = vi.fn((empty: boolean) => empty ? '購物車目前沒有餐點。' : '請核對目前購物車。')
   let current = true
@@ -45,7 +45,7 @@ it('still discards a late review after its request is cancelled', async () => {
   const { client, execute, retire, cart } = setup()
   execute.mockImplementation(async () => {
     retire()
-    return { ok: true, source: 'browser', cart }
+    return { ok: true, source: 'browser', page: 'menu', cart }
   })
   expect(await executeBrowserReply(client, 'checkout-guidance')).toMatchObject({ ok: false, status: 'rejected', effect: 'none' })
 })

@@ -5,6 +5,7 @@ import type { RouteName } from './pbRoutes'
 
 import { errorMessageFrom } from '@moeru/std'
 import { discoveryRequestSchema, executionRequestSchema, inspectionRequestSchema } from '@proj-airi/stage-shared/interactive-service'
+import { pbCatalogStateSchema, pbEditorStateSchema, pbTableStateSchema } from '@proj-airi/stage-shared/pb-browser-state'
 import { pbInvoiceMethodSchema, readPbOrderState } from '@proj-airi/stage-shared/pb-checkout'
 import { isPbJourneyPage, isPbOrderResultUrl, readPbStateJourney } from '@proj-airi/stage-shared/pb-journey'
 import { describePbMeal, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
@@ -684,7 +685,9 @@ export function createPbService() {
             admission = { cartAdmission: 'after-table-entry' }
           }
         }
-        return { ok: true, source: 'browser', observedAt: Date.now(), documentId, page: 'table', code: 'table-selection-required', effect: 'none', tableChoices, ...(selectedTable ? { selectedTable } : {}), ...admission, customerMessage: selectedTable ? `已選擇${selectedTable}，請說「開始點餐」。` : '內用請先找到座位，再回來告訴我您的桌號；外帶可以選櫃台自取。這裡沒有外送服務。' }
+        const receipt = { ok: true, source: 'browser', observedAt: Date.now(), documentId, page: 'table', code: 'table-selection-required', effect: 'none', tableChoices, ...(selectedTable ? { selectedTable } : {}), ...admission, customerMessage: selectedTable ? `已選擇${selectedTable}，請說「開始點餐」。` : '內用請先找到座位，再回來告訴我您的桌號；外帶可以選櫃台自取。這裡沒有外送服務。' }
+        parse(pbTableStateSchema, receipt)
+        return receipt
       }
       if (name === 'browser_return_table') {
         parse(strictObject({}), input)
@@ -731,7 +734,9 @@ export function createPbService() {
         const after = await readCart()
         if (JSON.stringify(before) !== JSON.stringify(after))
           return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '已返回菜單，但購物車內容有變動，請先重新核對。' }
-        return { ok: true, source: 'browser', status: 'verified', effect: 'none', page: 'menu', cart: await cartOperations.observe(), customerMessage: '已清除搜尋，回到完整菜單。想點哪道餐點？也可以請我推薦。' }
+        const receipt = { ok: true, source: 'browser', status: 'verified', effect: 'none', page: 'menu', cart: await cartOperations.observe(), customerMessage: '已清除搜尋，回到完整菜單。想點哪道餐點？也可以請我推薦。' }
+        parse(pbEditorStateSchema, receipt)
+        return receipt
       }
       if (name === 'browser_cart_get' || name === 'browser_cart_review') {
         let includeCatalog = false
@@ -752,7 +757,9 @@ export function createPbService() {
         }
         const productDialog = observe().productDialog.flatMap(dialog => dialog.name ? [{ name: dialog.name }] : [])
         const checkoutState = checkout.read()
-        return { ok: true, source: 'browser', observedAt: Date.now(), documentId, menuReady: location.pathname === journey.menuPath && observe().products.length > 0, itemSelectionOpen: productDialog.length > 0, productDialog, search: document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value ?? '', page: location.pathname === journey.cartPath ? 'cart' : 'menu', cart, ...(checkoutState ? { checkout: checkoutState } : {}), ...(products ? { products, dataOnly: true } : { customerMessage: cart.lines.length ? `目前購物車：${describeCartLines(cart.lines)}。小計 ${cart.subtotal} 元。` : '購物車目前沒有餐點。' }) }
+        const receipt = { ok: true, source: 'browser', observedAt: Date.now(), documentId, menuReady: location.pathname === journey.menuPath && observe().products.length > 0, itemSelectionOpen: productDialog.length > 0, productDialog, search: document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value ?? '', page: location.pathname === journey.cartPath ? 'cart' : 'menu', cart, ...(checkoutState ? { checkout: checkoutState } : {}), ...(products ? { products, dataOnly: true } : { customerMessage: cart.lines.length ? `目前購物車：${describeCartLines(cart.lines)}。小計 ${cart.subtotal} 元。` : '購物車目前沒有餐點。' }) }
+        parse(includeCatalog ? pbCatalogStateSchema : pbEditorStateSchema, receipt)
+        return receipt
       }
       else if (name === 'browser_checkout_prepare' || name === 'browser_invoice_select' || name === 'browser_notification_phone' || name === 'browser_invoice_donation' || name === 'browser_invoice_tax' || name === 'browser_order_submit') {
         if (localStorage.getItem(blockedKey))

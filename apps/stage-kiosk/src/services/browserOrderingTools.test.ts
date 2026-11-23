@@ -32,7 +32,7 @@ it.each([
   const tools = shallowRef(['browser_cart_get', 'browser_return_table'].map(name => ({ name, description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' })))
   const execute = vi.fn(async (tool: ServiceTool) => tool.name === 'browser_return_table'
     ? { ok: true, source: 'browser', code: 'table-selection-starting', effect: 'none', customerMessage: '正在返回選桌頁，請重新選擇桌號。' }
-    : { ok: true, source: 'browser', page: 'menu', products: [] })
+    : { ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [] })
   const dispose = beginBrowserCartTask('我要換桌號', { decide: vi.fn(), isCurrent: () => true })
   cleanup.push(dispose)
   const publicTools = createBrowserOrderingTools({ tools: readonly(tools), execute })
@@ -111,7 +111,7 @@ function setup(transcript: string, pending = false, labels: CatalogLabel[] = [])
   const dialogue = createBrowserDialogue({ owner: () => binding.owner, documentId: () => binding.documentId, answer, catalogLabels: () => labels })
   const configuration: ProductConfiguration = { version: 'config', variantRef: '', name: '', unitPrice: 100, groups: [] }
   const lines: CartLine[] = [{ ref: 'line', productRef: 'chicken', name: '雞腿飯', quantity: 3, configuration: '', unitPrice: 100, note: '', options: [] }]
-  const facts = { ok: true, source: 'browser', cart: { version: 'cart', lines }, products: [{ ref: 'chicken', name: '雞腿飯', price: 100, kind: 'product', priceType: 1, configurations: [configuration] }] }
+  const facts = { ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines }, products: [{ ref: 'chicken', name: '雞腿飯', price: 100, kind: 'product', priceType: 1, configurations: [configuration] }] }
   const checkout: PbCheckout = { methods: [{ method: 'none', label: '無載具', selected: true }, { method: 'carrier', label: '手機載具', selected: false }], fields: [], missing: ['請填寫通知手機或電子信箱。'], ready: false, orderNote: '', total: 300 }
   const names = ['browser_state_get', 'browser_table_select', 'browser_start_ordering', 'browser_open_product', 'browser_clarify_product', 'browser_cart_get', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_cart_review', 'browser_product_get', 'browser_present', 'browser_close_product', 'browser_search', 'browser_return_menu', 'browser_return_table', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_invoice_tax', 'browser_order_submit']
   const tools = shallowRef<ServiceTool[]>(names.map(name => ({ name, description: '', inputSchema: { type: 'object' }, origin: 'http://127.0.0.1:5188' })))
@@ -155,8 +155,10 @@ function setup(transcript: string, pending = false, labels: CatalogLabel[] = [])
       return { ok: true, source: 'browser', presentation: { cue: 'shown', products: facts.products.filter(product => Array.isArray(input.productRefs) && input.productRefs.includes(product.ref)).map(({ ref, name, price }) => ({ ref, name, price })) } }
     if (tool.name === 'browser_product_get')
       return { ok: true, source: 'browser', dataOnly: true, products: structuredClone(facts.products) }
+    if (tool.name === 'browser_return_menu')
+      return { ok: true, source: 'browser', page: 'menu', cart: structuredClone(facts.cart), customerMessage: '已回到菜單。' }
     if (tool.name === 'browser_cart_review')
-      return { ok: true, source: 'browser', status: 'verified', cart: structuredClone(facts.cart), ...('checkout' in facts ? { checkout } : {}), customerMessage: '購物車已開啟。' }
+      return { ok: true, source: 'browser', page: 'cart', status: 'verified', cart: structuredClone(facts.cart), ...('checkout' in facts ? { checkout } : {}), customerMessage: '購物車已開啟。' }
     if (tool.name === 'browser_cart_quantity')
       facts.cart.lines[0].quantity = Number(input.quantity)
     if (tool.name === 'browser_cart_add') {

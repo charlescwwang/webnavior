@@ -13,13 +13,17 @@ and same-page off-hours submission rejection detection remain unverified.
 ## Pre-image release candidate
 
 Git tag `kiosk-v0.7.8-rc.1` preserves the source before webpage screenshot
-recognition is added. It is a candidate checkpoint, not a stable or physically
-accepted release. See the [candidate record](../../docs/releases/kiosk-v0.7.8-rc.1.json)
-for passing checks, known failures and remaining Windows acceptance work.
+recognition. `kiosk-v0.7.8-rc.2` adds shared PB read validation across native,
+Fast Path and Main: missing cart rows or required catalog data cannot become
+empty-cart/menu facts or reach ordering actions. Catalog-free navigation remains
+supported. See the [RC2 record](../../docs/releases/kiosk-v0.7.8-rc.2.json) for
+checks and pending acceptance; the [RC1 record](../../docs/releases/kiosk-v0.7.8-rc.1.json)
+remains unchanged.
 
-The retained portable archive still reports version `0.7.8`; this checkpoint
-does not rebuild or deploy it. Future fixes receive a new RC tag, and the image
-feature is developed separately. Existing tags are never moved.
+Both are candidate checkpoints. The retained portable archive reports `0.7.8`
+and does not contain RC2. RC2 has a successful Electron compilation but no new
+Windows package or deployment. Physical acceptance is still pending. Future fixes
+receive a new RC tag; existing tags are never moved. Image features remain separate.
 
 ## November master audio restored (0.7.8)
 

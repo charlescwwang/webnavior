@@ -7,7 +7,7 @@ import { createBrowserFastPathSource } from './browserFastPath'
 
 const tools: ServiceTool[] = ['browser_state_get', 'browser_cart_get', 'browser_observe', 'browser_product_get', 'browser_open_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_review', 'browser_return_menu', 'browser_present'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
 const products = ['炸排骨便當', '炸雞腿便當'].map((name, index) => ({ ref: `p-${index}`, name, price: 130 + index * 10, kind: 'product', priceType: 1, configurations: [{ version: `config-${index}`, variantRef: '', name, unitPrice: 130 + index * 10, groups: [] }] }))
-const emptyFacts = () => ({ ok: true, page: 'menu', cart: { version: 'cart-1', lines: [] }, products })
+const emptyFacts = () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart-1', lines: [] }, products })
 
 // Report: this chat, Nov14; artificial fixed two-serving candidates obscured
 // whether the production generator itself offered unsupported mutations.

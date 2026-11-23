@@ -63,7 +63,7 @@ describe('useKioskInteractionRecording', () => {
       .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'keyword', type: 'function', function: { name: 'point_to_menu_items', arguments: '{"names":["魚丸湯"],"purpose":"information"}' } }] })
     const product = { ref: 'soup', name: '魚丸湯', price: 50, configurations: [{ version: 'cfg', variantRef: '', name: '', unitPrice: 50, groups: [] }] }
     const execute = vi.fn(async (tool: { name: string }) => tool.name === 'browser_cart_get'
-      ? { ok: true, source: 'browser', products: [product], cart: { version: 'cart', lines: [] } }
+      ? { ok: true, source: 'browser', page: 'menu', products: [product], cart: { version: 'cart', lines: [] } }
       : { ok: true, source: 'browser', presentation: { cue: 'shown', products: [{ ref: 'soup', name: '魚丸湯', price: 50 }] } })
     const dialogue = createBrowserDialogue({ owner: () => 'visitor', documentId: () => 'page', answer: vi.fn() })
     const release = beginBrowserCartTask('那有什麼湯？', { isCurrent: () => true, decide: vi.fn(), dialogue })

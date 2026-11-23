@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "tag": "kiosk-v0.7.8-rc.2",
+  "branch": "codex/kiosk-text-rc-20261123",
+  "createdDate": "2026-11-23",
+  "status": "release-candidate-validation-incomplete",
+  "sourceReference": "refs/tags/kiosk-v0.7.8-rc.2^{}",
+  "previousCandidate": "kiosk-v0.7.8-rc.1",
+  "purpose": "Repair incomplete PB state acceptance across Fast Path, Main, navigation receipts and native reads before adding webpage images.",
+  "changes": [
+    "Shared page-specific success/source/cart contract; missing rows never default to an empty cart.",
+    "Validate every Main context read before planning, answer resolution or cart writes, and validate cart-review/menu-return receipts.",
+    "Full-catalog reads require products and configuration arrays; catalog-free navigation stays supported.",
+    "Validate native table/editor/catalog/menu-return receipts with the same shared schemas.",
+    "Reject incomplete pending-answer/search context and revoke previously issued candidates on a failed refresh."
+  ],
+  "checks": {
+    "kioskUnit": {
+      "status": "passed",
+      "passed": 1187,
+      "expectedFail": 1,
+      "skipped": 49,
+      "newRegressionCases": 57
+    },
+    "desktopUnit": {
+      "status": "passed",
+      "tests": 39
+    },
+    "pbCartCatalogProduct": {
+      "status": "passed",
+      "tests": 70
+    },
+    "savedNativeReceipts": {
+      "status": "passed",
+      "tests": 19,
+      "note": "Offline replay of our earlier isolated native observations; no current live PB or customer session."
+    },
+    "scopedTypecheck": {
+      "status": "passed",
+      "packages": [
+        "stage-shared",
+        "stage-ui",
+        "stage-kiosk",
+        "stage-kiosk-desktop"
+      ]
+    },
+    "changedCodeEslint": "passed",
+    "whitespaceCheck": "passed",
+    "electronBuild": "passed",
+    "rootTypecheck": "not-rerun; scoped policy",
+    "rootLint": "not-rerun; RC1 records existing 4047 errors"
+  },
+  "artifacts": {
+    "logs": "pb-test.local/contract-fix-20261123-r2/",
+    "desktopPackageVersion": "0.7.8",
+    "compiledElectronMainPreloadPbBundle": true,
+    "newWindowsExeOrZip": false,
+    "note": "The retained RC1 Windows archive does not contain this fix."
+  },
+  "pendingValidation": [
+    "Windows physical microphone capture and sustained recording.",
+    "Live Electron ordering/cart correction/tax-ID/checkout acceptance using this candidate.",
+    "Full formal Vue/API/ASR-to-visible-action timing.",
+    "Release-relevant lint reconciliation recorded by RC1; no unrelated mass fixes."
+  ],
+  "deployment": {
+    "productionServiceChanged": false,
+    "apiRestarted": false,
+    "frontendReplaced": false,
+    "modelSettingsChanged": false,
+    "webpageScreenshotRecognition": false
+  },
+  "tagPolicy": {
+    "immutable": true,
+    "nextCandidate": "kiosk-v0.7.8-rc.3",
+    "stableAfterAcceptance": "kiosk-v0.7.8"
+  }
+}

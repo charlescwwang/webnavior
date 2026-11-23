@@ -1,5 +1,14 @@
 # Codex Handoff
 
+## 2026-11-23 PB 資料缺口修正（RC2，未部署）
+
+- 使用者要求直接修正已發現漏洞。新增 stage-shared `pb-browser-state` 中立契約，按 table/editor/order 分頁驗證；editor 必須明確提供有效 cart.version 與 cart.lines，不再將缺明細預設為空車。includeCatalog=true 另要求 products/configurations；空 configurations 仍代表未核實，不授權猜測規格。
+- Fast Path 在 pending answer/search 等分支前先驗證；Main browserCartTask 內所有原生呼叫經同一邊界，對 state/cart read、cart_review、return_menu 驗證；其餘工具回執保持原有語意。Native PB table/editor/full catalog/menu return 使用同一契約。不增加 LLM 呼叫／網頁查詢，保留價格、版本、規格與寫後核對；不恢復顧客歸屬 gate。
+- 先寫 browserStateContract.test.ts 重現，再修產品。57 個新 regression cases 覆蓋缺來源／ok／頁面／版本／rows／row ref、非法數量、Main 寫入與模型上下文、導航回執、pending/search、舊候選作廢及 catalog-free 正常導航。舊 fixtures 改為 native 真實必要格式；RC1 看購物車失敗亦修正。
+- Kiosk 1187 pass / 1 expected fail / 49 skip；Desktop39、PB cart/catalog/product70、既有 native receipts離線重播19通過。stage-shared/stage-ui/stage-kiosk/desktop scoped types、變更程式 ESLint、diffcheck、Electron main/preload/PB bundle build通過。root typecheck/lint 未重跑；RC1已記錄全域既有 lint 4047 errors。日誌 pb-test.local/contract-fix-20261123-r2/。
+- RC1 不移動；修正建立新 kiosk-v0.7.8-rc.2，詳 docs/releases/kiosk-v0.7.8-rc.2.json。EXE package version仍0.7.8，沒有新Windows ZIP、遠端push或正式服務切換；舊ZIP不包含本次修正。Windows實機、live端到端點餐與正式延遲驗收仍待完成，不宣稱stable。不加入PB截圖或變更模型／收音。
+
+
 ## 2026-11-23 圖片前候選版版控整理（驗證未完成）
 
 - 使用者明確要求先保存圖片功能加入前的可運作版本，授權開始版控處理，並補充「尚未完成驗證」。已從pb_order/f593ac9建立 `codex/kiosk-text-rc-20261123`；目標annotated tag `kiosk-v0.7.8-rc.1`，不是stable。此輪使用者的明確提交授權優先於AGENTS舊spec的no-commit指示。未實作／啟用PB截圖，未改正式服務或模型設定。

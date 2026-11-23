@@ -11,6 +11,14 @@ network parsing, runtime selection or Kiosk presentation.
 
 ## External ordering conversation
 
+`pb-browser-state` validates successful native PB context reads for the page that
+produced them. Menu/cart/checkout require a nonempty version and explicit cart
+rows; table discovery and completed-order reads have separate contracts. Full
+catalog requests additionally require products and configuration arrays. Missing
+rows/catalogs are unreadable data, never an empty cart/menu. Use these schemas
+before planning or resolving answers; they do not authorize writes or replace
+freshness, configuration, or write-result checks.
+
 `pb-journey` owns the reviewed PB origin/store/flow policies shared by native
 admission and the page adapter. Table/menu/cart pages share the canonical menu
 owner key, preserving existing member-site ownership. `invoice-input` shares

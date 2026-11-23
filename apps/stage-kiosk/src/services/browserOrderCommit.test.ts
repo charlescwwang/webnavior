@@ -8,7 +8,7 @@ import { createBrowserDialogue } from './browserDialogue'
 
 function setup(fail?: 'unknown' | 'throw' | 'manual' | 'login' | 'read-failure', readOnly = false) {
   const dialogue = createBrowserDialogue({ owner: () => 'visitor', documentId: () => 'page', answer: async () => ({ kind: 'UNCERTAIN', provider: 'main' }) })
-  const facts = { ok: true, source: 'browser', cart: { version: 'v0', lines: [] }, products: ['甲餐', '乙餐'].map((name, i) => ({ ref: `p-${i}`, name, price: 100, configurations: [{ version: `cfg-${i}`, variantRef: '', name, unitPrice: 100, groups: [] }] })) }
+  const facts = { ok: true, source: 'browser', page: 'menu', cart: { version: 'v0', lines: [] }, products: ['甲餐', '乙餐'].map((name, i) => ({ ref: `p-${i}`, name, price: 100, configurations: [{ version: `cfg-${i}`, variantRef: '', name, unitPrice: 100, groups: [] }] })) }
   // A completed draft now executes directly. Keep one genuinely missing slot
   // so this fixture exercises an issued question and its one-use answer.
   const presented = dialogue.collectOrder(facts, { lines: facts.products.map((p, i) => ({ productRef: p.ref, quantity: i === 0 ? 1 : null, evidence: i === 0 ? `${p.name}一份` : p.name, choices: [], askGroups: [], note: '' })) }, '甲餐一份、乙餐')

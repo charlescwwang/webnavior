@@ -19,7 +19,7 @@ function setup(text: string) {
   disposals.push(beginBrowserCartTask(text, { ...allow, decide }))
   const context: ServiceTool = { name: 'browser_cart_get', description: 'Context', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
   const tool: ServiceTool = { ...context, name: 'browser_cart_add' }
-  const facts = { products: [{ ref: 'new-today', name: '每日新品', configurations: [{ version: 'config', variantRef: '', name: '', unitPrice: 10, groups: [{ ref: 'extras', name: '加購', required: false, maximum: 1, choices: [{ ref: 'extra', name: '付費配菜', unitPrice: 5, maximum: 1 }] }] }] }], cart: { version: 'cart-version', lines: [{ ref: 'original', name: '原餐', quantity: 1 }] } }
+  const facts = { ok: true, source: 'browser', page: 'menu', products: [{ ref: 'new-today', name: '每日新品', configurations: [{ version: 'config', variantRef: '', name: '', unitPrice: 10, groups: [{ ref: 'extras', name: '加購', required: false, maximum: 1, choices: [{ ref: 'extra', name: '付費配菜', unitPrice: 5, maximum: 1 }] }] }] }], cart: { version: 'cart-version', lines: [{ ref: 'original', name: '原餐', quantity: 1 }] } }
   const execute = vi.fn(async (tool: ServiceTool): Promise<unknown> => tool.name === context.name ? facts : { ok: true, status: 'verified' })
   return { client: { tools: readonly(shallowRef([context, tool, { ...context, name: 'browser_cart_review' }])), execute }, tool, facts, decide }
 }
@@ -201,7 +201,7 @@ it('keeps fresh presence evidence for every explicitly named product in a read-o
   disposals.push(beginBrowserCartTask('甲餐跟乙餐都有嗎？', allow))
   const context: ServiceTool = { name: 'browser_cart_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
   const quote = { ...context, name: 'browser_quote' }
-  const facts = { products: [{ ref: 'a', name: '甲餐', kind: 'product', priceType: 1, price: 10, configurations: [] }, { ref: 'b', name: '乙餐', kind: 'product', priceType: 1, price: 11, configurations: [] }] }
+  const facts = { ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [{ ref: 'a', name: '甲餐', kind: 'product', priceType: 1, price: 10, configurations: [] }, { ref: 'b', name: '乙餐', kind: 'product', priceType: 1, price: 11, configurations: [] }] }
   const client = { tools: readonly(shallowRef([context, quote])), execute: vi.fn(async (tool: ServiceTool) => tool.name === context.name ? facts : { ok: true, source: 'browser', customerMessage: '甲餐單份10元，一份10元。' }) }
   const result = await executeBrowserCartTool(client, quote, { name: '甲餐', quantity: 1 })
   expect(result).toMatchObject({ customerMessage: expect.stringContaining('乙餐') })
@@ -223,7 +223,7 @@ it('rejects a partial base quote when a current option is mentioned, without cho
   const context: ServiceTool = { name: 'browser_cart_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
   const quote = { ...context, name: 'browser_quote' }
   const products = [{ ref: 'today', name: '每日新品', kind: 'product', priceType: 1, price: 10, configurations: [{ version: 'fresh', variantRef: '', name: '', unitPrice: 10, groups: [{ ref: 'g-1', name: '加購', required: false, maximum: 1, choices: [{ ref: 'a-rice', name: '白飯', unitPrice: 5, maximum: 1 }] }] }] }]
-  const execute = vi.fn(async (tool: ServiceTool) => tool.name === context.name ? { products } : { ok: true, source: 'browser', customerMessage: '單份10元，未含加購。' })
+  const execute = vi.fn(async (tool: ServiceTool) => tool.name === context.name ? { ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products } : { ok: true, source: 'browser', customerMessage: '單份10元，未含加購。' })
   const client = { tools: readonly(shallowRef([context, quote])), execute }
   const result = await executeBrowserCartTool(client, quote, { name: '每日新品', quantity: 1 })
   expect(result).toMatchObject({ dataOnly: true, requiredTool: 'browser_quote_selection' })
@@ -238,7 +238,7 @@ it('returns exact named product configurations instead of asking a redundant bro
   const context: ServiceTool = { name: 'browser_cart_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
   const observe = { ...context, name: 'browser_observe' }
   const products = [{ ref: 'today', name: '每日新品', price: 10, configurations: [{ version: 'fresh', variantRef: '', name: '', unitPrice: 10, groups: [] }] }]
-  const client = { tools: readonly(shallowRef([context, observe])), execute: vi.fn(async () => ({ cart: { version: 'current' }, products })) }
+  const client = { tools: readonly(shallowRef([context, observe])), execute: vi.fn(async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'current', lines: [] }, products })) }
   const result = await executeBrowserCartTool(client, observe, { includeDescriptions: true, purpose: 'choose_product' })
   expect(result).toMatchObject({ dataOnly: true, products })
   expect(result).not.toHaveProperty('pendingCustomerChoice')
@@ -255,7 +255,7 @@ it.each(['browser_clarify_product', 'browser_product_get'])('withholds %s choice
   const products = [{ ref: 'chicken', name: '雞腿便當', price: 100, configurations: [{ version: 'fresh', variantRef: '', name: '', unitPrice: 100, groups: [] }] }]
   const execute = vi.fn(async (current: ServiceTool) => {
     if (current.name === context.name)
-      return { products, cart: { version: 'current', lines: [], subtotal: 0 } }
+      return { ok: true, source: 'browser', page: 'menu', products, cart: { version: 'current', lines: [], subtotal: 0 } }
     if (current.name === 'browser_product_get')
       return { ok: true, source: 'browser', status: 'clarification', effect: 'none' }
     return { ok: true, source: 'browser', presentation: { products: [], cue: 'cancelled' } }
@@ -330,7 +330,7 @@ it.each([
 
 it('does not fetch product configurations when changing an existing cart line', async () => {
   const { client, tool, facts } = setup('移除原餐')
-  client.execute.mockImplementation(async (selected: ServiceTool) => selected.name === 'browser_cart_get' ? { cart: facts.cart } : { ok: true, status: 'verified' })
+  client.execute.mockImplementation(async (selected: ServiceTool) => selected.name === 'browser_cart_get' ? { ok: true, source: 'browser', page: 'menu', cart: facts.cart } : { ok: true, status: 'verified' })
   await executeBrowserCartTool(client, { ...tool, name: 'browser_cart_remove' }, { version: facts.cart.version, lineRef: 'original' })
   expect(client.execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_get' }), { includeCatalog: false })
 })
@@ -339,7 +339,7 @@ it('does not fetch product configurations when changing an existing cart line', 
 it.each([{ includeCatalog: 'false' }, { quantity: 99, submit: true }, {}])('calls the fixed read-only review with no model-controlled arguments (%j)', async (input) => {
   const { client, tool, decide } = setup('核對一下，還不要送')
   const review = { ...tool, name: 'browser_cart_review' }
-  client.execute.mockResolvedValue({ ok: true, source: 'browser', cart: { version: 'cart', lines: [{ name: '測試餐點', quantity: 2 }], subtotal: 20 }, customerMessage: '測試餐點2份，小計20元' })
+  client.execute.mockResolvedValue({ ok: true, source: 'browser', page: 'cart', cart: { version: 'cart', lines: [{ ref: 'line', name: '測試餐點', quantity: 2 }], subtotal: 20 }, customerMessage: '測試餐點2份，小計20元' })
   const result = await executeBrowserCartTool(client, review, input)
   expect(result).toMatchObject({ cart: { subtotal: 20 }, customerMessage: '測試餐點2份，小計20元' })
   expect(client.execute).toHaveBeenCalledExactlyOnceWith(review, {})
@@ -350,7 +350,7 @@ it.each([{ includeCatalog: 'false' }, { quantity: 99, submit: true }, {}])('call
 it('reviews the visible nonempty cart without a reception-attribution preflight', async () => {
   const { client, tool, decide } = setup('核對一下，還不要送')
   const review = { ...tool, name: 'browser_cart_review' }
-  client.execute.mockResolvedValue({ ok: true, source: 'browser', cart: { version: 'cart', lines: [{ name: '測試餐點', quantity: 2 }], subtotal: 20 }, customerMessage: '測試餐點2份，小計20元' })
+  client.execute.mockResolvedValue({ ok: true, source: 'browser', page: 'cart', cart: { version: 'cart', lines: [{ ref: 'line', name: '測試餐點', quantity: 2 }], subtotal: 20 }, customerMessage: '測試餐點2份，小計20元' })
   const result = await executeBrowserCartTool(client, review, {})
   expect(result).toMatchObject({ cart: { subtotal: 20 }, customerMessage: '測試餐點2份，小計20元' })
   expect(client.execute).toHaveBeenCalledExactlyOnceWith(review, {})

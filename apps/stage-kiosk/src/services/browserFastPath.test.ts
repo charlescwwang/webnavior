@@ -15,7 +15,7 @@ const product = { ref: 'p-daily-7', name: '當日新菜', price: 80, kind: 'prod
 // Report: this chat, Nov19 — Jev must offer confirmation rather than silently selecting A3-1 for A31.
 it('offers only the confirmation action for a unique compressed table candidate', async () => {
   const execute = vi.fn(async () => ({}))
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, page: 'table', tableChoices: ['A3-1 桌', 'A3-2 桌'], selectedTable: 'A3-2 桌' }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'table', tableChoices: ['A3-1 桌', 'A3-2 桌'], selectedTable: 'A3-2 桌' }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   expect(await source.context({ transcript: '我要A31' })).toMatchObject({ candidates: [{ id: 'table:confirm', description: expect.stringContaining('確認') }] })
   expect(execute).not.toHaveBeenCalled()
 })
@@ -23,7 +23,7 @@ it('offers only the confirmation action for a unique compressed table candidate'
 // Report: this chat, Nov19 — the compiler captured A3 from A3-1 and offered
 // the parent table instead of the current website's split-table name.
 it('offers the full split table code rather than its parent for Jev selection', async () => {
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, page: 'table', tableChoices: ['A3 桌', 'A3-1 桌', 'A3-2 桌'], selectedTable: 'A3 桌' }), execute: vi.fn(), hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'table', tableChoices: ['A3 桌', 'A3-1 桌', 'A3-2 桌'], selectedTable: 'A3 桌' }), execute: vi.fn(), hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const context = await source.context({ transcript: '我要A3-1桌' })
   expect(context).toMatchObject({ candidates: [{ id: 'table-1', description: '選擇A3-1 桌，留在選桌頁，尚未開始點餐' }] })
 })
@@ -32,7 +32,7 @@ it('offers the full split table code rather than its parent for Jev selection', 
 it('lets a new informational request leave a service question without accepting or declining checkout', async () => {
   const waiting = { ...question, purpose: 'browser-service-question', question: '要結帳嗎？', choices: [{ id: 'yes', description: '打開購物車核對' }, { id: 'no', description: '繼續點餐' }] }
   const execute = vi.fn(async () => ({ ok: true, source: 'browser', needsAssistant: true }))
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => true, pendingQuestion: () => waiting })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => true, pendingQuestion: () => waiting })
   const context = await source.context({ transcript: '一份水餃有幾顆？' })
   expect(context).toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:new-request' })]) })
   const result = await source.execute({ candidateId: 'intent:new-request' })
@@ -44,7 +44,7 @@ it('lets a new informational request leave a service question without accepting 
 it('offers a semantic item-information choice for the actual cart while checkout is pending', async () => {
   const dumplings = { ...product, name: '周氏水餃(最低8顆)', price: 64 }
   const waiting = { ...question, purpose: 'browser-service-question', question: '要結帳嗎？', choices: [{ id: 'yes', description: '打開購物車核對' }, { id: 'no', description: '繼續點餐' }] }
-  const raw = { cart: { version: 'cart', lines: [{ ref: '1', productRef: dumplings.ref, name: dumplings.name, quantity: 1 }] }, products: [dumplings] }
+  const raw = { ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [{ ref: '1', productRef: dumplings.ref, name: dumplings.name, quantity: 1 }] }, products: [dumplings] }
   const releaseService = vi.fn()
   const execute = vi.fn(async () => ({ ok: true, source: 'browser', dataOnly: true, products: [dumplings] }))
   const read = vi.fn(async (tool: ServiceTool) => tool.name === 'browser_product_get' ? { ok: true, source: 'browser', dataOnly: true, products: [dumplings] } : raw)
@@ -63,7 +63,7 @@ it('offers a semantic item-information choice for the actual cart while checkout
 
 // Report: this chat; page hints must not manufacture customer consent.
 it('provides visible table facts without pretending the assistant has asked a question', async () => {
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, page: 'table', tableChoices: ['櫃台取餐', 'B3 吧檯'], selectedTable: 'B3 吧檯' }), execute: async () => ({}), hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'table', tableChoices: ['櫃台取餐', 'B3 吧檯'], selectedTable: 'B3 吧檯' }), execute: async () => ({}), hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const context = await source.context({ transcript: '好' })
   expect(context).toMatchObject({ tableSelection: { selectedTable: 'B3 吧檯' } })
   expect(context).not.toHaveProperty('waitingFor')
@@ -71,7 +71,7 @@ it('provides visible table facts without pretending the assistant has asked a qu
 
 it('offers a direct item read and renders current merchant facts without Main', async () => {
   const execute = vi.fn<(tool: ServiceTool, input: Record<string, unknown>) => Promise<unknown>>(async () => ({ ok: true, source: 'browser', dataOnly: true, products: [{ ...product, name: 'A套餐', description: '水餃與蛋花湯' }] }))
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ cart: { version: 'cart', lines: [] }, products: [{ ...product, name: 'A套餐' }] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [{ ...product, name: 'A套餐' }] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const context = await source.context({ transcript: 'A套餐有什麼' })
   expect(context).toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:read-item' })]) })
   const result = await source.execute({ candidateId: 'intent:read-item' })
@@ -84,7 +84,7 @@ it('offers a direct item read and renders current merchant facts without Main', 
 // as a legitimate restaurant setting or as a model-comparison ground truth.
 it('defends an exact target against an intentionally invalid category alias', async () => {
   const currentTools = [...tools, { ...tools[0], name: 'browser_open_product' }]
-  const source = createBrowserFastPathSource({ tools: currentTools, read: async () => ({ cart: { version: 'cart', lines: [] }, products: [{ ...product, ref: 'a', name: 'A套餐' }, { ...product, ref: 'b', name: 'B 套餐' }] }), catalogLabels: () => [{ name: 'B 套餐', aliases: ['套餐'], category: '' }], execute: async () => ({}), hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools: currentTools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [{ ...product, ref: 'a', name: 'A套餐' }, { ...product, ref: 'b', name: 'B 套餐' }] }), catalogLabels: () => [{ name: 'B 套餐', aliases: ['套餐'], category: '' }], execute: async () => ({}), hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const context = await source.context({ transcript: '看A套餐' })
   expect(context).toMatchObject({ productResolution: { status: 'exact', count: 1 }, candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:select-item', description: expect.stringContaining('A套餐') })]) })
 })
@@ -96,7 +96,7 @@ it.each([
 ])('offers Jev a complete dumpling purchase with pieces separate from servings: $words', async ({ words, quantity, pieces }) => {
   const dumplings = { ...product, name: '周氏水餃(最低8顆)', price: 64, configurations: [{ ...configuration, unitPrice: 64, groups: [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', maximum: 100, unitPrice: 8 }] }] }] }
   const execute = vi.fn(async () => ({ status: 'verified' }))
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ cart: { version: 'cart', lines: [] }, products: [dumplings] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [dumplings] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const decide = vi.fn(async () => ({ kind: 'FAST_ACTION' as const, actionId: 'intent:add-item', confidence: 0.95 }))
   const result = await runFastPath({ isEnabled: async () => true, source, decide, transcript: `周氏水餃(最低8顆)${words}`, webMcp: { tools, execute } })
   expect(result.kind).toBe('FAST_ACTION')
@@ -106,7 +106,7 @@ it.each([
 // Report: this chat, Nov12; after rejecting A4, Jev ignored the correction
 // 「A3」 because the table page was described as ordering with no live question.
 it('carries visible table state through the decision wire without inventing a spoken question', async () => {
-  const read = vi.fn(async () => ({ ok: true, page: 'table', tableChoices: ['櫃台取餐', 'A3 桌'], selectedTable: 'A3 桌' }))
+  const read = vi.fn(async () => ({ ok: true, source: 'browser', page: 'table', tableChoices: ['櫃台取餐', 'A3 桌'], selectedTable: 'A3 桌' }))
   const execute = vi.fn(async () => ({}))
   const source = createBrowserFastPathSource({ tools, read, execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const decide = vi.fn(async () => ({ kind: 'NEEDS_ASSISTANT' as const, reason: 'NEW_REQUEST' as const }))
@@ -117,7 +117,7 @@ it('carries visible table state through the decision wire without inventing a sp
 
 // Report: docs/plans/2026-10-28-windows-kiosk-electron.md, Nov2 S13 confirmation failure.
 it('supplies Jev with a fresh pending question without consuming its one-use answer', async () => {
-  const read = vi.fn(async () => ({ ok: true, status: 'clarification', customerMessage: '請確認原本的選餐。' }))
+  const read = vi.fn(async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }))
   const execute = vi.fn(async () => ({}))
   const source = createBrowserFastPathSource({ tools, read, execute, hasPendingQuestion: () => true, pendingQuestion: () => question })
   const decide = vi.fn(async () => ({ kind: 'NEEDS_ASSISTANT' as const, reason: 'NEW_REQUEST' as const }))
@@ -141,7 +141,7 @@ it('reports missing PB cart context as a browser failure without calling or blam
 
 // Report: docs/plans/2026-10-28-windows-kiosk-electron.md, Nov2 read receipt refactor.
 it('presents a compiled whole-menu read explicitly after internal catalog discovery', async () => {
-  const read = vi.fn(async () => ({ cart: { version: 'cart' }, products: [product] }))
+  const read = vi.fn(async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }))
   const execute = vi.fn(async (tool: ServiceTool): Promise<unknown> => tool.name === 'browser_observe' ? { ok: true, source: 'browser', dataOnly: true, products: [product] } : { ok: true, source: 'browser', customerMessage: '目前查到當日新菜。' })
   const source = createBrowserFastPathSource({ tools, read, execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   await source.context({ transcript: '看菜單' })
@@ -149,7 +149,7 @@ it('presents a compiled whole-menu read explicitly after internal catalog discov
   expect(execute.mock.calls.map(([tool]) => tool.name)).toEqual(['browser_observe', 'browser_present'])
 })
 function setup(products = [product], pending = false) {
-  const read = vi.fn(async (_tool: ServiceTool, _input: Record<string, unknown>) => ({ cart: { version: 'current-cart' }, products }))
+  const read = vi.fn(async (_tool: ServiceTool, _input: Record<string, unknown>) => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'current-cart', lines: [] }, products }))
   const execute = vi.fn(async (_tool: ServiceTool, _input: Record<string, unknown>): Promise<unknown> => ({ ok: true, source: 'browser', status: 'verified', customerMessage: '已完成指定操作。' }))
   const source = createBrowserFastPathSource({ tools, read, execute, hasPendingQuestion: () => pending, pendingQuestion: () => pending ? question : undefined })
   return { source, read, execute }
@@ -158,7 +158,7 @@ function setup(products = [product], pending = false) {
 describe('pB Jev finite source', () => {
   // Adapted from master's merchant-alias ambiguity cases: labels are not write authority.
   it('compiles a unique configured alias while preserving alias evidence for admission', async () => {
-    const read = vi.fn(async () => ({ cart: { version: 'cart' }, products: [product] }))
+    const read = vi.fn(async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }))
     const execute = vi.fn(async () => ({}))
     const source = createBrowserFastPathSource({ tools, read, execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined, catalogLabels: () => [{ name: product.name, aliases: ['店家招牌'], category: '套餐' }] })
     expect(await source.context({ transcript: '店家招牌一份' })).toMatchObject({ references: [{ label: product.name, refId: product.ref }], catalogEvidence: { products: [{ label: product.name, matchedText: '店家招牌', source: 'alias' }] } })
@@ -180,7 +180,7 @@ describe('pB Jev finite source', () => {
 
   it('reads the new daily menu instead of retaining old names or prices', async () => {
     const { source, read, execute } = setup()
-    read.mockResolvedValueOnce({ cart: { version: 'tomorrow-cart' }, products: [{ ...product, ref: 'p-new-10', name: '明日新菜', price: 95, configurations: [{ ...product.configurations[0], name: '明日新菜', version: 'tomorrow-95', unitPrice: 95 }] }] })
+    read.mockResolvedValueOnce({ ok: true, source: 'browser', page: 'menu', cart: { version: 'tomorrow-cart', lines: [] }, products: [{ ...product, ref: 'p-new-10', name: '明日新菜', price: 95, configurations: [{ ...product.configurations[0], name: '明日新菜', version: 'tomorrow-95', unitPrice: 95 }] }] })
     const context = await source.context({ transcript: '明日新菜一份' })
     expect(context).toMatchObject({ references: [{ label: '明日新菜', refId: 'p-new-10' }] })
     await source.execute({ candidateId: 'intent:add-item' })
@@ -258,7 +258,7 @@ it('hands long daily multi-product requests to Main without exceeding the decisi
 
 // Report: docs/plans/2026-10-28-windows-kiosk-electron.md, Nov4 pending-question admission audit.
 it('still admits background speech while a PB question is pending without consuming it', async () => {
-  const read = vi.fn(async () => ({}))
+  const read = vi.fn(async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }))
   const execute = vi.fn(async () => ({}))
   const source = createBrowserFastPathSource({ tools, read, execute, hasPendingQuestion: () => true, pendingQuestion: () => question })
   const decide = vi.fn(async () => ({ kind: 'IGNORE' as const }))
@@ -276,7 +276,7 @@ it('compiles a quantity before the item name instead of requiring one fixed sent
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_add' }), expect.objectContaining({ quantity: 2 }))
 })
 it('offers a bound quantity answer to Jev without consuming it during context preparation', async () => {
-  const read = vi.fn(async () => ({ cart: { version: 'cart' }, products: [product] }))
+  const read = vi.fn(async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }))
   const execute = vi.fn(async () => ({ ok: true }))
   const source = createBrowserFastPathSource({ tools, read, execute, hasPendingQuestion: () => true, pendingQuestion: () => question, canAnswerLocally: () => true })
   expect(await source.context({ transcript: '兩份' })).toMatchObject({ candidates: [{ id: 'answer:current' }] })
@@ -319,7 +319,7 @@ it('does not silently truncate a named presentation beyond the finite batch limi
 // Report: current redesign review; an exhausted recommendation set must not clear the screen.
 it('does not offer an empty other-recommendations batch or remove normal recommendations', async () => {
   const execute = vi.fn(async () => ({}))
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ cart: { version: 'cart' }, products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined, shownRecommendations: () => [product.ref], previousRecommendations: () => [] })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined, shownRecommendations: () => [product.ref], previousRecommendations: () => [] })
   const context = await source.context({ transcript: '還有其他推薦嗎' })
   expect(context).toMatchObject({ candidates: expect.not.arrayContaining([expect.objectContaining({ id: 'intent:recommend-other' })]) })
   expect(context).toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:recommend' })]) })
@@ -330,7 +330,7 @@ it('does not offer an empty other-recommendations batch or remove normal recomme
 it('lets Jev choose ordinary versus other recommendations using distinct issued effects', async () => {
   const other = { ...product, ref: 'other', name: '另一道餐點' }
   const execute = vi.fn(async () => ({}))
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ cart: { version: 'cart' }, products: [product, other] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined, shownRecommendations: () => [product.ref], previousRecommendations: refs => refs.filter(ref => ref !== product.ref) })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product, other] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined, shownRecommendations: () => [product.ref], previousRecommendations: refs => refs.filter(ref => ref !== product.ref) })
   const context = await source.context({ transcript: '換其他推薦' })
   expect(context).toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:recommend' }), expect.objectContaining({ id: 'intent:recommend-other' })]) })
   await source.execute({ candidateId: 'intent:recommend-other' })
@@ -351,7 +351,7 @@ it('compiles every explicit no-option item in a small batch and hands incomplete
 })
 it('replays only an actually shown batch as information', async () => {
   const execute = vi.fn(async () => ({ ok: true }))
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ cart: { version: 'cart' }, products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined, shownRecommendations: () => [product.ref, 'removed'] })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined, shownRecommendations: () => [product.ref, 'removed'] })
   expect(await source.context({ transcript: '再看一次' })).toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:show-recommendations' })]) })
   await source.execute({ candidateId: 'intent:show-recommendations' })
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_present' }), { mode: 'information', productRefs: [product.ref] })
@@ -359,7 +359,7 @@ it('replays only an actually shown batch as information', async () => {
 
 // Report: this chat, 2026-11-14 — B3 吧檯 and takeaway must map to current real choices.
 it.each(['b3', 'b3 吧檯', '我要外帶', '我要自取', 'B3，還要排骨便當一份'])('offers real table targets to Jev without executing: %s', async (text) => {
-  const read = vi.fn(async () => ({ ok: true, page: 'table', tableChoices: ['櫃台取餐', 'B3 吧檯'] }))
+  const read = vi.fn(async () => ({ ok: true, source: 'browser', page: 'table', tableChoices: ['櫃台取餐', 'B3 吧檯'] }))
   const execute = vi.fn(async () => ({}))
   const source = createBrowserFastPathSource({ tools, read, execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const state = await source.context({ transcript: text })
@@ -371,7 +371,7 @@ it.each(['b3', 'b3 吧檯', '我要外帶', '我要自取', 'B3，還要排骨�
 it.each(['那我不要了', '先別找這個了', '回菜單', '我想點一份湯', '把購物車全部刪掉'])('exposes state-based search recovery to Jev for %s without interpreting the utterance', async (transcript) => {
   const navigation = { ...tools[0], name: 'browser_return_menu' }
   const execute = vi.fn(async () => ({ ok: true, source: 'browser' }))
-  const source = createBrowserFastPathSource({ tools: [...tools, navigation], read: async () => ({ cart: { version: 'cart', lines: [] }, products: [], search: '不存在的餐點' }), execute, hasPendingQuestion: () => true, pendingQuestion: () => question })
+  const source = createBrowserFastPathSource({ tools: [...tools, navigation], read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [], search: '不存在的餐點' }), execute, hasPendingQuestion: () => true, pendingQuestion: () => question })
   expect(await source.context({ transcript })).toMatchObject({ waitingFor: question, candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:return-menu' }), ...question.choices]) })
   expect(await source.execute({ candidateId: 'intent:return-menu' })).toMatchObject({ ok: true })
   expect(execute).toHaveBeenCalledWith(navigation, {})
@@ -381,7 +381,7 @@ it.each(['那我不要了', '先別找這個了', '回菜單', '我想點一份�
 it('forwards actual search state and obeys Jev handoff without clearing anything', async () => {
   const navigation = { ...tools[0], name: 'browser_return_menu' }
   const execute = vi.fn(async () => ({ ok: true }))
-  const source = createBrowserFastPathSource({ tools: [...tools, navigation], read: async () => ({ search: '雞排', cart: { version: 'cart', lines: [] }, products: [] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools: [...tools, navigation], read: async () => ({ ok: true, source: 'browser', page: 'menu', search: '雞排', cart: { version: 'cart', lines: [] }, products: [] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const decide = vi.fn(async () => ({ kind: 'NEEDS_ASSISTANT' as const, reason: 'UNCERTAIN_OPERATION' as const }))
   expect(await runFastPath({ isEnabled: async () => true, source, decide, transcript: '那我不要了', webMcp: { tools, execute } })).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
   expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decisionState: expect.objectContaining({ menuSearch: { query: '雞排' }, interactionState: expect.objectContaining({ screen: 'menu' }) }) }))
@@ -391,7 +391,7 @@ it('forwards actual search state and obeys Jev handoff without clearing anything
 // Report: this chat, Nov14 — a search must not hide the pending add confirmation from Jev.
 it.each(['要', '要啊', '那就幫我加吧', '不要了', '改成兩份'])('offers the current question before search recovery without phrase admission: %s', async (transcript) => {
   const waitingFor = { questionId: 'fish-confirm', purpose: 'browser-confirm-add', question: '魚丸湯一份，要加入嗎？', expiresAt: Date.now() + 60000, choices: [{ id: 'confirm', description: '加入魚丸湯一份' }, { id: 'cancel', description: '取消尚未加入的魚丸湯' }] }
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ search: '魚', products: [product], cart: { version: 'cart' } }), execute: vi.fn(), hasPendingQuestion: () => true, pendingQuestion: () => waitingFor, canAnswerLocally: () => false })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', search: '魚', products: [product], cart: { version: 'cart', lines: [] } }), execute: vi.fn(), hasPendingQuestion: () => true, pendingQuestion: () => waitingFor, canAnswerLocally: () => false })
   expect(await source.context({ transcript })).toMatchObject({ waitingFor, candidates: waitingFor.choices })
 })
 
@@ -400,7 +400,7 @@ it('offers Jev the current opened dish and a semantic close route without changi
   const cart = { version: 'current-cart', lines: [{ ref: 'meal', name: '另一道餐點', quantity: 2 }] }
   const execute = vi.fn(async () => ({ ok: true, source: 'browser', customerMessage: '已回到菜單。' }))
   const currentTools = [...tools, { ...tools[0], name: 'browser_return_menu' }]
-  const source = createBrowserFastPathSource({ tools: currentTools, read: async () => ({ ok: true, page: 'menu', cart, products: [{ ...product, name: 'A套餐' }], productDialog: [{ name: 'A套餐' }] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools: currentTools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart, products: [{ ...product, name: 'A套餐' }], productDialog: [{ name: 'A套餐' }] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const decide = vi.fn(async () => ({ kind: 'FAST_ACTION' as const, actionId: 'intent:return-menu', confidence: 0.95 }))
   const result = await runFastPath({ transcript: '我不要a套餐了，幫我關閉', isEnabled: async () => true, source, decide, webMcp: { tools: currentTools, execute } })
   expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decisionState: expect.objectContaining({ interactionState: expect.objectContaining({ screen: 'item_configuration', selectedItemName: 'A套餐' }) }), candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:return-menu', description: expect.stringContaining('關閉') })]) }))
@@ -411,7 +411,7 @@ it('offers Jev the current opened dish and a semantic close route without changi
 
 // Report: this chat, Nov14 Start was narrowed to a table-only candidate.
 it('offers a real Start action with the current table instead of only a table-selection label', async () => {
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, page: 'table', tableChoices: ['櫃台取餐', 'A3 桌'], selectedTable: 'A3 桌' }), execute: async () => ({}), hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'table', tableChoices: ['櫃台取餐', 'A3 桌'], selectedTable: 'A3 桌' }), execute: async () => ({}), hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const decide = vi.fn(async () => ({ kind: 'NEEDS_ASSISTANT' as const, reason: 'NEW_REQUEST' as const }))
   await runFastPath({ isEnabled: async () => true, source, decide, transcript: '開始點餐', webMcp: { tools, execute: async () => ({}) } })
   expect(decide).toHaveBeenCalledWith(expect.objectContaining({ candidates: expect.arrayContaining([{ id: 'start', description: '使用A3 桌開始點餐' }]) }))
@@ -421,7 +421,7 @@ it('offers a real Start action with the current table instead of only a table-se
 it('asks for a complete request instead of retaining a silent PB speech fragment', async () => {
   const execute = vi.fn(async () => ({}))
   const session = createIncompleteAsrSession()
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const result = await runFastPath({ transcript: '我要一份……', source, session, isEnabled: async () => true, decide: async () => ({ kind: 'INCOMPLETE' }), webMcp: { tools, execute } })
   expect(result).toMatchObject({ kind: 'CLARIFICATION', prompt: '請把需求說完整，例如想點哪道餐點、幾份。' })
   expect(session.snapshot()).toBeUndefined()
@@ -431,7 +431,7 @@ it('asks for a complete request instead of retaining a silent PB speech fragment
 // Report: this chat; the shared 套餐 alias cannot identify B while excluding A.
 it('keeps both A and B possible for the shared 套餐 alias without inventing a unique purchase', async () => {
   const execute = vi.fn(async () => ({}))
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ page: 'menu', cart: { version: 'cart', lines: [] }, products: [{ ...product, ref: 'a', name: 'A套餐' }, { ...product, ref: 'b', name: 'B套餐' }] }), catalogLabels: () => [{ name: 'A套餐', aliases: ['套餐'], category: '' }, { name: 'B套餐', aliases: ['套餐'], category: '' }], execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [{ ...product, ref: 'a', name: 'A套餐' }, { ...product, ref: 'b', name: 'B套餐' }] }), catalogLabels: () => [{ name: 'A套餐', aliases: ['套餐'], category: '' }, { name: 'B套餐', aliases: ['套餐'], category: '' }], execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const context = await source.context({ transcript: '我要套餐' })
   expect(context).toMatchObject({ productResolution: { count: 2 }, candidates: expect.not.arrayContaining([expect.objectContaining({ id: 'intent:add-item' }), expect.objectContaining({ id: 'intent:ask-quantity' })]) })
   expect(execute).not.toHaveBeenCalled()
@@ -443,7 +443,7 @@ it.each(['unavailable', 'invalid-choice', 'context-failure'])('hands PB %s to Ma
   const source = createBrowserFastPathSource({ tools, read: async () => {
     if (mode === 'context-failure')
       throw new Error('Local snapshot unavailable')
-    return { page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }
+    return { ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }
   }, execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const result = await runFastPath({ transcript: '當日新菜兩份', source, isEnabled: async () => true, decide: async () => mode === 'invalid-choice' ? { kind: 'FAST_ACTION', actionId: 'missing' } : { kind: 'UNAVAILABLE', reason: 'INVALID_CHOICE' }, webMcp: { tools, execute } })
   expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
@@ -452,14 +452,14 @@ it.each(['unavailable', 'invalid-choice', 'context-failure'])('hands PB %s to Ma
 
 it('does not claim a PB purchase succeeded when the native tool returns no receipt', async () => {
   const execute = vi.fn(async () => undefined)
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   expect(await runFastPath({ transcript: '當日新菜兩份', source, isEnabled: async () => true, decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:add-item', confidence: 0.99 }), webMcp: { tools, execute } })).toMatchObject({ kind: 'EXECUTION_FAILED', uncertain: true })
   expect(execute).toHaveBeenCalledOnce()
 })
 
 it('hands a definitely unapplied PB rejection to Main without replaying it', async () => {
   const execute = vi.fn(async () => ({ ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '網站資料已更新。' }))
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   expect(await runFastPath({ transcript: '當日新菜兩份', source, isEnabled: async () => true, decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:add-item', confidence: 0.99 }), webMcp: { tools, execute } })).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
   expect(execute).toHaveBeenCalledOnce()
 })
@@ -480,7 +480,7 @@ it('hands an explicitly unexecuted stale-cart purchase to Main without replaying
 it('passes the exact issued question and selected answer to the Host instead of an empty answer request', async () => {
   const waiting = { ...question, purpose: 'browser-service-question', choices: [{ id: 'yes', description: '打開購物車核對' }, { id: 'no', description: '繼續點餐' }] }
   const execute = vi.fn(async () => ({ ok: true, source: 'browser', status: 'verified' }))
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => true, pendingQuestion: () => waiting })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => true, pendingQuestion: () => waiting })
   await source.context({ transcript: '那就往下一步吧' })
   await source.execute({ candidateId: 'yes' })
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_answer_question' }), { questionId: waiting.questionId, choiceId: 'yes' })
@@ -500,7 +500,7 @@ it('reads the payment page automatically without offering editor actions', async
 
 // Report: this chat, Nov17 case 12 — fresh form facts must reach Jev without copying private codes.
 it('includes current invoice and contact validity in the automatic Jev read', async () => {
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, cart: { version: 'v', lines: [] }, products: [product], checkout: { methods: [{ method: 'donation', label: '捐贈', selected: true }], fields: [{ kind: 'donation', label: '捐贈碼', value: '12345', valid: true }, { kind: 'phone', label: '手機', value: '0912345678', valid: false }], ready: false, missing: ['手機格式錯誤'], orderNote: '' } }), execute: vi.fn(), checkoutStep: () => 'invoice-details', pendingQuestion: () => undefined, hasPendingQuestion: () => false })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'v', lines: [] }, products: [product], checkout: { methods: [{ method: 'donation', label: '捐贈', selected: true }], fields: [{ kind: 'donation', label: '捐贈碼', value: '12345', valid: true }, { kind: 'phone', label: '手機', value: '0912345678', valid: false }], ready: false, missing: ['手機格式錯誤'], orderNote: '' } }), execute: vi.fn(), checkoutStep: () => 'invoice-details', pendingQuestion: () => undefined, hasPendingQuestion: () => false })
   const context = await source.context({ transcript: '好了' })
   expect(context).toMatchObject({ checkoutSnapshot: { source: 'pb', step: 'invoice-details', invoiceMethod: 'donation', ready: false, fields: [{ kind: 'donation', present: true, valid: true }, { kind: 'phone', present: true, valid: false }] } })
   expect(JSON.stringify(context)).not.toContain('0912345678')
@@ -512,7 +512,7 @@ it('offers another verified recommendation batch while the previous recommendati
   const products = [product, { ...product, ref: 'soup', name: '魚丸湯' }, { ...product, ref: 'rice', name: '三杯雞便當' }]
   const waiting = { ...question, purpose: 'browser-product-choice', question: '您想點哪一道？', choices: [{ id: 'product:1', description: product.name }] }
   const execute = vi.fn(async (_tool: ServiceTool, _input: Record<string, unknown>) => ({ ok: true }))
-  const source = createBrowserFastPathSource({ tools, read: async () => ({ page: 'menu', cart: { version: 'v', lines: [] }, products }), execute, hasPendingQuestion: () => true, pendingQuestion: () => waiting, shownRecommendations: () => [product.ref], previousRecommendations: refs => refs.filter(ref => ref !== product.ref), recommendationPool: items => items.map(item => item.ref) })
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'v', lines: [] }, products }), execute, hasPendingQuestion: () => true, pendingQuestion: () => waiting, shownRecommendations: () => [product.ref], previousRecommendations: refs => refs.filter(ref => ref !== product.ref), recommendationPool: items => items.map(item => item.ref) })
   const context = await source.context({ transcript: '還有什麼？' })
   expect(context).toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:recommend-other' })]) })
   const result = await runFastPath({ isEnabled: async () => true, source, transcript: '還有什麼？', decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:recommend-other', confidence: 0.99 }), webMcp: { tools, execute } })

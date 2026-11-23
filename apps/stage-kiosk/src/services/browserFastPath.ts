@@ -10,7 +10,8 @@ import { browserQuestionChoice } from '@proj-airi/stage-shared/browser-conversat
 import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { normalizeSlotNumbers, quantityFromTranscript } from '@proj-airi/stage-shared/ordering-slots'
 import { orderingNextActions } from '@proj-airi/stage-shared/ordering-tools'
-import { pbCheckoutSchema, pbOrderStateSchema, pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { pbEditorStateSchema, pbOrderReadStateSchema, pbReadStateSchema, pbTableStateSchema } from '@proj-airi/stage-shared/pb-browser-state'
+import { pbCheckoutSchema, pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { parsePbDumplingServings, pbDumplingExtraName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { productConfigurationSchema } from '@proj-airi/stage-shared/product-configuration'
 import { productFragment, productMentions } from '@proj-airi/stage-shared/product-discovery'
@@ -23,9 +24,8 @@ import { createMenuReplyWindow } from './questionPresentation'
 import { approximateTables } from './tableSelection'
 
 const factsSchema = looseObject({
-  page: optional(string()),
+  ...pbEditorStateSchema.entries,
   productDialog: optional(array(looseObject({ name: string() })), []),
-  cart: looseObject({ version: string(), lines: optional(array(looseObject({ ref: string(), name: string(), quantity: number(), productRef: optional(string()), configuration: optional(string()), unitPrice: optional(number()) })), []) }),
   products: array(looseObject({ ref: string(), name: string(), price: number(), kind: string(), priceType: number(), configurations: array(productConfigurationSchema) })),
 })
 
@@ -105,14 +105,16 @@ export function createBrowserFastPathSource(io: {
       }
       if (raw && typeof raw === 'object' && 'ok' in raw && raw.ok === false)
         return { contextError: 'customerMessage' in raw && typeof raw.customerMessage === 'string' ? raw.customerMessage : 'PB context read was rejected.' }
-      const order = safeParse(looseObject({ ok: literal(true), page: string(), order: pbOrderStateSchema }), raw)
+      if (!safeParse(pbReadStateSchema, raw).success)
+        return { contextError: '目前網頁狀態資料不完整，請重新讀取畫面。' }
+      const order = safeParse(pbOrderReadStateSchema, raw)
       if (order.success) {
         return { phase: 'ordering', readOnly: true, requiresPlanner: true, paymentState: order.output.order.paymentStatus, allowedPaymentMethods: [], interactionState: { matchingCartLines: 0, screen: 'checkout', pendingAction: `訂單${order.output.order.number ?? ''}已建立；付款狀態：${order.output.order.paymentStatus}；畫面付款方式：${order.output.order.paymentMethods.join('、')}。僅能讀取，不可改單、送單或代付款。` }, candidates: [] }
       }
       if (!io.tools.some(tool => tool.name === 'browser_cart_get'))
         return { contextError: '訂單結果頁尚未就緒，請先查看畫面，避免重複送單。' }
       if (raw && typeof raw === 'object' && 'page' in raw && raw.page === 'table') {
-        const table = safeParse(looseObject({ page: literal('table'), tableChoices: array(string()), selectedTable: optional(string()) }), raw)
+        const table = safeParse(pbTableStateSchema, raw)
         if (!table.success || !table.output.tableChoices.length)
           return { contextError: '目前無法取得可選桌號，請確認畫面。' }
         const pending = io.pendingQuestion(raw)
@@ -149,12 +151,17 @@ export function createBrowserFastPathSource(io: {
       }
 
       if (navigation) {
-        const observed = safeParse(looseObject({ ok: literal(true), source: literal('browser'), page: string(), cart: looseObject({ version: string(), lines: array(looseObject({ ref: string(), name: string(), quantity: number() })) }) }), raw)
+        const observed = safeParse(pbEditorStateSchema, raw)
         if (!observed.success)
           return { contextError: '目前無法取得購物車與頁面狀態，請確認畫面。' }
         issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans: { [navigation.id]: { name: navigation.name, input: {} } } }
         return { phase: 'ordering', candidates: [{ id: navigation.id, description: navigation.description }] }
       }
+      // Validate before pending answers or search cancellation can issue plans.
+      // Missing rows are unknown; they must never become an observed empty cart.
+      const parsed = safeParse(factsSchema, raw)
+      if (!parsed.success)
+        return { contextError: '目前菜單或購物車資料不完整，請重新讀取畫面。' }
 
       const checkout = safeParse(pbCheckoutSchema, raw && typeof raw === 'object' && 'checkout' in raw ? raw.checkout : undefined)
       const formContext = checkout.success ? { checkoutSnapshot: { source: 'pb', step: io.checkoutStep?.(raw), invoiceMethod: checkout.output.methods.find(method => method.selected)?.method, ready: checkout.output.ready, fields: checkout.output.fields.map(field => ({ kind: field.kind, present: Boolean(field.value), valid: field.valid })) } } : {}
@@ -214,9 +221,6 @@ export function createBrowserFastPathSource(io: {
         issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans: { 'intent:return-menu': { name: 'browser_return_menu', input: {} } } }
         return { ...formContext, phase: 'ordering', menuSearch: { query: activeSearch.slice(0, 200) }, interactionState: { matchingCartLines: 0, screen: 'menu', pendingAction: `目前搜尋「${activeSearch}」。取消搜尋會清除關鍵字與未加入的選餐，保留購物車；刪除餐點、取消整單或新的餐點要求需要另外處理。` }, candidates: [{ id: 'intent:return-menu', description: '放棄目前搜尋，回到完整菜單；保留購物車。' }] }
       }
-      const parsed = safeParse(factsSchema, raw)
-      if (!parsed.success)
-        return { contextError: parsed.issues[0].message }
       const facts = parsed.output
       // Dialog visibility comes from the current website receipt, not the
       // transcript or an old question. Viewing a dish does not mean ordering it.
