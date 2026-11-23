@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "tag": "kiosk-v0.7.8-rc.4",
+  "sourceReference": "refs/tags/kiosk-v0.7.8-rc.4^{}",
+  "previousCandidate": "kiosk-v0.7.8-rc.3",
+  "createdDate": "2026-11-23",
+  "status": "release-candidate-validation-incomplete",
+  "purpose": "Repair manual payment navigation, payment-state reads and automatic PB announcement acknowledgement without treating payment as a service outage.",
+  "changes": [
+    "Allow same-order manual LINE Pay and credit gateway handoff, including named-window POST and HTTPS authentication; no automation on provider pages.",
+    "Send the rendered Inertia asset version when reading payment/order state; reproduced HTTP409 without the header and successful live payment state with it.",
+    "Dismiss observed business announcement during regular menu reads.",
+    "Optional presentation failures do not revoke service; normal loading waits and manual payment bypass ordering tools.",
+    "Limit model history to 12 messages / 6000 characters and exclude archived recovery guidance from inference context; preserve full archive.",
+    "Record failed native receipts and context exceptions for diagnosis."
+  ],
+  "checks": {
+    "kioskUnit": {
+      "passed": 1190,
+      "expectedFail": 1,
+      "skipped": 49
+    },
+    "desktopUnit": 43,
+    "stageUiTargetedUnit": 95,
+    "serverTargetedUnit": 190,
+    "browser": 42,
+    "scopedTypes": [
+      "stage-shared",
+      "stage-ui",
+      "stage-kiosk",
+      "stage-kiosk-desktop",
+      "server"
+    ],
+    "changedCodeLint": "passed",
+    "liveElectron": "Initial announcement acknowledged, three cart cycles completed and draft cleared; read-only payment context succeeds with asset version.",
+    "nativePaymentFixture": "LINE, credit and credit POST pass with isolated protocol fixtures; provider tools denied; no real payment requests/orders.",
+    "rootChecks": "not rerun under scoped validation policy"
+  },
+  "pendingValidation": [
+    "Physical Windows and full field Vue/API/ASR acceptance.",
+    "Real LINE Pay / card authorization is not performed by automated tests."
+  ],
+  "artifacts": "pb-test.local/field-errors-20261123-r1/",
+  "tagPolicy": {
+    "immutable": true,
+    "stableAfterAcceptance": "kiosk-v0.7.8"
+  }
+}

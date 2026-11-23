@@ -28,17 +28,17 @@ function setup() {
   return { line, credit, cancel }
 }
 
-// Report: this chat, Nov19 — kiosk payment must allow LINE Pay only, without a menu cover.
-it('blocks credit activation and new-tab links while retaining LINE Pay and native cancellation', async () => {
+// Report: this chat, Nov23 — retain manual LINE Pay and credit without a menu cover.
+it('retains LINE Pay, credit and native cancellation for the current order', async () => {
   const { line, credit, cancel } = setup()
   const card = document.querySelector<HTMLAnchorElement>('.btn-Credit')!
-  expect(card.hasAttribute('href')).toBe(false)
-  expect(card.getAttribute('aria-disabled')).toBe('true')
-  expect(document.querySelector('[data-webnavior-payment-policy]')?.textContent).toContain('暫不支援信用卡')
+  expect(card.getAttribute('href')).toBe('/order/ecpay/redirect/TEST/Credit')
+  expect(card.hasAttribute('aria-disabled')).toBe(false)
+  expect(document.querySelector('[data-webnavior-payment-policy]')?.textContent).toContain('LINE Pay 或信用卡')
   card.click()
   card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
   card.dispatchEvent(new MouseEvent('auxclick', { button: 1, bubbles: true, cancelable: true }))
-  expect(credit).not.toHaveBeenCalled()
+  expect(credit).toHaveBeenCalledOnce()
   await page.getByRole('link', { name: 'LINE Pay', exact: true }).click()
   expect(line).toHaveBeenCalledOnce()
   await page.getByRole('button', { name: '放棄付款', exact: true }).click()
@@ -62,4 +62,14 @@ it('removes the restriction when SPA navigation leaves payment selection', async
   document.body.append(document.createElement('p'))
   await expect.poll(() => document.querySelector('[data-webnavior-payment-policy]')).toBeNull()
   expect(document.querySelector('.btn-Credit')!.getAttribute('href')).toBe('/order/ecpay/redirect/TEST/Credit')
+})
+
+// Report: this chat, 2026-11-23 — retain credit as a real manual payment option.
+it('retains the current order credit link and its native click handler', async () => {
+  const { credit } = setup()
+  const link = document.querySelector<HTMLAnchorElement>('.btn-Credit')!
+  expect(link.getAttribute('href')).toBe('/order/ecpay/redirect/TEST/Credit')
+  expect(link.hasAttribute('aria-disabled')).toBe(false)
+  link.click()
+  expect(credit).toHaveBeenCalledOnce()
 })

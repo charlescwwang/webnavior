@@ -4,12 +4,13 @@ import { errorMessageFrom } from '@moeru/std'
 import { discoveryResultSchema, executionResultSchema, inspectionResultSchema } from '@proj-airi/stage-shared/interactive-service'
 import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { menuEntryReceiptSchema, readPbJourney, readPbStateJourney, tableSelectionReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
+import { browserPresentationInputSchema } from '@proj-airi/stage-shared/product-presentation'
 import { parse, safeParse } from 'valibot'
 import { readonly, shallowRef, toRaw, watch } from 'vue'
 
 import { connectWindow } from './interactiveServiceWindowConnection'
 
-export type ServiceAvailability = 'idle' | 'loading' | 'ready' | 'unavailable'
+export type ServiceAvailability = 'idle' | 'loading' | 'ready' | 'manual-payment' | 'unavailable'
 
 /** Owns one document binding; only correlated native entry/submission acknowledgements cross navigation. Never retries writes. */
 export function createInteractiveServiceClient() {
@@ -129,7 +130,10 @@ export function createInteractiveServiceClient() {
     const operationId = crypto.randomUUID()
     const safeRead = issuedUrl && (tool.name === 'browser_state_get' ? readPbStateJourney(issuedUrl) : readPbJourney(issuedUrl)) && tool.annotations?.readOnlyHint === true
       && ['browser_cart_get', 'browser_state_get', 'browser_recovery_context'].includes(tool.name)
-    unsettled.set(operationId, safeRead ? 'read' : 'effect')
+    const presentation = tool.name === 'browser_present' ? safeParse(browserPresentationInputSchema, input) : undefined
+    const optionalVisual = Boolean(issuedUrl && readPbJourney(issuedUrl) && presentation?.success
+      && (presentation.output.productRefs.length === 0 || (presentation.output.mode === 'information' && presentation.output.preservePage === true)))
+    unsettled.set(operationId, safeRead || optionalVisual ? 'read' : 'effect')
     const correlation = { connectionId: currentBinding.connectionId, documentId: currentBinding.documentId, operationId }
     publish({ ...correlation, phase: 'called', tool, input })
     try {
@@ -180,6 +184,14 @@ export function createInteractiveServiceClient() {
       return result
     }
     catch (caught) {
+      // Speech framing/cleanup cannot change a cart. A page can leave the menu
+      // between cue admission and dispatch; that failure retires only the cue,
+      // never the connection or an independently settled customer operation.
+      if (optionalVisual) {
+        unsettled.delete(operationId)
+        publish({ ...correlation, phase: 'failed', tool, input, error: errorMessageFrom(caught) ?? 'Optional visual cue was skipped.' })
+        throw caught
+      }
       if (connection === current) {
         failedBinding = currentBinding
         publish({ ...correlation, phase: 'failed', tool, input, error: errorMessageFrom(caught) ?? '工具執行結果無法確認。' })
@@ -205,6 +217,14 @@ export function createInteractiveServiceClient() {
       navigating = true
       tools.value = []
       availability.value = 'loading'
+    },
+    /** Human payment is visible but never exposes provider documents as PB tools. */
+    beginManualPayment: () => {
+      navigating = false
+      tools.value = []
+      error.value = undefined
+      unavailableReason.value = undefined
+      availability.value = 'manual-payment'
     },
     availability: readonly(availability),
     completionRevision: readonly(completionRevision),
@@ -245,7 +265,7 @@ export function createInteractiveServiceClient() {
       if (availability.value === 'loading') {
         const pending = Promise.withResolvers<void>()
         const stop = watch(availability, (state) => {
-          if (state === 'ready')
+          if (state === 'ready' || state === 'manual-payment')
             pending.resolve()
           else if (state !== 'loading')
             pending.reject(new Error(error.value ?? '互動服務頁面已切換。'))

@@ -441,6 +441,7 @@ kiosk-agent:
   context-unavailable: Menu information is unavailable. This request is unfinished; check the connection and say it again.
   operation-unconfirmed: The previous cart operation is being verified automatically. Please wait; no items will be added again.
   service-recovery-failed: The previous cart operation could not be verified. The cart is retained and assistance is paused. Please ask a staff member to check it.
+  manual-payment: Please complete or cancel payment on the payment page.
   service-unavailable: The menu connection was interrupted. Reconnecting and checking the cart automatically; please wait.
   service-reconnect: Reconnect menu
   service-recovered: The cart has been checked and service restored without replaying the previous operation. You can continue ordering or check out.

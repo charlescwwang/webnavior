@@ -664,3 +664,12 @@ it('preserves a structured cart confirmation on the normal reply presentation pa
   expect(result).toMatchObject({ kind: 'FAST_ACTION', result: receipt })
   expect(onExecuted).toHaveBeenCalledOnce()
 })
+
+// Report: this chat, 2026-11-23 — a customer paying manually is not a service failure.
+it('keeps manual payment out of model routing and unavailable-service recovery', async () => {
+  const decide = vi.fn()
+  const execute = vi.fn()
+  expect(await runFastPath({ transcript: '好', isEnabled: async () => true, decide, webMcp: { availability: 'manual-payment', tools: [], execute } })).toMatchObject({ kind: 'INCOMPLETE' })
+  expect(decide).not.toHaveBeenCalled()
+  expect(execute).not.toHaveBeenCalled()
+})

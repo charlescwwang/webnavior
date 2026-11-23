@@ -215,15 +215,20 @@ export function createPbService() {
     }
   }
 
+  /** Both editor and result reads must send the rendered Inertia asset version. */
+  function readAssetVersion() {
+    const pages = Array.from(document.querySelectorAll('[data-page]'))
+    if (pages.length !== 1)
+      throw new Error('PB 頁面資料尚未就緒，請重新載入後再試。')
+    return parse(looseObject({ version: nullable(string()) }), JSON.parse(pages[0].getAttribute('data-page')!)).version
+  }
+
   async function pageProps(suffix: string, signal?: AbortSignal) {
     const url = new URL(suffix, baseUrl)
     const menu = url.pathname === journey.menuPath
     const component = menu ? 'Menu/Show' : 'Order/Create'
     const fields = ['auth', 'buyer', 'storeHash', 'flowType', 'diningTable', ...(menu ? ['defaultPickUpDate', 'defaultPickUpTime'] : ['order', 'details', 'subtotal'])]
-    const pages = Array.from(document.querySelectorAll('[data-page]'))
-    if (pages.length !== 1)
-      throw new Error('PB 頁面資料尚未就緒，請重新載入後再試。')
-    const { version } = parse(looseObject({ version: nullable(string()) }), JSON.parse(pages[0].getAttribute('data-page')!))
+    const version = readAssetVersion()
     // PB already serves Inertia partial reads. Fetch only live facts, not the
     // large HTML/dev scripts; never merge missing fields with an old DOM/cart.
     // The document's asset version is a protocol token, not freshness evidence.
@@ -612,7 +617,10 @@ export function createPbService() {
         parse(strictObject({ includeCatalog: boolean() }), input)
         if (isPbOrderResultUrl(entry, location.href)) {
           const url = location.href
-          const response = await fetch(url, { cache: 'no-store', redirect: 'error', headers: { 'X-Inertia': 'true', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html, application/xhtml+xml' }, signal: AbortSignal.timeout(8000) })
+          const version = readAssetVersion()
+          // PB returns 409 even for a healthy payment page when this version
+          // is omitted. Result reads use the same protocol token as editor reads.
+          const response = await fetch(url, { cache: 'no-store', redirect: 'error', headers: { 'X-Inertia': 'true', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html, application/xhtml+xml', ...(version === null ? {} : { 'X-Inertia-Version': version }) }, signal: AbortSignal.timeout(8000) })
           if (!response.ok || response.url !== url || response.headers.get('X-Inertia') !== 'true')
             throw new Error('訂單狀態暫時無法讀取，請先查看畫面，避免重複送單。')
           const order = readPbOrderState(entry, url, await response.json())
@@ -744,11 +752,12 @@ export function createPbService() {
           includeCatalog = parse(strictObject({ includeCatalog: boolean(), forAdmission: optional(boolean()) }), input).includeCatalog
         else
           parse(strictObject({}), input)
-        const [products, observed] = await Promise.all([includeCatalog ? readCatalog() : undefined, cartOperations.observe()])
-        // The first Host admission after table entry owns this harmless view
-        // transition. Do not leave a store announcement covering the new menu.
-        if (name === 'browser_cart_get' && input.forAdmission === true && location.pathname === journey.menuPath)
+        // Ordinary context reads replaced the former admission preflight. The
+        // announcement still needs its real acknowledgement before those reads
+        // can fail or the customer must speak; do not depend on forAdmission.
+        if (location.pathname === journey.menuPath)
           await controls.dismissAnnouncement()
+        const [products, observed] = await Promise.all([includeCatalog ? readCatalog() : undefined, cartOperations.observe()])
         let cart = observed
         if (name === 'browser_cart_review' && cart.lines.length) {
           await controls.navigate(journey.cartPath)

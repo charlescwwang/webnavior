@@ -4,7 +4,7 @@
 
 This portable test release requires the matching Kiosk frontend and Server policy
 release. It includes table return, menu placement, recommendation tours without
-floating action labels, invoice focus and the LINE Pay-only kiosk policy. The
+floating action labels, invoice focus and manual LINE Pay / credit payment. The
 frontend provides plain-language dumpling piece questions and a spoken
 “取消這題” escape for unfinished selections. Existing ordering defaults,
 connection settings and user profiles are preserved. Physical Windows acceptance
@@ -34,6 +34,26 @@ PB adapter; updating the web page alone does not apply these native fixes.
 The original retained `0.7.8` archive remains unchanged and lacks RC2/RC3 fixes.
 Windows physical and formal application acceptance remain pending. Existing tags
 are never moved, and webpage image recognition remains separate.
+
+## Manual payment handoff (0.7.8-rc.4)
+
+Customers can click the merchant's LINE Pay or credit link themselves. The host
+keeps the selected order's handoff in the native view, including named-window
+POST forms and provider authentication. Payment pages emit `manual-payment`
+instead of a connection failure and have no PB tools; returning to a supported
+merchant page requires fresh discovery. The assistant never enters payment
+credentials, authorizes a charge or infers payment success from navigation.
+
+Build the host and run the offline regression with the inspected Electron runtime:
+
+```sh
+ESGPB_ELECTRON_PATH=/path/to/electron node scripts/verifyKioskPayments.mjs
+```
+
+The fixture owns all HTTPS responses inside an isolated partition. It verifies
+versioned order reads, manual LINE Pay/credit navigation, POST preservation,
+return and automation isolation without contacting real payment providers.
+Windows hardware and actual provider/bank authorization remain field acceptance.
 
 ## November master audio restored (0.7.8)
 

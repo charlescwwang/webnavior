@@ -42,3 +42,10 @@ describe('system One conversation context', () => {
     expect(context.messages.at(-1)).toMatchObject({ role: 'assistant', content: '99'.repeat(200) })
   })
 })
+
+// Report: this chat, 2026-11-23 — connection recovery guidance is not a customer preference.
+it('keeps recovery warnings in the archive while omitting them from model conversation', () => {
+  const entries = [{ kind: 'user_text', content: '我要牛肉麵一份' }, { kind: 'assistant_text', content: '連線暫時中斷', metadata: { source: 'service_recovery_guidance' } }, { kind: 'assistant_text', content: '要來一份嗎？', metadata: { source: 'verified_reply' } }]
+  expect(conversationEntries(entries)).toEqual([{ kind: 'user_text', content: '我要牛肉麵一份' }, { kind: 'assistant_text', content: '要來一份嗎？' }])
+  expect(entries).toHaveLength(3)
+})

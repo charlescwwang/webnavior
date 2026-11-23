@@ -66,6 +66,7 @@ onUnmounted(() => {
       @activity="emit('activity')"
       @ready="attachNative"
       @navigating="interactiveServiceClient.beginNavigation()"
+      @manual-payment="interactiveServiceClient.beginManualPayment()"
       @unavailable="interactiveServiceClient.activate(undefined)"
     />
     <div v-else-if="browserPbUnsupported" role="status" :class="['flex flex-col items-center justify-center gap-4 p-6 text-center']">

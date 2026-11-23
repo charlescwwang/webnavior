@@ -350,3 +350,13 @@ it('keeps current allowed tool names in an undispatched-call correction receipt'
   expect(result.availableTools).toEqual(['list_cart_items', 'reply_to_customer'])
   expect(result.reason).toContain('本次提供的工具名稱')
 })
+
+// Report: this chat, 2026-11-23 — ordinary ordering should not replay a long session.
+it('limits simple ordering history to twelve recent messages without modifying the archive', () => {
+  const entries = Array.from({ length: 40 }, (_, index) => ({ kind: index % 2 === 0 ? 'user_text' as const : 'assistant_text' as const, content: `turn-${index}` }))
+  const messages = selectBoundedConversationText(entries)
+  expect(messages).toHaveLength(12)
+  expect(messages[0].content).toBe('turn-28')
+  expect(messages.at(-1)?.content).toBe('turn-39')
+  expect(entries).toHaveLength(40)
+})

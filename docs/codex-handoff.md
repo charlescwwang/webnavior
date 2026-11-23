@@ -1,5 +1,13 @@
 # Codex Handoff
 
+## 2026-11-23 RC4 manual payment / announcement / history fixes
+
+- Field confirms RC3 was restarted and manual LINE Pay clicks also fail; credit must remain usable. Electron blocked cross-origin redirect/popups and the PB adapter disabled credit. RC4 admits same-order merchant LINE/credit wrappers and initial pinned gateway, preserves named-window POST in owned view and HTTPS authentication, emits manual-payment with no PB tool authority, and rediscovers only after supported merchant return. No real payment/order submission during validation.
+- Actual payment state reproduced HTTP409 because native read omitted rendered X-Inertia-Version; live readonly red→green verified. Ordinary menu reads now dismiss observed business announcement before context; actual isolated native test acknowledged initial notice and completed three cart cycles, adding/removing one draft only.
+- Recent archive independently shows Main context-unavailable before later optional browser_present rejection. Optional speech/cleanup presentation no longer revokes connection; normal loading waits and manual payment settles without error. New metrics retain native failed receipt/context exception details; do not claim the later cue explains every earlier field failure.
+- Model context capped 12 messages/6000 chars, recovery guidance filtered from inference only; full durable archive retained. Two server domain modules require runtime update/restart. No screenshot recognition, audio/model configuration change.
+- Kiosk 1190 pass / 1 expected fail / 49 skip; Desktop43, Stage UI targeted95, Server190, browser42, five scoped package typechecks and changed-code ESLint pass. Checked scripts/verifyKioskPayments.mjs verifies offline real Electron navigation/credit POST/provider isolation, zero real payment requests. Windows physical/full formal field flow pending, no stable claim. Logs/private customer evidence in ignored pb-test.local/field-errors-20261123-r1; never commit raw logs. New immutable RC4; RC1/2/3 unchanged. Deployment/package recorded separately after publication.
+
 ## 2026-11-23 Windows 包檔名納入版本號
 
 - 使用者要求往後檔名必須有版本號。packagePortable.py 現在由Desktop package.json取得version，產生 `Webnavior-Kiosk-v<version>-Windows-x64-<timestamp>.zip`；checksum檔沿用同名規則，Windows README已更新。

@@ -11,6 +11,12 @@ network parsing, runtime selection or Kiosk presentation.
 
 ## External ordering conversation
 
+`kiosk-desktop` navigation includes `manual-payment` for a human-operated
+payment or authentication document. It revokes browser tools without declaring
+the service unavailable. Provider URLs and form data are never broadcast through
+that event; returning to a supported merchant page requires fresh discovery.
+Ship the matching Electron host and Kiosk frontend together.
+
 `pb-browser-state` validates successful native PB context reads for the page that
 produced them. Menu/cart/checkout require a nonempty version and explicit cart
 rows; table discovery and completed-order reads have separate contracts. Full

@@ -36,7 +36,7 @@ export type DesktopSurfaceActivity = InferOutput<typeof desktopSurfaceActivitySc
 export const desktopSurfaceNavigationSchema = object({
   ...desktopSurfaceActivitySchema.entries,
   revision: pipe(number(), integer(), minValue(1)),
-  state: picklist(['loading', 'ready', 'failed']),
+  state: picklist(['loading', 'ready', 'manual-payment', 'failed']),
 })
 /** Full-document navigation only; no merchant URL, scan value or credentials are broadcast. */
 export type DesktopSurfaceNavigation = InferOutput<typeof desktopSurfaceNavigationSchema>

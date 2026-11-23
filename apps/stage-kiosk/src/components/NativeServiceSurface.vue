@@ -13,7 +13,7 @@ const props = defineProps<{
   title: string
   occluded: boolean
 }>()
-const emit = defineEmits<{ activity: [], ready: [{ serviceId: string, documentKey: string, url: string }], navigating: [], unavailable: [] }>()
+const emit = defineEmits<{ activity: [], ready: [{ serviceId: string, documentKey: string, url: string }], navigating: [], manualPayment: [], unavailable: [] }>()
 const { t } = useI18n()
 const element = useTemplateRef<HTMLDivElement>('surface')
 const { x, y, width, height } = useElementBounding(element)
@@ -46,6 +46,11 @@ const stopNavigation = props.bridge.onNavigation((navigation) => {
   }
   loading.value = false
   failed.value = navigation.state === 'failed'
+  if (navigation.state === 'manual-payment') {
+    connectedKey = undefined
+    emit('manualPayment')
+    return
+  }
   if (failed.value) {
     connectedKey = undefined
     emit('unavailable')

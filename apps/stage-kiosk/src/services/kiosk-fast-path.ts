@@ -126,7 +126,8 @@ function unfinishedStateKey(state: FastPathDecisionState) {
 }
 
 interface WebMcpBridge {
-  availability?: 'idle' | 'loading' | 'ready' | 'unavailable'
+  availability?: 'idle' | 'loading' | 'ready' | 'manual-payment' | 'unavailable'
+  waitUntilReady?: () => Promise<void>
   execute: (tool: ServiceTool, input: Record<string, unknown>) => Promise<unknown>
   tools: readonly ServiceTool[]
 }
@@ -184,6 +185,16 @@ async function resolveFastPath(input: {
     return { kind: 'IGNORE' }
   // Missing tools after a transport failure are not an administrator disabling
   // System One. Do not admit ambient speech into a Main task without Menu IO.
+  if (input.webMcp.availability === 'manual-payment')
+    return { kind: 'INCOMPLETE' }
+  if (input.webMcp.availability === 'loading' && input.webMcp.waitUntilReady) {
+    try {
+      await input.webMcp.waitUntilReady()
+      // The caller rebuilds tool/source handles after native discovery settles.
+      return { kind: 'DEFERRED' }
+    }
+    catch { return { kind: 'SERVICE_UNAVAILABLE' } }
+  }
   if (input.webMcp.availability !== undefined && input.webMcp.availability !== 'ready')
     return { kind: 'SERVICE_UNAVAILABLE' }
   let browserContext: unknown

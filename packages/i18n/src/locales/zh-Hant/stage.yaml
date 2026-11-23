@@ -445,6 +445,7 @@ kiosk-agent:
   context-unavailable: 菜單資料暫時無法取得，這句尚未完成，請確認連線後再說一次。
   operation-unconfirmed: 先前餐點操作的結果尚未核對完成，正在自動核對購物車，請稍候；不會重複加餐。
   service-recovery-failed: 暫時無法確認先前餐點操作的結果，已保留購物車並暫停代操作，請現場人員協助核對。
+  manual-payment: 請在支付頁面完成付款或取消付款。
   service-unavailable: 菜單連線暫時中斷，正在自動重新連線並核對購物車，請稍候。
   service-reconnect: 恢復菜單連線
   service-recovered: 已核對購物車並恢復服務，未重送先前操作；您可以繼續點餐或結帳。

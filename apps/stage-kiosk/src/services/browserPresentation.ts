@@ -109,7 +109,7 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
   async function cancel() {
     clear()
     const tool = client.tools.value.find(tool => tool.name === 'browser_present')
-    if (tool && client.availability.value === 'ready') {
+    if (tool && client.availability.value === 'ready' && (!currentPage || ['menu', 'cart'].includes(currentPage))) {
       try {
         await client.execute(tool, { productRefs: [] })
       }
@@ -146,7 +146,7 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
       // gets its own cue; a contained ingredient name does not create one.
       const refs = productMentions(labels, spokenText).filter(({ product }) => labels.filter(other => other.name === product.name).length === 1).slice(0, 10).map(({ product }) => product.ref)
       const tool = client.tools.value.find(tool => tool.name === 'browser_present')
-      if (!refs.length || !tool || client.availability.value !== 'ready')
+      if (!refs.length || !tool || client.availability.value !== 'ready' || (currentPage && !['menu', 'cart'].includes(currentPage)))
         return
       const owner = epoch
       const visitor = visitorOwner()

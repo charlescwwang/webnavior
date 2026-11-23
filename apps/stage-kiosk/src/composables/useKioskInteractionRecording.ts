@@ -8,6 +8,7 @@ import type { GreetingPhase, InteractionMetadata } from '../../../server/src/ser
 import type { KioskAgentInteractionMode, KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolDefinition } from '../services/kiosk-device'
 import type { KioskUtterance } from '../services/kioskUtteranceQueue'
 
+import { errorMessageFrom } from '@moeru/std'
 import { browserToolResult } from '@proj-airi/stage-shared/browser-conversation'
 import { browserSignInRequiredSchema } from '@proj-airi/stage-shared/interactive-service'
 import { serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
@@ -229,6 +230,7 @@ export function useKioskInteractionRecording() {
     let transportReason: KioskReplyFailureReason = 'provider-error'
     let stage: 'context' | 'model' | 'tool' = 'context'
     let terminalReason: ConversationTurnResult['reason']
+    let failureDetail: string | undefined
     // Transport failure before any tool differs from a task that may have
     // changed browser state. Neither case grants permission to replay writes.
     const unfinished = (reason: NonNullable<ConversationTurnResult['reason']>): ConversationTurnResult => {
@@ -614,7 +616,8 @@ export function useKioskInteractionRecording() {
         return unfinished(control.manual ? 'manual-control' : signal.aborted ? 'timeout' : 'tool-limit')
       return { answer: response.answer, reply: response.reply, agentMode, requestedTools, status: 'completed' }
     }
-    catch {
+    catch (caught) {
+      failureDetail = errorMessageFrom(caught)?.slice(0, 500)
       if (control.manual)
         return unfinished('manual-control')
       if (callbacks.signal?.aborted)
@@ -626,7 +629,7 @@ export function useKioskInteractionRecording() {
       // Record orchestration latency (models, context refresh and browser tools),
       // separately from provider-round timing. Never attach an old turn to a new visitor.
       if (visitorSessionId.value === sessionId)
-        void append('service_event', JSON.stringify({ kind: 'main_task_metrics', ...(metricTaskId ? { taskId: metricTaskId } : {}), ...(terminalReason ? { reason: terminalReason, failureStage: stage } : {}), durationMs: performance.now() - startedAt, modelRounds: rounds, requestedToolCount: requestedTools.length, interrupted: control.manual || control.controller.signal.aborted || deadline?.aborted === true || callbacks.signal?.aborted === true }), { source: 'main_task_metrics', utteranceId: callbacks.utteranceId })
+        void append('service_event', JSON.stringify({ kind: 'main_task_metrics', ...(metricTaskId ? { taskId: metricTaskId } : {}), ...(terminalReason ? { reason: terminalReason, failureStage: stage, ...(failureDetail ? { error: failureDetail } : {}) } : {}), durationMs: performance.now() - startedAt, modelRounds: rounds, requestedToolCount: requestedTools.length, interrupted: control.manual || control.controller.signal.aborted || deadline?.aborted === true || callbacks.signal?.aborted === true }), { source: 'main_task_metrics', utteranceId: callbacks.utteranceId })
       // An older cancelled turn cannot release its replacement's controls.
       if (activeControl === control) {
         activeControl = undefined

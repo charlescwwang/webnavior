@@ -21,6 +21,10 @@ export function normalizeTranscript(raw: string) {
 export function conversationEntries(entries: readonly ConversationEntry[]) {
   const delivered = new Set(entries.filter(entry => entry.kind === 'user_text' && typeof entry.metadata?.utteranceId === 'number').map(entry => JSON.stringify([entry.metadata!.utteranceId, entry.content])))
   return entries.flatMap((entry): Array<{ content: string, kind: 'assistant_text' | 'user_text' }> => {
+    // Recovery text describes a past transport failure, not merchant facts or
+    // customer intent. Keep it durably archived without reviving it in a task.
+    if (entry.kind === 'assistant_text' && entry.metadata?.source === 'service_recovery_guidance')
+      return []
     if (entry.kind === 'user_text' || entry.kind === 'assistant_text')
       return [{ content: entry.content, kind: entry.kind }]
     if (entry.kind === 'asr_transcript' && entry.metadata?.decisionRoute === 'fast_path' && !delivered.has(JSON.stringify([entry.metadata.utteranceId, entry.content])))

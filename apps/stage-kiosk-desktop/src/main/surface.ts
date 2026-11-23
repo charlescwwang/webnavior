@@ -11,6 +11,7 @@ import { isPbJourneyPage, isPbOrderResultUrl, isPbTableEntryUrl, menuEntryReceip
 import { WebContentsView } from 'electron'
 import { safeParse } from 'valibot'
 
+import { createPaymentNavigation } from './paymentNavigation'
 import { clipBounds, parsePageUrl } from './policy'
 
 /** Owns one visible website, isolated storage and request ordering for one Kiosk window. */
@@ -60,10 +61,29 @@ export class ServiceSurface {
         sandbox: true,
       } })
       this.window.contentView.addChildView(this.view)
-      this.view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+      const paymentNavigation = createPaymentNavigation(url.href)
+      const paymentView = this.view
+      this.view.webContents.setWindowOpenHandler((details) => {
+        const view = this.view
+        const manualHandoff = view === paymentView && paymentNavigation.isManualPage(view.webContents.getURL())
+        // Native payment links may request a new tab. Keep that explicit user
+        // handoff in the owned view; arbitrary popups remain denied.
+        if (view === paymentView && paymentNavigation.allow(view.webContents.getURL(), details.url)
+          && (manualHandoff || /\/order\/(?:linepay|ecpay)\/redirect\//.test(details.url) || new URL(details.url).origin !== url.origin)) {
+          const postBody = details.postBody
+          // Some gateways POST into a named window. Preserve that native form
+          // handoff instead of silently turning it into a GET; never log it.
+          void view.webContents.loadURL(details.url, postBody
+            ? {
+                postData: postBody.data,
+                extraHeaders: `Content-Type: ${postBody.contentType}${postBody.boundary ? `; boundary=${postBody.boundary}` : ''}\r\n`,
+              }
+            : undefined).catch(() => {})
+        }
+        return { action: 'deny' }
+      })
       const guardNavigation = (event: Event<WebContentsWillNavigateEventParams | WebContentsWillRedirectEventParams>) => {
-        // OAuth/popups need an explicit policy later; this stage tests same-origin account login.
-        if (new URL(event.url).origin !== url.origin)
+        if (this.view !== paymentView || !paymentNavigation.allow(paymentView.webContents.getURL(), event.url))
           event.preventDefault()
       }
       this.view.webContents.on('will-navigate', guardNavigation)
@@ -97,7 +117,7 @@ export class ServiceSurface {
         this.documentLoading = false
         this.failed = false
         current.setVisible(this.desiredVisible)
-        this.onNavigation({ ...this.active, revision: this.navigation, state: 'ready' })
+        this.onNavigation({ ...this.active, revision: this.navigation, state: paymentNavigation.isManualPage(current.webContents.getURL()) ? 'manual-payment' : 'ready' })
       })
       current.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
         // Chromium aborts the previous load during a redirect. The following

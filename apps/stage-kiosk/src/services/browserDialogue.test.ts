@@ -963,25 +963,28 @@ it.each(['owner', 'document', 'reset'] as const)('does not restore checkout prog
   expect(dialogue.checkoutStep(facts)).toBeUndefined()
 })
 
-// Report: this chat, Nov19 — actual PB card availability is not kiosk payment support.
+// Report: this chat, Nov23 — retain both manually usable native payment methods.
 it.each([
   { text: '有沒有其他付款方式？', paymentMethods: ['LINE Pay', '信用卡'] },
   { text: '可以用信用卡嗎？', paymentMethods: ['LINE Pay', '信用卡'] },
   { text: '可以付現金嗎？', paymentMethods: ['LINE Pay', '信用卡'] },
   { text: '用信用卡付款', paymentMethods: ['信用卡'] },
-])('explains LINE Pay only without initiating payment: $text', async ({ text, paymentMethods }) => {
+  { text: '如何付款', paymentMethods: [] },
+])('explains current manual payment choices without initiating payment: $text', async ({ text, paymentMethods }) => {
   const { client, begin } = setup()
   begin(text)
   const order = { reference: 'TEST-1', status: 20, total: 64, paymentStatus: 'pending', paymentMethods, invoice: { method: 'none' } }
   client.execute.mockResolvedValue({ ok: true, source: 'browser', page: 'payment', observedAt: 123, order })
   const resultClient = { ...client, tools: readonly(shallowRef(client.tools.value.filter(tool => tool.name === 'browser_state_get'))) }
   const result = parse(looseObject({ customerMessage: string() }), await executeBrowserReply(resultClient, 'checkout-guidance'))
-  expect(result.customerMessage).toContain('僅支援 LINE Pay')
-  expect(result.customerMessage).toContain('暫不支援信用卡')
-  if (paymentMethods.includes('LINE Pay'))
-    expect(result.customerMessage).toContain('點選 LINE Pay')
-  else
-    expect(result.customerMessage).toContain('沒有可用的 LINE Pay')
+  if (paymentMethods.length) {
+    expect(result.customerMessage).toContain(paymentMethods.join('或'))
+    expect(result.customerMessage).toContain('自行完成付款授權')
+  }
+  else {
+    expect(result.customerMessage).toContain('沒有可用的付款入口')
+  }
+  expect(result.customerMessage).not.toContain('暫不支援信用卡')
   expect(client.execute.mock.calls.every(([tool]) => tool.name === 'browser_state_get')).toBe(true)
 })
 

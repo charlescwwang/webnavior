@@ -2,7 +2,7 @@ import type { PbJourney } from '@proj-airi/stage-shared/pb-journey'
 
 import { orderingMessages } from '../../../i18n/src/orderingMessages'
 
-/** Restricts native PB payment links in this kiosk; never selects or initiates payment. */
+/** Restricts native PB payment links in this kiosk; retains native LINE Pay and credit choices; never initiates payment. */
 export function installPaymentPolicy(journey: PbJourney) {
   const disabled = new Map<HTMLAnchorElement, { href: string, tabindex: string | null, title: string | null, aria: string | null, disabledClass: boolean }>()
   const notice = document.createElement('p')
@@ -21,7 +21,10 @@ export function installPaymentPolicy(journey: PbJourney) {
     try {
       const target = new URL(disabled.get(link)?.href ?? link.getAttribute('href') ?? '', journey.origin)
       return target.origin === journey.origin && !target.username && !target.password && !target.search && !target.hash
-        && target.pathname === `/order/linepay/redirect/${reference}/LinePay`
+        && [
+          `/order/linepay/redirect/${reference}/LinePay`,
+          `/order/ecpay/redirect/${reference}/Credit`,
+        ].includes(target.pathname)
     }
     catch { return false }
   }

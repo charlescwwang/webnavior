@@ -156,3 +156,15 @@ it('points to the complete combo mention without also selecting its contained so
   await presentation.speak('B 套餐(三杯雞飯+ 蛋花湯)，另外還有單點蛋花湯。')
   expect(execute).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ productRefs: ['combo', 'soup'] }))
 })
+
+// Report: this chat, 2026-11-23 — payment pages rejected delayed menu cues.
+it('does not highlight or clear menu products after observing a payment page', async () => {
+  const { presentation, publish, execute } = setup()
+  publish('called')
+  publish('resolved', { ok: true, source: 'browser', page: 'menu', products })
+  publish('called', undefined, 'payment', 'browser_state_get')
+  publish('resolved', { ok: true, source: 'browser', page: 'payment' }, 'payment', 'browser_state_get')
+  await presentation.speak('每日新品')
+  await presentation.cancel()
+  expect(execute).not.toHaveBeenCalled()
+})

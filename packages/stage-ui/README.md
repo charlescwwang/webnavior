@@ -40,6 +40,14 @@ entry. Pending payment, unknown payment and unsettled operations remain distinct
 refusals. Reading this decision never clears markers, cancels an order or grants
 result-page editor controls.
 
+Normal editor context reads acknowledge the observed coupon/announcement before
+collecting facts, independently of the retired admission preflight. Order/payment
+reads send the same rendered Inertia asset version as editor reads; omission can
+produce a 409 on an otherwise usable payment page. Optional speech framing and
+cleanup cannot invalidate the commerce connection if the page has already left
+the menu. Manual LINE Pay and credit links for the current order remain usable;
+provider documents never gain ordering tools or automatic payment authority.
+
 Menu pickup and cart snapshots use PB's existing versioned Inertia partial JSON
 responses, with no HTTP cache or merging from old DOM props. Required fields
 include buyer/auth, store and flow; the page payload URL must match the HTTP

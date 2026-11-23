@@ -299,3 +299,37 @@ describe('interactive service transport ownership', () => {
     expect(client.availability.value).toBe('ready')
   })
 })
+
+// Report: this chat, 2026-11-23 — a stale optional cue on a payment page
+// must not revoke the whole ordering connection or become an unsettled write.
+it.each([{ productRefs: [] }, { productRefs: ['meal'], mode: 'information', preservePage: true }])('keeps a failed optional PB visual cue isolated: %j', async (input) => {
+  const peer = connection()
+  peer.discover = vi.fn(async request => ({ ...request, documentId: 'document', toolsRevision: 1, tools: [{ name: 'browser_present', description: '', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } }] }))
+  peer.execute = vi.fn(async () => {
+    throw new Error('Native automation is restricted to the approved PB menu/cart journey.')
+  })
+  const client = createInteractiveServiceClient()
+  client.activateTransport('https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table', () => peer)
+  await client.waitUntilReady()
+  await expect(client.execute(client.tools.value[0], input)).rejects.toThrow('restricted')
+  expect(client.availability.value).toBe('ready')
+  expect(peer.dispose).not.toHaveBeenCalled()
+  expect(client.tools.value).toHaveLength(1)
+  client.activate()
+})
+
+it('treats manual provider handoff as a usable display without browser automation or recovery failure', async () => {
+  const peer = connection()
+  const client = createInteractiveServiceClient()
+  client.activateTransport('https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table', () => peer)
+  await client.waitUntilReady()
+  client.beginNavigation()
+  const ready = client.waitUntilReady()
+  client.beginManualPayment()
+  await ready
+  expect(client.availability.value).toBe('manual-payment')
+  expect(client.tools.value).toEqual([])
+  expect(client.error.value).toBeUndefined()
+  expect(peer.execute).not.toHaveBeenCalled()
+  client.activate()
+})

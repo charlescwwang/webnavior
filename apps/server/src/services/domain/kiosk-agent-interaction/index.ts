@@ -60,8 +60,8 @@ export const defaultKioskAgentInteractionState: KioskAgentInteractionState = {
 
 const maximumRememberedSubjects = 24
 const maximumRecentMenuSubjects = 8
-const maximumConversationCharacters = 16_000
-const maximumConversationMessages = 48
+const maximumConversationCharacters = 6_000
+const maximumConversationMessages = 12
 const maximumModelToolResultCharacters = 8_000
 const renderedMenuToolNames = new Set(['menu_get', 'menu_recommend', 'menu_show_recommendations'])
 

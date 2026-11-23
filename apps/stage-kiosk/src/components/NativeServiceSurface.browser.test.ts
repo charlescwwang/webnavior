@@ -31,8 +31,9 @@ it('revokes the old tools on native navigation and announces only the current co
   const ready = vi.fn()
   const unavailable = vi.fn()
   const navigating = vi.fn()
+  const manualPayment = vi.fn()
   const i18n = createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })
-  const screen = render(NativeServiceSurface, { props: { bridge, serviceId: 'pb-test', documentKey: 'pb-test:1', url: 'https://app-205-rd.esgpb.com/order/store/1kAMNok/internal_use/menu/select-table', title: 'PB', occluded: false, onReady: ready, onNavigating: navigating, onUnavailable: unavailable }, global: { plugins: [i18n] } })
+  const screen = render(NativeServiceSurface, { props: { bridge, serviceId: 'pb-test', documentKey: 'pb-test:1', url: 'https://app-205-rd.esgpb.com/order/store/1kAMNok/internal_use/menu/select-table', title: 'PB', occluded: false, onReady: ready, onNavigating: navigating, onManualPayment: manualPayment, onUnavailable: unavailable }, global: { plugins: [i18n] } })
   try {
     await expect.poll(() => ready.mock.calls.length).toBe(1)
     navigation({ serviceId: 'pb-test', documentKey: 'pb-test:1', revision: 2, state: 'loading' })
@@ -49,7 +50,11 @@ it('revokes the old tools on native navigation and announces only the current co
     navigation({ serviceId: 'pb-test', documentKey: 'pb-test:1', revision: 2, state: 'ready' })
     expect(ready).toHaveBeenCalledTimes(2)
     expect(unavailable).not.toHaveBeenCalled()
-    navigation({ serviceId: 'pb-test', documentKey: 'pb-test:1', revision: 3, state: 'failed' })
+    navigation({ serviceId: 'pb-test', documentKey: 'pb-test:1', revision: 3, state: 'manual-payment' })
+    expect(manualPayment).toHaveBeenCalledOnce()
+    expect(unavailable).not.toHaveBeenCalled()
+    expect(ready).toHaveBeenCalledTimes(2)
+    navigation({ serviceId: 'pb-test', documentKey: 'pb-test:1', revision: 4, state: 'failed' })
     expect(unavailable).toHaveBeenCalledOnce()
   }
   finally { screen.unmount() }

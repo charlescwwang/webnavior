@@ -474,7 +474,9 @@ const agentOrderOwner = shallowRef<string>()
 // BEGIN can succeed in Menu before its reply is lost. Retain the issued owner
 // separately from acknowledged control so recovery can end only our own task.
 const pendingAgentOrderOwner = shallowRef<string>()
-watch(interactiveServiceClient.availability, (availability) => {
+watch(interactiveServiceClient.availability, (availability, previousAvailability) => {
+  if (previousAvailability === 'manual-payment')
+    conversationWorkStatus.value = undefined
   if (availability === 'unavailable' && (agentOrderOwner.value || pendingAgentOrderOwner.value))
     serviceRecoveryBlocked.value = true
 })
@@ -521,6 +523,9 @@ const stopToolDiagnostics = interactiveServiceClient.onExecution((event) => {
     toolName: event.tool.name,
     phase: event.phase,
     ...(event.phase === 'failed' ? { error: event.error?.slice(0, 500) } : {}),
+    ...(event.phase === 'resolved' && event.result && typeof event.result === 'object' && 'ok' in event.result && event.result.ok === false
+      ? { receiptFailure: { ...('status' in event.result ? { status: event.result.status } : {}), ...('code' in event.result ? { code: event.result.code } : {}), ...('error' in event.result && typeof event.result.error === 'string' ? { error: event.result.error.slice(0, 500) } : {}) } }
+      : {}),
   }), { source: 'browser_tool_metrics', utteranceId: owner.utteranceId })
 })
 
@@ -1444,7 +1449,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       presenceState: presenceDecision.value?.state,
       session: incompleteAsrSession,
       transcript: utterance.text,
-      webMcp: { availability: serviceRecoveryBlocked.value ? 'unavailable' : interactiveServiceClient.availability.value, execute: interactiveServiceClient.execute, tools: interactiveServiceClient.tools.value },
+      webMcp: { availability: serviceRecoveryBlocked.value ? 'unavailable' : interactiveServiceClient.availability.value, execute: interactiveServiceClient.execute, tools: interactiveServiceClient.tools.value, waitUntilReady: () => interactiveServiceClient.waitUntilReady() },
     })
     if (!ticket.isCurrent())
       return
@@ -2527,6 +2532,10 @@ async function sendConversationMessage(
 ) {
   if (customerSessionState.value === 'completing' || customerSessionState.value === 'resetting')
     return
+  if (interactiveServiceClient.availability.value === 'manual-payment') {
+    conversationWorkStatus.value = t('stage.kiosk-agent.manual-payment')
+    return
+  }
   if (serviceRecoveryBlocked.value || interactiveServiceClient.availability.value !== 'ready') {
     serviceRecoveryBlocked.value = true
     conversationWorkStatus.value = t('stage.kiosk-agent.service-unavailable')

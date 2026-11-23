@@ -464,7 +464,7 @@ describe('useKioskInteractionRecording', () => {
         .filter(([entry]) => entry.metadata?.source === 'main_task_metrics')
         .map(([entry]) => JSON.parse(entry.content))
       expect(metrics).toHaveLength(2)
-      expect(metrics[0]).toMatchObject({ modelRounds: 0, requestedToolCount: 0, interrupted: false, failureStage: 'context', reason: 'context-unavailable' })
+      expect(metrics[0]).toMatchObject({ modelRounds: 0, requestedToolCount: 0, interrupted: false, failureStage: 'context', reason: 'context-unavailable', error: 'Current Menu context is unavailable.' })
       expect(metrics[1]).toMatchObject({ modelRounds: 0, requestedToolCount: 0, interrupted: false })
     }
     finally { scope.stop() }

@@ -1470,8 +1470,8 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
     const messages = orderingMessages['zh-Hant'].orderState
     let customerMessage: string = messages[state.paymentStatus]
     if (state.paymentStatus === 'pending') {
-      const linePayAvailable = state.paymentMethods.some(method => /^line\s*pay$/i.test(method.trim()))
-      customerMessage = `訂單已建立，尚未付款。${orderingMessages['zh-Hant'].checkout.paymentRestriction}${linePayAvailable ? '目前尚無法代開付款頁，這一步需要點選 LINE Pay，再用手機完成付款授權。' : orderingMessages['zh-Hant'].checkout.paymentUnavailable}`
+      const paymentMethods = state.paymentMethods.filter(method => /^(?:line\s*pay|信用卡|credit(?:\s*card)?)$/i.test(method.trim()))
+      customerMessage = `訂單已建立，尚未付款。${paymentMethods.length ? `請在畫面點選${paymentMethods.join('或')}，再自行完成付款授權。` : orderingMessages['zh-Hant'].checkout.paymentUnavailable}`
     }
     return { ok: true, source: 'host', status: 'conversation', effect: 'none', order: state, customerMessage }
   }

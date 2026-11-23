@@ -26,8 +26,8 @@ export const orderingMessages = {
       notSubmitted: '剛才尚未送出訂單，請重新核對並確認。',
       invoiceOptions: '發票要用哪種方式？{methods}。',
       invoicePreselected: '目前預選「{method}」。',
-      paymentRestriction: '智慧點餐機目前僅支援 LINE Pay，暫不支援信用卡付款。',
-      paymentUnavailable: '目前沒有可用的 LINE Pay 付款入口，請洽現場人員。',
+      paymentRestriction: '請自行選擇 LINE Pay 或信用卡，並在支付頁完成付款。',
+      paymentUnavailable: '目前沒有可用的付款入口，請洽現場人員。',
       resumeEntry: '請繼續提供這一步需要的資料，完成後說「好了」，我會重新檢查。',
 
       phoneKeypad: { title: '通知手機數字鍵盤', open: '開啟數字鍵盤', close: '關閉鍵盤', hint: '請輸入通知手機，填好後關閉鍵盤並說「好了」，接著核對訂單內容。', clear: '清除', delete: '刪除一碼' },
@@ -138,7 +138,7 @@ export const orderingMessages = {
       notSubmitted: 'The order was not submitted. Review the current summary and confirm again. ',
       invoiceOptions: 'Which invoice method would you like? {methods}.',
       invoicePreselected: 'The current preselection is “{method}”. ',
-      paymentRestriction: 'This kiosk currently supports LINE Pay only. Credit card payment is not supported.',
+      paymentRestriction: 'Choose LINE Pay or credit card and complete payment on the payment page.',
       paymentUnavailable: 'No LINE Pay payment option is currently available. Please ask staff for help.',
       resumeEntry: 'Continue providing the details for this step, then say done for a fresh check.',
 
