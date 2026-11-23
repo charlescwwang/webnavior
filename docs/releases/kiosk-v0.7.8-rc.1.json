@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "tag": "kiosk-v0.7.8-rc.1",
+  "branch": "codex/kiosk-text-rc-20261123",
+  "createdDate": "2026-11-23",
+  "status": "release-candidate-validation-incomplete",
+  "purpose": "Preserve the operable-source candidate before adding webpage image recognition. This is not a stable-release or field-acceptance claim.",
+  "sourceReference": "refs/tags/kiosk-v0.7.8-rc.1^{}",
+  "parentBeforePreservation": "f593ac94202e935fab28623b11f9e262d11dd319",
+  "product": {
+    "desktopPackageVersion": "0.7.8",
+    "webpageScreenshotRecognition": false,
+    "existingCameraVisionUnchanged": true,
+    "modelPolicyChanged": false,
+    "audio": "November-master browser capture restored; Hush/native Python capture removed; existing 8-channel Spatial Mask routing retained."
+  },
+  "previousPublishedArtifacts": {
+    "frontendRelease": "kiosk-visible-cart-20261120-r1",
+    "sourceFilesCompared": 1120,
+    "sourceFilesMatching": 1120,
+    "sourceManifestSha256": "8f8dfdf3d2544ffe0c21cb39536c2d7a8df97e1d856bb5be577e9ebad10451db",
+    "checkoutPromptMatchesRetainedRuntime": true,
+    "checkoutPromptSha256": "8a3479b2619891fda3e17ee3b0f791ed9f8dfb94421fa394994adfbc64e53bfe",
+    "windowsArchive": "Webnavior-Kiosk-Windows-x64-20261120-124147.zip",
+    "windowsArchiveSha256": "1719befb00f1094acd525de183ae645b6d4bb9481b95d12389de21a216c9d2e8",
+    "windowsArchiveBytes": 163762438,
+    "archiveCrcRechecked": true,
+    "archiveRetainedLocally": "pb-test.local/releases/kiosk-v0.7.8-rc.1/",
+    "newExeBuilt": false,
+    "sourceNote": "Existing binaries were built before this preservation commit; their app source matches the retained release manifests. They do not embed this new Git tag or claim complete validation.",
+    "runtimeSourceMatchesRetainedManifest": true
+  },
+  "checksOn20261123": {
+    "rootTypecheck": {
+      "command": "pnpm typecheck",
+      "status": "passed"
+    },
+    "rootLint": {
+      "command": "pnpm lint",
+      "status": "failed",
+      "errors": 4047,
+      "note": "Includes existing research/evaluation/generated files, local config and provenance-frozen DSP reference. No mass autofix applied."
+    },
+    "kioskUnit": {
+      "status": "failed",
+      "passed": 1129,
+      "failed": 1,
+      "expectedFail": 1,
+      "skipped": 49,
+      "failure": {
+        "file": "apps/stage-kiosk/src/services/browserFastPathCandidates.test.ts",
+        "case": "does not invent a direct purchase for 看購物車",
+        "observed": "contextError returned instead of candidates; fixture/implementation alignment still needs investigation."
+      }
+    },
+    "desktopUnit": {
+      "status": "passed",
+      "tests": 39
+    },
+    "sharedOrdering": {
+      "status": "passed",
+      "tests": 19
+    },
+    "pbCartAndInputGain": {
+      "status": "passed",
+      "tests": 63
+    },
+    "whitespaceCheck": "passed",
+    "browserTestsThisSession": "not-run",
+    "newBuildThisSession": "not-run"
+  },
+  "pendingValidation": [
+    "Investigate and resolve the navigation unit-test failure.",
+    "Reconcile release-relevant lint failures without rewriting provenance-frozen reference code.",
+    "Windows physical microphone capture, sustained recording and entering ordering pages.",
+    "Complete real-device ordering, cart correction, voice tax-ID and checkout acceptance.",
+    "Full formal Vue/API/ASR-to-visible-action timing; prototype figures do not certify production latency."
+  ],
+  "preservation": {
+    "automaticSourceFixes": false,
+    "preCommitAutofixHook": "Disabled only for these preservation commits; read-only lint/typecheck/tests were executed and their failures are recorded. The normal green release gate has not been satisfied.",
+    "excludedLocalConfiguration": [
+      ".codex/config.toml"
+    ],
+    "excludedArtifacts": [
+      "pb-test.local/",
+      "node_modules/",
+      "build output",
+      "Python bytecode/cache"
+    ],
+    "historicalImageTests": "Local test artifacts only; no webpage screenshot feature added to runtime."
+  },
+  "deployment": {
+    "productionServiceChanged": false,
+    "apiRestarted": false,
+    "frontendReplaced": false,
+    "modelSettingsChanged": false
+  },
+  "tagPolicy": {
+    "immutable": true,
+    "nextCandidate": "kiosk-v0.7.8-rc.2",
+    "stableAfterAcceptance": "kiosk-v0.7.8",
+    "futureImageCandidate": "kiosk-v0.8.0-rc.1",
+    "rule": "Create a new tag for every candidate. Never move an existing RC or stable tag. Stable naming requires separately recorded acceptance."
+  }
+}
