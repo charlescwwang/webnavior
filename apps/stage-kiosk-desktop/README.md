@@ -497,3 +497,7 @@ editor tools and preserves the order receipt instead of generic cart recovery.
 Replace the complete portable folder for these native changes. ASR diagnostics
 now distinguish empty transcript, cancellation, stale capture and background mode;
 this release does not change background filtering or TTS configuration.
+
+RC6 is deployed and packaged; see the [deployment record](../../docs/releases/kiosk-v0.7.8-rc.6-deployment.json)
+for source commit, archive checksum and checks. RC5 remains an internal source
+checkpoint and was never distributed. Physical Windows acceptance is pending.

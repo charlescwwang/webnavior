@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-23T05:07:33.019928+00:00",
+  "release": "kiosk-rc6-20261123-r1",
+  "sourceCandidate": "kiosk-v0.7.8-rc.6",
+  "sourceCommit": "b0d240ac9658e29851cb6124e0afc83218498405",
+  "desktopVersion": "0.7.8-rc.6",
+  "status": "deployed-and-packaged",
+  "frontend": {
+    "target": "/var/www/airi/kiosk",
+    "changedFiles": 97,
+    "httpChecks": 9,
+    "entryLast": true,
+    "previousHashedAssetsRetained": true,
+    "backup": "/home/aimax/webnavior/pb-test.local/kiosk-rc6-20261123-r1/before-activation",
+    "apiRestart": false,
+    "apiPid": "421721"
+  },
+  "windows": {
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc6-20261123-r1/windows/Webnavior-Kiosk-v0.7.8-rc.6-Windows-x64-20261123-130559.zip",
+    "sha256": "b6b3eda7c9967f59d8e18d58d8d5801f16e8050e1275c0db1a832a70974202fa",
+    "bytes": 163764496,
+    "files": 81,
+    "version": "0.7.8-rc.6",
+    "gitCommit": "b0d240ac9658e29851cb6124e0afc83218498405",
+    "crc": true,
+    "payloadHashes": 81,
+    "compiledMainPreloadPbIdentical": true,
+    "windowsPhysicalValidation": false,
+    "signed": false,
+    "physicalValidation": false
+  },
+  "verification": {
+    "kioskUnitPassed": 1201,
+    "kioskExpectedFail": 1,
+    "kioskSkipped": 49,
+    "browserCheckoutPaymentPassed": 24,
+    "serverBackgroundPolicyPassed": 18,
+    "scopedTypes": "stage-ui / stage-kiosk / stage-kiosk-desktop passed",
+    "changedCodeLint": "passed",
+    "nativePaymentFixture": "LINE / credit / credit POST and versioned order read passed",
+    "health": "local and public db/redis ready",
+    "realOrdersSubmitted": 0,
+    "realPaymentRequests": 0
+  },
+  "reviewLimitation": "Automatic approval review rejected sending a real order reference to retrieve the merchant payment page. Used existing local capture and isolated fixtures; rejected request was not executed.",
+  "notChanged": [
+    "API runtime and model configuration",
+    "Background filtering policy",
+    "TTS",
+    "Audio algorithms"
+  ],
+  "installation": "Completely exit the old app and extract the complete RC6 portable folder. The native submission reader requires the new EXE.",
+  "pendingValidation": [
+    "Physical Windows and formal field ASR / customer ordering / merchant authorization acceptance."
+  ],
+  "logs": "/home/aimax/webnavior/pb-test.local/kiosk-rc6-20261123-r1",
+  "internalCheckpoint": "RC5 was an immutable internal source checkpoint, never deployed or packaged."
+}
