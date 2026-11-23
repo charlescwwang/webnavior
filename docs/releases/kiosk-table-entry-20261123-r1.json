@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-23T04:19:12.614350+00:00",
+  "release": "kiosk-table-entry-20261123-r1",
+  "sourceCommit": "521065201717ae7a95e71a3c586d44d36a483e51",
+  "status": "frontend-deployed-api-prompt-update-pending",
+  "desktopVersion": "0.7.8-rc.4",
+  "newExeRequired": false,
+  "features": [
+    "Valid spoken table selects and starts once; no extra Start utterance.",
+    "Approximate/ambiguous table confirmation retained; confirmed table then starts.",
+    "Same-store table correction preserves cart; supported correction utterances include 重選桌號 and 桌號錯了.",
+    "Fresh menu/table verification before ordering; compound food requests retained."
+  ],
+  "frontend": {
+    "release": "kiosk-table-entry-20261123-r1",
+    "status": "activated-http-verified",
+    "apiRestart": false,
+    "changed": 97,
+    "apiPid": "400244"
+  },
+  "httpChecks": 9,
+  "health": [
+    {
+      "url": "http://127.0.0.1:5169/readyz",
+      "response": {
+        "status": "ready",
+        "checks": {
+          "db": "ok",
+          "redis": "ok"
+        }
+      }
+    },
+    {
+      "url": "https://webnavior.aikcitri.qzz.io/readyz",
+      "response": {
+        "status": "ready",
+        "checks": {
+          "db": "ok",
+          "redis": "ok"
+        }
+      }
+    }
+  ],
+  "apiPromptDeployment": {
+    "status": "not-deployed-runtime-restored",
+    "reason": "System authorization timed out; current runtime originals verified restored.",
+    "files": [
+      {
+        "path": "apps/server/src/services/domain/browser-ordering/skills/common/SKILL.md",
+        "before": "1e64b33c35865d3d2c7188bb25464a5b5d2e029717d4b50140e3535e3676415f",
+        "after": "dfed7ad120af29da596e438e59313e942f3c974dfb66376d5a6eae008c80cdf0"
+      },
+      {
+        "path": "apps/server/src/services/domain/browser-ordering/skills/table/SKILL.md",
+        "before": "558c3959f44b6dc6fdfc0714f70aa0ec775565caeb0843db27f740938ec86ef7",
+        "after": "12c10dea4ae2336289f4ad3101e395d67df93c9cda5bc107a8f5b8cfe04e531e"
+      },
+      {
+        "path": "packages/stage-shared/src/orderingTools.ts",
+        "before": "4af967d995cef054fd192495889c22027374e0be106026f6c6d86b1fdbf0095c",
+        "after": "2a5ebbc3a6282d6c96d4e76f33a8e6f3eefe1a9113e3ef3c6cd08f2536984fb2"
+      }
+    ]
+  },
+  "validation": {
+    "kioskPassed": 1199,
+    "kioskExpectedFail": 1,
+    "kioskSkipped": 49,
+    "sharedPassed": 23,
+    "serverSkillsPassed": 5,
+    "kioskTypecheck": "passed",
+    "changedCodeLint": "passed",
+    "frontendBuild": "passed",
+    "physicalFieldAsr": "not performed"
+  },
+  "notes": [
+    "Existing RC4 package unchanged; restart app to load new hosted frontend.",
+    "Old API prompts may still describe separate selection/Start; frontend Host enforces combined Start for both public table tools.",
+    "Runtime original files restored after authorization timeout; no forced process termination.",
+    "Runtime review_required policy differs from Git baseline and was preserved in staged API source."
+  ]
+}
