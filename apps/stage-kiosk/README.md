@@ -183,6 +183,15 @@ reply tests stay in Kiosk so Menu does not import the Kiosk recording lifecycle.
 These offline tests do not call Jev/Main, and partial historical evidence is not
 reported as complete incident acceptance.
 
+The default `test:run` suite also replays recent native PB incidents. It
+follows cart navigation from a recognized checkout request through the
+visible review question and a queued short confirmation into the invoice
+step. It also covers an unsettled submission followed by a payment page
+without editor tools, and a seven-digit tax ID fragment completed by a
+separate utterance. These cases use reconstructed PB receipts and synthetic
+customer values. They cover handling after transcription, not microphone
+capture, ASR accuracy or live payments.
+
 The owned menu supports a small yes/no meal-clarification flow. The host requests
 it only after service admission and speaks/shows the exact browser-issued question
 in the conversation. No additional floating Yes/No card is mounted on the menu.

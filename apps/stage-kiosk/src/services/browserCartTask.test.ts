@@ -432,12 +432,12 @@ it.each(['main', 'system-one'] as const)('executes the server-admitted %s contin
 })
 
 // Report: this chat, 2026-11-15; model provenance never overrides current merchant configuration or price.
-it.each(['price', 'configuration'] as const)('rejects an issued plan with stale %s before any write', async (changed) => {
+it.each(['price', 'configuration', 'cart'] as const)('rejects an issued plan with stale %s before any write', async (changed) => {
   const { client, tool, facts, decide } = setup('3份')
   Object.assign(facts.products[0].configurations[0], { version: 'fresh-config', unitPrice: 130, groups: [] })
   decide.mockResolvedValue({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' })
-  const result = await executeBrowserCartTool(client, tool, { ...addition, version: 'cart-version', productRef: 'new-today', quantity: 3, unitPrice: changed === 'price' ? 100 : 130, note: '', selection: { version: changed === 'configuration' ? 'old-config' : 'fresh-config', variantRef: '', choices: [] } })
-  expect(result).toMatchObject({ status: 'proposal_rejected', effect: 'none', dataOnly: true })
+  const result = await executeBrowserCartTool(client, tool, { ...addition, version: changed === 'cart' ? 'previous-cart' : 'cart-version', productRef: 'new-today', quantity: 3, unitPrice: changed === 'price' ? 100 : 130, note: '', selection: { version: changed === 'configuration' ? 'old-config' : 'fresh-config', variantRef: '', choices: [] } })
+  expect(result).toMatchObject({ status: 'proposal_rejected', effect: 'none', dataOnly: true, reason: { price: 'unit-price-mismatch', configuration: 'configuration-version-mismatch', cart: 'cart-version-mismatch' }[changed] })
   expect(client.execute.mock.calls.filter(([selected]) => selected.name === 'browser_cart_add')).toHaveLength(0)
 })
 

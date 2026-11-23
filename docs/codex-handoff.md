@@ -1,5 +1,13 @@
 # Codex Handoff
 
+## 2026-11-23 正式 PB 送單回應與重複讀取交接
+
+- 正式 PB 非營業實測已確認。使用者在獨立 Chrome 視窗手動送單一次，台北時間 20:11:11 發出送單 POST，PB 回 302。重新導向 GET 回 200，頁面為 `Order/Create`，`props.errors.diningTime` 帶回「目前非營業時間，暫時無法點餐。」；隨後畫面顯示同一文字。送單前的結帳 GET 沒有該錯誤。
+- 本機已修改送單、購物車回執、結帳邀請與菜單查詢。Electron 桌面程式在最終確認時觀察當次送單 XHR 的重新導向回應，核對同源結帳頁及 Order/Create 後取 order 或 diningTime 原文。無法辨識的結果保留既有防重送。正式售完格式、成功收單、Windows 現場與兩段延遲仍待驗收。
+- 改份數、刪除、清空可沿用已核實的最後明細；回菜單和準備結帳傳回操作中取得的明細。加餐先呈現，再以只含購物車的讀取綁定結帳邀請。Main 的初次完整觀察可一併取得重試依據。文件內品項索引按取餐時段及人工操作版本沿用，原生寫入仍重新驗證。
+- 本機 Electron 回放 POST／302／GET 非營業、模擬缺貨及無錯誤三例。既有付款回歸涵蓋 LINE Pay、信用卡及表單 POST。未部署；正式驗收需要含此次原生變更的新版桌面程式。[實測與五項驗收條件](plans/2026-10-22-kiosk-field-investigation.md#2026-11-23-pb-資料傳遞與送單回應交接)。
+
+
 ## 2026-11-23 Agent-only task observation reuse
 
 - User explicitly chose no simultaneous manual website operation for this phase; screenshots are deferred. Existing browserCartTask owns one per-task validated editor snapshot, shared by model context and tool planning with single-flight overlapping reads. Full catalog satisfies smaller reads; smaller reads do not invent products. Snapshots/results copied and isolated by task, execute function and discovery tool-array identity.

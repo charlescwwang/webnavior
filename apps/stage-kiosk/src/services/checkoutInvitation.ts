@@ -23,12 +23,12 @@ export async function offerCheckout(client: Pick<ReturnType<typeof createInterac
     return
   }
   try {
-    const raw = await client.execute(read, { includeCatalog: true })
+    const raw = await client.execute(read, { includeCatalog: false })
     const fresh = safeParse(looseObject({ ok: literal(true), source: literal('browser'), cart: looseObject({ version: string(), lines: array(unknown()) }) }), raw)
     if (!isCurrent() || !fresh.success || fresh.output.cart.version !== receipt.output.cart.version || !fresh.output.cart.lines.length || dialogue.hasPending())
       return
     const copy = orderingMessages['zh-Hant'].checkoutInvitation
-    const question = dialogue.presentService(raw, { purpose: 'review-checkout', request: '', question: copy.question, choices: [{ id: 'yes', description: copy.accept }, { id: 'no', description: copy.decline }] })
+    const question = dialogue.presentService({ ...fresh.output, products: [] }, { purpose: 'review-checkout', request: '', question: copy.question, choices: [{ id: 'yes', description: copy.accept }, { id: 'no', description: copy.decline }] })
     return question.pendingCustomerChoice
   }
   catch {

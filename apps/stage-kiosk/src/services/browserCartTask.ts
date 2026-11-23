@@ -13,16 +13,17 @@ import type { RecommendationCriteria } from './recommendationSession'
 
 import { errorMessageFrom } from '@moeru/std'
 import { browserConversationSchema, browserToolNames } from '@proj-airi/stage-shared/browser-conversation'
-import { browserSignInRequiredSchema } from '@proj-airi/stage-shared/interactive-service'
+import { browserRecoveryContextSchema, browserSignInRequiredSchema } from '@proj-airi/stage-shared/interactive-service'
 import { contextReplySchema, replyToConversation } from '@proj-airi/stage-shared/kiosk-conversation'
 import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { explicitServingQuantities, normalizeSlotNumbers } from '@proj-airi/stage-shared/ordering-slots'
 import { customerReplySchema, servicePolicyReplySchema } from '@proj-airi/stage-shared/ordering-tools'
 import { pbBrowserStateSchema, pbCartStateSchema, pbCatalogStateSchema, pbEditorStateSchema, pbTableStateSchema } from '@proj-airi/stage-shared/pb-browser-state'
-import { pbCheckoutSchema, pbInvoiceMethodSchema, pbOrderStateSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { pbCheckoutSchema, pbInvoiceMethodSchema, pbOrderStateSchema, pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { menuEntryReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
 import { describePbMeal, pbBasicServing, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { productConfigurationSchema } from '@proj-airi/stage-shared/product-configuration'
+import { productMentions } from '@proj-airi/stage-shared/product-discovery'
 import { browserPresentationInputSchema, productPresentationSchema } from '@proj-airi/stage-shared/product-presentation'
 import { serviceOperationSchema } from '@proj-airi/stage-shared/service-operation'
 import { resolveTableName } from '@proj-airi/stage-shared/table-names'
@@ -207,6 +208,18 @@ function mentionsProduct(task: NonNullable<typeof active>, name: string, product
   const catalog = labelCatalog(products, task.catalogLabels?.())
   const product = catalog.find(product => product.name === name)
   return product?.aliases.some(alias => task.transcript.includes(alias) && catalog.filter(candidate => candidate.name === alias || candidate.aliases.includes(alias)).length === 1) === true
+}
+
+// Model fallback may still propose a question after the fast path recognized a
+// serving. A correction is tool-only and never grants permission to add.
+function rejectKnownServingQuestion(task: NonNullable<typeof active>, product: { ref: string, name: string }, products: readonly { ref: string, name: string }[]) {
+  const targets = products.filter(candidate => mentionsProduct(task, candidate.name, products))
+  if (targets.length !== 1 || targets[0].ref !== product.ref)
+    return
+  const [quantity, ...others] = explicitServingQuantities(task.transcript, { productName: product.name })
+  if (quantity === undefined || others.length)
+    return
+  return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, explanation: `顧客已說明「${pbProductName(product.name)}」要 ${quantity} 份，不再詢問份數或是否要點。明確點餐且必選規格完整時使用 add_items_to_cart；有缺漏只問缺漏欄位。查詢不加餐。` }
 }
 
 /** Handles table entry and failed vendor reads without inferring who owns a cart. */
@@ -394,6 +407,8 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         // A single recommendation offers a serving; it is not purchase consent.
         // Bind the offer to the actual receipt so later assent has a real target/count.
         const question = await askBrowserCustomerQuestion(client, { questionType: 'purchase-recommendation', name: presented.output.presentation.products[0].name, quantity: 1 })
+        if (!('customerMessage' in question))
+          return question
         return { ...presented.output, ...question, customerMessage: `${presented.output.customerMessage ?? ''} ${question.customerMessage}`.trim() }
       }
       if (proposed.success && proposed.output.mode !== 'information' && presented.success && task.dialogue && presented.output.presentation.products.length > 1) {
@@ -615,6 +630,10 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
           const result = await executeBrowserTool(client, submit, { confirmationToken: answer.confirmationToken })
           if (active !== task || !task.isCurrent())
             return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
+          if (safeParse(pbSubmissionResultSchema, result).success) {
+            task.onRequestComplete?.()
+            return result
+          }
           const rejection = safeParse(looseObject({ ok: literal(false), source: literal('browser'), status: literal('rejected'), effect: literal('none') }), result)
           const execution = result && typeof result === 'object' && 'execution' in result ? safeParse(serviceOperationSchema, result.execution) : undefined
           const dispatched = execution?.success && execution.output.steps.some(step => step.effect === 'order' && (step.dispatchMs !== undefined || ['executing', 'verifying', 'completed', 'unknown'].includes(step.state)))
@@ -883,16 +902,36 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
   if (!issuedPlan)
     return { ok: true, source: 'browser', status: 'clarification', effect: 'none', semanticDecision, customerMessage: '請再說明要調整的餐點與份數；目前尚未變更購物車。' }
   if (action === 'add' || action === 'replace') {
-    try {
-      const selection = parse(strictObject({ version: string(), variantRef: string(), choices: array(strictObject({ ref: string(), quantity: number() })) }), input.selection)
-      const product = parse(orderingAnswerFactsSchema, rawFacts).products.find(product => product.ref === replacement?.ref)
-      const configuration = product?.configurations.find(configuration => configuration.variantRef === selection.variantRef)
-      if (!configuration || input.version !== facts.cart.version || resolveSelection(configuration, selection, typeof input.note === 'string' ? input.note : '').unitPrice !== input.unitPrice)
-        throw new Error('餐點設定或售價與目前資料不同。')
+    let reason: string | undefined
+    const selection = safeParse(strictObject({ version: string(), variantRef: string(), choices: array(strictObject({ ref: string(), quantity: number() })) }), input.selection)
+    if (!selection.success) {
+      reason = 'invalid-selection'
     }
-    catch {
-      return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, requiredAction: action, explanation: '餐點設定、售價或購物車版本已不同；請依最新商品資料修正同一需求，尚未變更購物車。' }
+    else {
+      const observed = safeParse(orderingAnswerFactsSchema, rawFacts)
+      const product = observed.success ? observed.output.products.find(product => product.ref === replacement?.ref) : undefined
+      const configuration = product?.configurations.find(configuration => configuration.variantRef === selection.output.variantRef)
+      if (!configuration) {
+        reason = 'configuration-unavailable'
+      }
+      else if (input.version !== facts.cart.version) {
+        reason = 'cart-version-mismatch'
+      }
+      else if (selection.output.version !== configuration.version) {
+        reason = 'configuration-version-mismatch'
+      }
+      else {
+        try {
+          if (resolveSelection(configuration, selection.output, typeof input.note === 'string' ? input.note : '').unitPrice !== input.unitPrice)
+            reason = 'unit-price-mismatch'
+        }
+        catch {
+          reason = 'invalid-selection'
+        }
+      }
     }
+    if (reason)
+      return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, requiredAction: action, reason, explanation: '餐點設定、售價或購物車版本已不同；請依最新商品資料修正同一需求，尚未變更購物車。' }
   }
   if (ambiguous)
     return { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '目前有多筆同名商品，請先在畫面確認要操作的那一筆；尚未變更購物車。' }
@@ -984,6 +1023,9 @@ export async function askBrowserCustomerQuestion(client: Pick<ReturnType<typeof 
   if (input.questionType === 'purchase-recommendation') {
     if (named.length !== 1)
       throw new Error('請先確認推薦的是哪道餐點。')
+    const redundant = rejectKnownServingQuestion(task, named[0], facts.products)
+    if (redundant)
+      return redundant
     const serving = pbBasicServing(named[0].name, named[0].configurations[0]?.unitPrice)
     question = `${serving ? `${pbProductName(named[0].name)}${serving}。` : ''}${input.quantity === 1 ? `要來一份${pbProductName(named[0].name)}嗎？` : `您要點${pbProductName(named[0].name)}嗎？要幾份？`}`
     if (input.quantity === 1)
@@ -1043,7 +1085,7 @@ export async function cancelBrowserItemSelection(client: Pick<ReturnType<typeof 
 }
 
 /** Refreshes one task's model context without consuming answers or changing the page. */
-export async function readBrowserConversation(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, taskId: string, toolNames: readonly string[]): Promise<BrowserConversation> {
+export async function readBrowserConversation(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, taskId: string, toolNames: readonly string[], captureRetry?: (key: string | undefined) => void): Promise<BrowserConversation> {
   const task = active
   const read = client.tools.value.find(tool => tool.name === 'browser_state_get')
   if (!task || !read || !task.isCurrent())
@@ -1053,6 +1095,9 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
   const raw = await executeBrowserTool(client, read, { includeCatalog: true })
   if (active !== task || !task.isCurrent())
     throw new Error('Browser context belongs to a superseded task.')
+  const recovery = safeParse(looseObject({ documentId: string(), recovery: browserRecoveryContextSchema }), raw)
+  const state = recovery.success ? recovery.output.recovery : undefined
+  captureRetry?.(state?.canRetry && recovery.success && state.documentId === recovery.output.documentId ? JSON.stringify(['browser', state.documentId, state.contextKey]) : undefined)
   if (safeParse(browserSignInRequiredSchema, raw).success) {
     return parse(browserConversationSchema, { taskId, sourceUtterance: task.transcript, phase: 'sign_in_required', readOnly: true, catalog: { complete: false, products: [] }, allowedToolNames: browserToolNames({ phase: 'sign_in_required', readOnly: true }, toolNames) })
   }
@@ -1088,21 +1133,21 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
     }
   }
   const selected = task.selected
-  const mentioned = facts.products.filter((product) => {
-    if (task.text.includes(product.name.replaceAll(/\s/g, '')))
-      return true
-    const spokenName = pbProductName(product.name)
-    return spokenName !== product.name && task.text.includes(spokenName)
-      && facts.products.filter(candidate => pbProductName(candidate.name) === spokenName).length === 1
-  })
-  // A consumed answer has priority over literal mentions. An unresolved or
-  // ambiguous name is not a current target that Main may invent a quantity for.
-  let target: (typeof facts.products)[number] | undefined
-  if (selected)
-    target = facts.products.find(product => product.ref === selected.productRef)
-  else if (mentioned.length === 1)
-    target = mentioned[0]
-  const quantities = explicitServingQuantities(selected?.request ?? task.transcript, { productName: target?.name })
+  const catalog = labelCatalog(facts.products, task.catalogLabels?.())
+  // FastPath and Main must agree on published aliases. Keep the PB reference
+  // and original name in the model context even when the customer uses an alias.
+  const compact = (label: string) => label.replaceAll(/\s/g, '')
+  const mentioned = productMentions(catalog.map(product => ({
+    ref: product.ref,
+    name: compact(product.name),
+    aliases: [...product.aliases, pbProductName(product.name)].map(compact),
+  })), task.text)
+  const mention = mentioned.length === 1 ? mentioned[0] : undefined
+  // A consumed answer takes priority, and colliding names remain unresolved.
+  const targetRef = selected?.productRef ?? mention?.product.ref
+  const target = catalog.find(product => product.ref === targetRef)
+  const servingText = !selected && mention ? compact(task.transcript).replaceAll(mention.label, '') : selected?.request ?? task.transcript
+  const quantities = explicitServingQuantities(servingText, { productName: target?.name })
   const quantity = selected?.requestedQuantity ?? (quantities.length === 1 ? quantities[0] : undefined)
   const providedSlots = target ? { productRef: target.ref, name: target.name, quantity } : undefined
   let dialogue: Pick<BrowserConversation, 'phase' | 'draft' | 'drafts' | 'waitingFor'> = { phase: 'browsing' }
@@ -1142,7 +1187,7 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
     // through the shared projection; local reception IDs do not identify its operator.
     cart: facts.cart,
     search: typeof raw === 'object' && raw && 'search' in raw && typeof raw.search === 'string' ? raw.search : '',
-    catalog: { complete: true, products: labelCatalog(facts.products, task.catalogLabels?.()) },
+    catalog: { complete: true, products: catalog },
     allowedToolNames: browserToolNames({ phase: dialogue.phase, readOnly, providedSlots }, toolNames),
   })
 }
@@ -1244,6 +1289,11 @@ export async function executeBrowserQuantityQuestion(client: Pick<ReturnType<typ
   }
   if (product && task.selected?.productRef !== productRef && !mentionsProduct(task, product.name, catalog.products)) {
     return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, explanation: '顧客尚未選定這項商品，不可替自行挑選的餐點問份數。推薦需求使用 browser_present；片段餐名才用 browser_clarify_product，query 保留顧客原用語。' }
+  }
+  if (product) {
+    const redundant = rejectKnownServingQuestion(task, product, catalog.products)
+    if (redundant)
+      return redundant
   }
   const present = client.tools.value.find(tool => tool.name === 'browser_present')
   if (product && present) {

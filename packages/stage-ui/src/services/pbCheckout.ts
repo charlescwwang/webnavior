@@ -1,4 +1,4 @@
-import type { PbCheckout, PbInvoiceMethod } from '@proj-airi/stage-shared/pb-checkout'
+import type { PbCheckout, PbInvoiceMethod, PbSubmissionResult } from '@proj-airi/stage-shared/pb-checkout'
 
 import type { CartSnapshot } from './pbCart'
 import type { createControls } from './pbControls'
@@ -25,10 +25,25 @@ export function notificationField(kind: 'phone' | 'email') {
   return fields.length === 1 ? fields[0] : undefined
 }
 
+// Observed on PB Order/Create after the transient refusal modal disappears.
+const closedStoreMessage = '目前非營業時間，暫時無法點餐。'
+
 /** One document's checkout draft and one-use submission ticket; no payment controls are exposed. */
-export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: () => number, onDispatch: () => void, onAccepted: () => void, canSubmit: boolean, readResultPage: () => Promise<unknown>) {
+export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: () => number, onDispatch: () => void, onSettled: () => void, canSubmit: boolean, readResultPage: () => Promise<unknown>) {
   let confirmation: { token: string, fingerprint: string, expiresAt: number } | undefined
   let dispatched = false
+  function storeClosed() {
+    // Only rendered text is merchant feedback; hidden templates or scripts do not count.
+    // eslint-disable-next-line unicorn/prefer-dom-node-text-content
+    return location.pathname.endsWith('/orders/create') && document.body.innerText.includes(closedStoreMessage)
+  }
+  function refusalReceipt(dispatch: 'dispatched' | 'not-dispatched', customerMessage = closedStoreMessage): PbSubmissionResult {
+    if (dispatch === 'dispatched') {
+      onSettled()
+      dispatched = false
+    }
+    return { schemaVersion: 1, ok: true, source: 'browser', code: 'order-submission-result', dispatch, status: 'rejected', effect: 'none', consistency: 'unavailable', reason: customerMessage === closedStoreMessage ? 'store-closed' : 'merchant-rejected', customerMessage }
+  }
   function unique<T extends HTMLElement>(elements: Iterable<T> | ArrayLike<T>) {
     const visible = Array.from(elements).filter(element => element.isConnected && element.getClientRects().length)
     return visible.length === 1 ? visible[0] : undefined
@@ -178,8 +193,9 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
       }, () => field()?.value === code && read()?.methods.some(method => method.method === 'donation' && method.selected) === true)
       return read()!
     },
-    async prepare() {
+    async prepare(captureCart?: (cart: CartSnapshot) => void) {
       const fresh = await binding()
+      captureCart?.(fresh.cart)
       if (!canSubmit)
         return { ...fresh.form, ready: false, missing: [...fresh.form.missing, '核對完成後，請在畫面點「送出訂單」。'] }
       if (!fresh.form.ready || !fresh.cart.lines.length)
@@ -190,11 +206,13 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
       return { ...fresh.form, confirmationToken: confirmation.token }
     },
     /** Consumes the ticket before the native click. A missing result is never retried. */
-    async submit(token: string, controls: ReturnType<typeof createControls>) {
+    async submit(token: string, controls: ReturnType<typeof createControls>, operationId?: string) {
       const ticket = confirmation
       confirmation = undefined
       if (!canSubmit || dispatched || !ticket || ticket.token !== token || ticket.expiresAt <= Date.now())
         throw new Error('請先核對目前訂單內容，再確認送出。')
+      if (storeClosed())
+        return refusalReceipt('not-dispatched')
       const fresh = await binding()
       if (!fresh.form.ready || fresh.fingerprint !== ticket.fingerprint)
         throw new Error('訂單內容已變更，請重新核對後再確認送出。')
@@ -205,16 +223,37 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
       // at the final native confirmation, never at the first button.
       const dialog = () => unique(Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-label="確認訂單"]'))
         .filter(element => element.querySelector('.el-message-box__message')?.textContent?.trim() === '訂單送出後將無法修改，請確認所有資訊是否正確。'))
-      await controls.act('option', '開啟訂單確認', 'draft', locate, target => target.click(), () => Boolean(dialog()))
+      await controls.act('option', '開啟訂單確認', 'draft', locate, target => target.click(), () => storeClosed() || Boolean(dialog()))
+      if (storeClosed())
+        return refusalReceipt('not-dispatched')
       const confirmed = await binding()
       if (!confirmed.form.ready || confirmed.fingerprint !== ticket.fingerprint)
         throw new Error('訂單內容已變更，請重新核對後再確認送出。')
+      if (storeClosed())
+        return refusalReceipt('not-dispatched')
       const confirm = () => unique(Array.from((dialog()?.querySelectorAll<HTMLButtonElement>('button') ?? [])).filter(button => button.textContent?.trim() === '確定'))
-      await controls.act('submit', '送出訂單', 'order', confirm, (target) => {
-        dispatched = true
-        onDispatch()
-        target.click()
-      }, () => location.pathname !== path)
+      const listeners = new AbortController()
+      const event = `pb-submit-${operationId}`
+      let refusal: string | undefined
+      try {
+        document.addEventListener(event, (response) => {
+          const message = (response as CustomEvent).detail
+          if (dispatched && typeof message === 'string' && message.trim())
+            refusal = message
+        }, { signal: listeners.signal })
+        await controls.act('submit', '送出訂單', 'order', confirm, (target) => {
+          dispatched = true
+          onDispatch()
+          document.dispatchEvent(new Event(`${event}-start`))
+          target.click()
+        }, () => location.pathname !== path || Boolean(refusal) || storeClosed())
+      }
+      finally {
+        listeners.abort()
+        document.dispatchEvent(new Event(`${event}-end`))
+      }
+      if (location.pathname === path && (refusal || storeClosed()))
+        return refusalReceipt('dispatched', refusal)
       // The fixed checkout expectation predates the click. Navigation alone
       // proves no acceptance, and pickup number is not the merchant identity.
       const parent = path.match(/^\/order\/store\/([^/]+)\/([^/]+)\/orders\/create$/)!
@@ -229,7 +268,7 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
       catch { raw = undefined }
       const result = readPbSubmissionResult({ origin: location.origin, store: parent[1], flow: parent[2], cartPath: path, total: fresh.form.total! }, location.href, raw)
       if (result.status === 'accepted')
-        onAccepted()
+        onSettled()
       return result
     },
   }

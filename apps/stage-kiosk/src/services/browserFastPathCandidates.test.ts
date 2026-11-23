@@ -116,3 +116,30 @@ it.each([
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_quantity' }), { version: 'cart-identity', lineRef: 'actual-row', quantity: 2 })
   }
 })
+
+// Report: this chat, 2026-11-23. A spoken serving should compile even when
+// the customer says 一碗 or introduces the item with 我要點.
+it.each([
+  { name: '紅燒牛肉麵', transcript: '紅燒牛肉麵一碗' },
+  { name: '紅燒牛肉麵', transcript: '我要點一碗紅燒牛肉麵' },
+  { name: '周氏水餃(最低8顆)', transcript: '我要點水餃一份' },
+])('compiles $transcript as one serving without a quantity question', async ({ name, transcript }) => {
+  const product = { ...products[0], name, configurations: [{ ...products[0].configurations[0], name }] }
+  const execute = vi.fn(async () => ({ ok: true }))
+  const source = createBrowserFastPathSource({ tools, catalogLabels: () => [{ name, aliases: name.startsWith('周氏') ? ['水餃'] : [], category: '' }], read: async () => ({ ...emptyFacts(), products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  const context = await source.context({ transcript })
+  expect(context).toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:add-item' })]) })
+  expect(context).toMatchObject({ candidates: expect.not.arrayContaining([expect.objectContaining({ id: 'intent:ask-quantity' })]) })
+  expect(context).toMatchObject({ candidates: expect.not.arrayContaining([expect.objectContaining({ id: 'intent:recommend' })]) })
+  await source.execute({ candidateId: 'intent:add-item' })
+  expect(execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'browser_cart_add' }), expect.objectContaining({ quantity: 1 }))
+})
+
+it('offers cart review for 這樣就好 after ordering without a pending question', async () => {
+  const facts = { ...emptyFacts(), cart: { version: 'draft', lines: [{ ref: 'line', name: '炸排骨便當', productRef: 'p-0', quantity: 1, unitPrice: 130, configuration: 'plain' }] } }
+  const execute = vi.fn(async () => ({ ok: true }))
+  const source = createBrowserFastPathSource({ tools, read: async () => facts, execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
+  expect(await source.context({ transcript: '這樣就好' })).toMatchObject({ candidates: [{ id: 'intent:view-cart' }] })
+  await source.execute({ candidateId: 'intent:view-cart' })
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_review' }), {})
+})

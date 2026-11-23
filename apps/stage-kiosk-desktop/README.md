@@ -501,3 +501,7 @@ this release does not change background filtering or TTS configuration.
 RC6 is deployed and packaged; see the [deployment record](../../docs/releases/kiosk-v0.7.8-rc.6-deployment.json)
 for source commit, archive checksum and checks. RC5 remains an internal source
 checkpoint and was never distributed. Physical Windows acceptance is pending.
+
+## Windows 0.7.8-rc.7
+
+Use the full RC7 portable folder with the paired Kiosk frontend for PB checkout feedback. Exit the previous executable before starting the new one. The device profile and PB login stay in the existing Windows user profile.

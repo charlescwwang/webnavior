@@ -96,12 +96,16 @@ it.each(['A3', 'A 三桌', '我的桌號是A3', '我要坐A3', 'A3，還要乙�
 // Report: this chat, Nov17 — cart review treated 「這樣就好」 as a request to edit a dish.
 it('accepts a completed-cart answer only for cart review and still asks for invoice selection', async () => {
   const { dialogue, facts, answer } = setup()
+  dialogue.presentService(facts, { purpose: 'review-checkout', request: '', question: '要結帳嗎？', choices: [{ id: 'yes', description: '核對購物車' }] })
+  expect(dialogue.canAnswerLocally(facts, '這樣就好')).toBe(true)
+  expect(await dialogue.answer(facts, '這樣就好', async () => facts, () => true)).toMatchObject({ kind: 'review-cart' })
   dialogue.presentService(facts, { purpose: 'cart-review', request: '結帳', question: '餐點正確嗎？', choices: [{ id: 'yes', description: '繼續選擇發票' }, { id: 'no', description: '修改餐點' }] })
   expect(dialogue.canAnswerLocally(facts, '這樣就好')).toBe(true)
   expect(await dialogue.answer(facts, '這樣就好', async () => facts, () => true)).toMatchObject({ kind: 'checkout', action: 'invoice-options' })
   expect(answer).not.toHaveBeenCalled()
   dialogue.presentService(facts, { purpose: 'submit-order', query: 'ticket', request: '送單', question: '確認送出嗎？', choices: [{ id: 'yes', description: '送出' }, { id: 'no', description: '保留' }] })
   expect(dialogue.canAnswerLocally(facts, '這樣就好')).toBe(false)
+  expect(await dialogue.answer(facts, '這樣就好', async () => facts, () => true)).toMatchObject({ kind: 'receipt', result: { effect: 'none', customerMessage: '確認送出嗎？' } })
 })
 
 // Report: this chat, Nov15 — complete item/count answers must not ask to add again.
@@ -925,6 +929,7 @@ it('accepts spoken digits, supports restarting, and rejects overflow without tru
   expect(await say('零九一二，三四五，六七八')).toContain('0 9 1 2 3 4 5 6 7 8')
   const denied = await dialogue.answer(facts, '不對', async () => facts, () => true)
   expect(denied).toMatchObject({ kind: 'receipt', result: { customerMessage: expect.stringContaining('重新報') } })
+  expect(await say('六七九')).toContain('格式不正確')
   dialogue.reset()
   expect(dialogue.canAnswerLocally(facts, '正確')).toBe(false)
 })

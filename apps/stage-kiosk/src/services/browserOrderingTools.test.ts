@@ -322,14 +322,18 @@ it('collects phone fragments in the bound contact question and fills only after 
     return parse(looseObject({ customerMessage: string() }), await answer!())
   }
   await turn('好了')
-  expect((await turn('0912')).customerMessage).toContain('4 碼')
+  expect((await turn('鈴玖么二')).customerMessage).toContain('4 碼')
   expect((await turn('345')).customerMessage).toContain('7 碼')
   const complete = await turn('678')
   expect(complete.customerMessage).toContain('0 9 1 2 3 4 5 6 7 8')
   expect(complete.customerMessage).toContain('正確嗎')
   expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_notification_phone')).toHaveLength(0)
+  expect((await turn('不對')).customerMessage).toContain('重新報')
+  expect((await turn('零九五二')).customerMessage).toContain('4 碼')
+  expect((await turn('345679')).customerMessage).toContain('0 9 5 2 3 4 5 6 7 9')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_notification_phone')).toHaveLength(0)
   await turn('正確')
-  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_notification_phone' }), { phone: '0912345678' })
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_notification_phone' }), { phone: '0952345679' })
   expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
 })
 
@@ -924,6 +928,7 @@ it.each(['好', '不要'])('binds checkout guidance after adding, and handles %s
   const { call, client, dialogue, facts, execute } = setup('雞腿飯一份')
   const result = await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: 1 }] })
   const question = await offerCheckout(client, dialogue, result, () => true)
+  expect(execute.mock.calls.at(-1)?.[1]).toEqual({ includeCatalog: false })
   expect(question).toMatchObject({ question: '要結帳嗎？' })
   expect(facts.cart.lines[0].quantity).toBe(4)
   cleanup.push(beginBrowserCartTask(reply, { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
@@ -1713,6 +1718,8 @@ it.each([
   ['我的統編是零零一二', '三四五六'],
   ['００１２', '３４５６'],
   ['00123456'],
+  // Nov23 field replay, seq462: seven spoken digits, then a synthetic final digit.
+  ['0012345', '六'],
 ])('confirms a complete spoken tax ID from %j before filling once', async (...utterances) => {
   const { call, client, facts, checkout, dialogue, execute } = setup('統一編號')
   checkout.methods.push({ method: 'tax', label: '統一編號', selected: false })
@@ -1725,7 +1732,7 @@ it.each([
     expect(dialogue.canAnswerLocally(facts, text)).toBe(true)
     const respond = await prepareBrowserQuestionAnswer(client)
     const result = await respond!()
-    expect(result).toMatchObject({ customerMessage: expect.stringContaining(index === utterances.length - 1 ? '0 0 1 2 3 4 5 6' : '4 碼') })
+    expect(result).toMatchObject({ customerMessage: expect.stringContaining(index === utterances.length - 1 ? '0 0 1 2 3 4 5 6' : `${text.length === 7 ? 7 : 4} 碼`) })
     expect(checkout.fields.find(field => field.kind === 'tax')?.value).toBe('')
     expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_invoice_tax')).toBe(false)
   }
@@ -1838,4 +1845,73 @@ it('uses the current table-entry policy instead of replaying a native default-se
   expect(result.customerMessage).toContain('我會直接開始點餐')
   expect(result.customerMessage).not.toContain('已選擇櫃台')
   expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_start_ordering')).toBe(false)
+})
+
+// Report: this chat, 2026-11-23. A mistaken Main question must not reopen a
+// serving count the customer already supplied.
+it.each([
+  ['quantity', '水餃', '水餃一份'],
+  ['quantity', '紅燒牛肉麵', '我要點一碗紅燒牛肉麵'],
+  ['purchase-recommendation', '水餃', '我要點水餃一份'],
+])('rejects %s for the already stated serving in %s / %s', async (questionType, name, transcript) => {
+  const { call, facts, dialogue, execute } = setup(transcript)
+  facts.products[0].name = name
+  const result = await call('ask_customer_question', { questionType, name })
+  expect(result).toMatchObject({ status: 'proposal_rejected', effect: 'none', dataOnly: true })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(execute.mock.calls.map(([tool]) => tool.name)).toEqual(['browser_cart_get'])
+  expect(await call('add_items_to_cart', { items: [{ name, quantity: 1 }] })).toMatchObject({ status: 'verified' })
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add')).toHaveLength(1)
+})
+
+// Report: this chat, 2026-11-23. The PB catalog alias and explicit serving
+// must survive a handoff using the same product matching as the fast path.
+it('passes a uniquely matched PB alias and serving count to Main', async () => {
+  const name = '周氏水餃(最低8顆)'
+  const { client, facts } = setup('水餃一份', false, [{ name, aliases: ['水餃'], category: '' }])
+  facts.products[0].name = name
+  expect(await readBrowserConversation(client, 'alias-handoff', ['browser_ask_quantity'])).toMatchObject({
+    providedSlots: { name, quantity: 1 },
+    allowedToolNames: [],
+  })
+})
+
+// Report: docs/plans/2026-10-22-kiosk-field-investigation.md, 2026-11-23
+// seq100/112/114/138. Replay the recorded public tool arguments with
+// reconstructed checkout-free PB facts; the original pre-write snapshot was not archived.
+it('replays dumpling assent plus soup as two verified adds without repeating the host read', async () => {
+  const dumplings = '周氏水餃(最低8顆)'
+  const text = '對 然後我還要再蛋花湯'
+  const { client, call, facts, execute, dialogue, answer } = setup('推薦餐點')
+  facts.cart.lines.length = 0
+  Object.assign(facts.cart, { subtotal: 0 })
+  facts.products.splice(0, facts.products.length, ...[dumplings, '蛋花湯'].map((name, index) => ({
+    ref: `replay-${index}`,
+    name,
+    price: index ? 40 : 64,
+    kind: 'product',
+    priceType: 1,
+    configurations: [{ version: `replay-config-${index}`, variantRef: '', name, unitPrice: index ? 40 : 64, groups: [] }],
+  })))
+  await call('ask_customer_question', { questionType: 'purchase-recommendation', name: dumplings })
+  cleanup.push(beginBrowserCartTask(text, { dialogue, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }) }))
+
+  const readOrExecute = execute.getMockImplementation()!
+  execute.mockImplementation(async (tool, input) => {
+    if (tool.name !== 'browser_cart_add')
+      return readOrExecute(tool, input)
+    const product = facts.products.find(product => product.ref === input.productRef)!
+    expect(input.version).toBe(facts.cart.version)
+    expect(input.selection).toMatchObject({ version: product.configurations[0].version })
+    facts.cart.lines.push({ ref: `line-${product.ref}`, productRef: product.ref, name: product.name, quantity: Number(input.quantity), unitPrice: product.price, configuration: '', note: '', options: [] })
+    facts.cart.version = `after-${product.ref}`
+    Object.assign(facts.cart, { subtotal: facts.cart.lines.reduce((total, line) => total + line.unitPrice * line.quantity, 0) })
+    return { ok: true, source: 'browser', status: 'verified', cart: structuredClone(facts.cart) }
+  })
+  answer.mockResolvedValue({ kind: 'NEW_REQUEST', provider: 'main' })
+  execute.mockClear()
+  await readBrowserConversation(client, 'compound-field-replay', [])
+  const result = await call('add_items_to_cart', { items: [{ name: dumplings, quantity: 1 }, { name: '蛋花湯', quantity: 1 }] })
+  expect(result).toMatchObject({ status: 'verified', cart: { subtotal: 104, lines: [{ name: dumplings, quantity: 1 }, { name: '蛋花湯', quantity: 1 }] } })
+  expect(execute.mock.calls.map(([tool]) => tool.name)).toEqual(['browser_state_get', 'browser_cart_add', 'browser_cart_add'])
 })

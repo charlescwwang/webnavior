@@ -51,7 +51,7 @@ export const pbSubmissionResultSchema = variant('status', [
   strictObject({ ...submissionFields, status: literal('pending'), effect: literal('pending'), consistency: literal('unavailable') }),
   strictObject({ ...submissionFields, status: literal('accepted'), effect: literal('applied'), consistency: picklist(['matched', 'conflict', 'unavailable']), order: merchantOrderSchema }),
   strictObject({ ...submissionFields, status: literal('unknown'), effect: literal('unknown'), consistency: literal('unavailable') }),
-  strictObject({ ...submissionFields, status: literal('rejected'), effect: literal('none'), consistency: literal('unavailable') }),
+  strictObject({ ...submissionFields, status: literal('rejected'), dispatch: picklist(['dispatched', 'not-dispatched']), effect: literal('none'), consistency: literal('unavailable') }),
 ])
 export type PbSubmissionResult = InferOutput<typeof pbSubmissionResultSchema>
 

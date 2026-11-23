@@ -11,6 +11,7 @@ import { isPbJourneyPage, isPbOrderResultUrl, isPbTableEntryUrl, menuEntryReceip
 import { WebContentsView } from 'electron'
 import { safeParse } from 'valibot'
 
+import { observeSubmission } from './observeSubmission'
 import { createPaymentNavigation } from './paymentNavigation'
 import { clipBounds, parsePageUrl } from './policy'
 
@@ -242,11 +243,21 @@ export class ServiceSurface {
       throw new Error('Native service navigated during initialization.')
     const { kind, request } = input.command
     const finish = kind === 'execute' ? this.diagnostics.operation(request.name, request.operationId) : undefined
+    const submissionEvent = kind === 'execute' && request.name === 'browser_order_submit' && beforeUrl.pathname === before?.cartPath ? `pb-submit-${request.operationId}` : undefined
     let result: unknown
     try {
+      if (submissionEvent && kind === 'execute') {
+        await view.webContents.executeJavaScript(`(${observeSubmission.toString()})(${JSON.stringify(request.operationId)})`)
+        if (!approved())
+          throw new Error('Checkout document changed before submission.')
+      }
       result = await view.webContents.executeJavaScriptInIsolatedWorld(1001, [{ code: `globalThis.__webnaviorPbService[${JSON.stringify(kind)}](${JSON.stringify(request)})` }])
     }
-    finally { finish?.() }
+    finally {
+      finish?.()
+      if (submissionEvent && this.navigation === generation && this.view === view && view.webContents.getURL() === beforeUrl.href)
+        await view.webContents.executeJavaScriptInIsolatedWorld(1001, [{ code: `document.dispatchEvent(new Event(${JSON.stringify(`${submissionEvent}-end`)}))` }]).catch(() => {})
+    }
     if (!approved()) {
       // Start intentionally replaces its table document. Acknowledge dispatch
       // once navigation to this exact menu has started; page readiness belongs

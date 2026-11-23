@@ -17,6 +17,7 @@ function setup() {
       onDispatch()
       cart.lines.push({ ref: 'new', productRef: 'p-new', name: '當日新品', quantity, unitPrice: 23, configuration: 'plain' })
       cart.subtotal += quantity * 23
+      return structuredClone(cart)
     }) })),
     setQuantity: vi.fn(async (ref, quantity, onDispatch) => {
       onDispatch()
@@ -35,6 +36,21 @@ function setup() {
 }
 
 describe('pb cart operations', () => {
+  it.each(['quantity', 'remove'] as const)('uses the checked %s readback as the receipt without a second read', async (action) => {
+    const { operations, gateway } = setup()
+    const current = await gateway.read()
+    const { version } = operations.publish(current)
+    const lines = action === 'quantity' ? [{ ...current.lines[0], quantity: 2 }] : []
+    const updated = { ...current, lines, subtotal: action === 'quantity' ? 34 : 0 }
+    const dispatch = vi.fn(async () => updated)
+    gateway.setQuantity = dispatch
+    gateway.remove = dispatch
+    const receipt = await operations.execute({ action, version, lineRef: 'old', quantity: 2, note: '' }, current)
+    expect(receipt).toMatchObject({ status: 'verified', cart: { lines, subtotal: updated.subtotal } })
+    expect(gateway.read).toHaveBeenCalledTimes(1)
+    expect(dispatch).toHaveBeenCalledOnce()
+  })
+
   it('allows equivalent row identities only within the admitted group and verifies every field', async () => {
     const { gateway } = setup()
     const initial = await gateway.read()
@@ -130,6 +146,7 @@ describe('pb cart operations', () => {
       committed()
       const before = await gateway.read()
       change({ ...before, subtotal: before.subtotal + quantity * 23, lines: [...before.lines, { ref: `additional-${++nextRef}`, productRef: 'p-new', name: '當日新品', quantity, unitPrice: 23, configuration: 'plain' }] })
+      return gateway.read()
     } }))
     for (let index = 0; index < 2; index++) {
       const before = await operations.observe()
@@ -226,6 +243,7 @@ describe('pb cart operations', () => {
       onDispatch()
       state.lines.push({ ref: 'rice', productRef: 'p-old', name: '原餐', quantity, unitPrice: 22, configuration: 'rice', description: '白飯 ×1' })
       state.subtotal += quantity * 22
+      return structuredClone(state)
     } }))
     const observed = await operations.observe()
     const result = await operations.execute({ action: 'replace', version: observed.version, lineRef: 'old', productRef: 'p-old', quantity: 1, retainQuantity: 2, unitPrice: 22, note: '', selection: { version: 'config', variantRef: '', choices: [{ ref: 'rice-choice', quantity: 1 }] } })
@@ -252,7 +270,9 @@ describe('pb cart operations', () => {
     state.lines[0].quantity = original
     state.subtotal = original * 17
     change(state)
-    const commit = vi.fn(async () => {})
+    const commit = vi.fn(async () => {
+      throw new Error('This proposal must not dispatch.')
+    })
     gateway.prepare = vi.fn(async () => ({ productRef: 'p-old', name: '原餐', unitPrice: 17, configuration: 'original', commit }))
     const cart = await operations.observe()
     const result = await operations.execute({ action: 'replace', version: cart.version, lineRef: 'old', productRef: 'p-old', quantity: incoming, retainQuantity: retained, unitPrice: 17, note: '', selection: { version: 'config', variantRef: '', choices: [] } })
@@ -273,7 +293,9 @@ describe('pb cart operations', () => {
       state.subtotal += 34
     }
     change(state)
-    const commit = vi.fn(async () => {})
+    const commit = vi.fn(async () => {
+      throw new Error('This proposal must not dispatch.')
+    })
     const price = mode === 'price-change' ? 18 : 17
     gateway.prepare = vi.fn(async () => ({ productRef: 'p-old', name: '原餐', unitPrice: price, configuration: 'original', commit }))
     const cart = await operations.observe()
@@ -348,7 +370,9 @@ describe('pb cart operations', () => {
 
   it('does not commit after a daily price change', async () => {
     const { operations, gateway } = setup()
-    const commit = vi.fn(async () => {})
+    const commit = vi.fn(async () => {
+      throw new Error('This proposal must not dispatch.')
+    })
     gateway.prepare = vi.fn(async () => ({ productRef: 'p-new', name: '當日新品', unitPrice: 24, configuration: 'plain', commit }))
     const cart = await operations.observe()
     expect(await operations.execute({ action: 'add', selection: { version: 'config', variantRef: '', choices: [] }, version: cart.version, productRef: 'p-new', quantity: 1, unitPrice: 23, note: '' })).toMatchObject({ status: 'rejected' })
@@ -405,7 +429,10 @@ describe('pb cart operations', () => {
 
   it('preserves the original line when the replacement add cannot be verified', async () => {
     const { operations, gateway } = setup()
-    gateway.prepare = async () => ({ productRef: 'p-new', name: '新品', unitPrice: 23, configuration: 'plain', commit: async onDispatch => onDispatch() })
+    gateway.prepare = async () => ({ productRef: 'p-new', name: '新品', unitPrice: 23, configuration: 'plain', commit: async (onDispatch) => {
+      onDispatch()
+      return gateway.read()
+    } })
     const cart = await operations.observe()
     expect(await operations.execute({ action: 'replace', selection: { version: 'config', variantRef: '', choices: [] }, version: cart.version, lineRef: 'old', productRef: 'p-new', quantity: 1, unitPrice: 23, note: '' })).toMatchObject({ status: 'unknown' })
     expect(gateway.remove).not.toHaveBeenCalled()
@@ -430,7 +457,9 @@ describe('pb cart operations', () => {
   it('invalidates the prepared write after a trusted manual interaction or pickup change', async () => {
     const { operations, gateway, change } = setup()
     const cart = await operations.observe()
-    const commit = vi.fn(async () => {})
+    const commit = vi.fn(async () => {
+      throw new Error('This proposal must not dispatch.')
+    })
     gateway.prepare = async () => {
       change({ ...cart, context: { ...cart.context, manualRevision: 1 } })
       return { productRef: 'p-new', name: '新品', unitPrice: 23, configuration: 'plain', commit }
@@ -527,6 +556,7 @@ describe('pb empty order lifecycle', () => {
       prepare: async () => ({ productRef: 'p-new', name: '新品', unitPrice: 10, configuration: '', commit: async (onDispatch: () => void) => {
         onDispatch()
         cart = { lines: [{ ref: 'new', productRef: 'p-new', name: '新品', unitPrice: 10, quantity: 1, configuration: '' }], subtotal: 10, context: { ...pickup, orderRef: 'created', tableName: transition === 'changed-table' ? 'B1 吧檯' : 'A1 桌', manualRevision: transition === 'changed-manual' ? 1 : 0, ...(transition === 'changed-pickup' ? { time: 'later' } : {}) } }
+        return structuredClone(cart)
       } }),
       remove: async () => { throw new Error('unused') },
       setQuantity: async () => { throw new Error('unused') },
@@ -549,6 +579,7 @@ it('reconciles only the exact expected cart after a failed readback without repl
       await prepared.commit(onDispatch)
       commits++
       rejectRead = true
+      return gateway.read()
     } }
   }
   gateway.read = async () => {
@@ -577,4 +608,31 @@ it('retains structured option amounts and the separate note from vendor cart obs
   expect(cart.lines[0].options).toEqual([{ name: '配菜', quantity: 2 }])
   expect(cart.lines[0].description).toBe('配菜 ×2')
   expect(cart.lines[0].note).toBe('飯少')
+})
+
+// Report: this chat, RC6. Once the click has a valid cart snapshot, a later
+// duplicate read must not turn the completed add into an unknown operation.
+it('keeps a completed add verified when a duplicate read would fail', async () => {
+  const { gateway, operations } = setup()
+  const prepare = gateway.prepare
+  const read = gateway.read
+  let added = false
+  gateway.read = async () => {
+    if (added)
+      throw new Error('Second cart read returned unusable data')
+    return read()
+  }
+  gateway.prepare = async (input) => {
+    const prepared = await prepare(input)
+    return { ...prepared, commit: async (onDispatch) => {
+      await prepared.commit(onDispatch)
+      const snapshot = await read()
+      added = true
+      return snapshot
+    } }
+  }
+  const before = await operations.observe()
+  const result = await operations.execute({ action: 'add', version: before.version, productRef: 'p-new', quantity: 1, unitPrice: 23, note: '', selection: { version: 'config', variantRef: '', choices: [] } })
+  expect(result).toMatchObject({ status: 'verified', cart: { subtotal: 40 }, effectMessage: '已加入當日新品 1 份。' })
+  expect(operations.canRecover()).toBe(true)
 })

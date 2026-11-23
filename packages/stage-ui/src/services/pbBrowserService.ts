@@ -1,6 +1,8 @@
 import type { ToolDescriptor } from '@proj-airi/stage-shared/interactive-service'
 import type { InferOutput } from 'valibot'
 
+import type { CartSnapshot } from './pbCart'
+import type { CatalogProduct } from './pbCatalog'
 import type { RouteName } from './pbRoutes'
 
 import { errorMessageFrom } from '@moeru/std'
@@ -21,7 +23,7 @@ import { installInvoiceInput } from './pbInvoiceInput'
 import { createOperation } from './pbOperation'
 import { installPaymentPolicy } from './pbPayment'
 import { createPresentation } from './pbPresentation'
-import { prepareAddition, resolveSelection } from './pbProduct'
+import { describeConfiguration, prepareAddition, resolveSelection } from './pbProduct'
 import { matchesPageResponseUrl, resolveRoute } from './pbRoutes'
 import { installTablePicker } from './pbTablePicker'
 
@@ -123,8 +125,10 @@ export function createPbService() {
     writeMarker = `order:${crypto.randomUUID()}`
     localStorage.setItem(blockedKey, writeMarker)
   }, () => {
-    if (writeMarker && localStorage.getItem(blockedKey) === writeMarker)
+    if (writeMarker && localStorage.getItem(blockedKey) === writeMarker) {
       localStorage.removeItem(blockedKey)
+      writeMarker = undefined
+    }
   }, journey.canSubmit, readOrderPage)
   let controlRevision = 0
   const controlTools = new Set(['browser_return_table', 'browser_table_select', 'browser_start_ordering', 'browser_cart_review', 'browser_search', 'browser_open_product', 'browser_close_product', 'browser_set_note', 'browser_clarify_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_customer_reset', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_invoice_tax', 'browser_order_submit'])
@@ -284,8 +288,40 @@ export function createPbService() {
     return props
   }
 
+  // This index belongs to one PB document and reception. Native write
+  // admission still reads the current merchant configuration immediately before use.
+  let catalogIndex: { products: CatalogProduct[], pickup: { date: string, time: string }, revision: number } | undefined
+
+  async function readAttributes(id: number, signal?: AbortSignal) {
+    const response = await fetch(vendorRoute('shopping.getAttrByProduct', [journey.store, journey.flow, String(id)]), { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) })
+    if (!response.ok)
+      throw new Error('PB 商品規格讀取失敗。')
+    return response.json()
+  }
+
+  async function loadPlanningConfigurations(products: CatalogProduct[]) {
+    const missing = products.filter(product => product.kind === 'product' && product.priceType === 1 && !product.configurations.length)
+    // Use the same bounded batch size as the complete category reader.
+    for (let offset = 0; offset < missing.length; offset += 6) {
+      await Promise.all(missing.slice(offset, offset + 6).map(async (product) => {
+        const scope = JSON.stringify([baseUrl.href, product.pickup.date, product.pickup.time])
+        product.configurations = [await describeConfiguration({ productRef: product.ref, variantRef: '', name: product.name, unitPrice: product.price, scope }, await readAttributes(product.id))]
+      }))
+    }
+  }
+
+  async function planningCatalog(cart: CartSnapshot, configurations: boolean) {
+    const index = catalogIndex
+    if (!index || index.revision !== manualRevision || index.pickup.date !== cart.context.date || index.pickup.time !== cart.context.time)
+      return readCatalog(undefined, configurations)
+    if (configurations)
+      await loadPlanningConfigurations(index.products)
+    return index.products
+  }
+
   async function readCatalog(configurationRefs?: readonly string[], includeConfigurations = true, signal?: AbortSignal) {
     assertScope()
+    catalogIndex = undefined
     const snapshot = await collectCatalog({
       menu: async () => {
         const props = await pageProps(`menu${location.search}`, signal)
@@ -305,15 +341,11 @@ export function createPbService() {
           throw new Error('PB 商品資料讀取失敗。')
         return response.json()
       },
-      attributes: async (id) => {
-        const response = await fetch(vendorRoute('shopping.getAttrByProduct', [journey.store, journey.flow, String(id)]), { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) })
-        if (!response.ok)
-          throw new Error('PB 商品規格讀取失敗。')
-        return response.json()
-      },
+      attributes: id => readAttributes(id, signal),
     }, { scope: baseUrl.href, configurationRefs, includeConfigurations })
     if (!snapshot.complete)
       throw new Error('PB 分類商品尚未完整載入，重新查核後仍不完整；尚未操作購物車。')
+    catalogIndex = { products: snapshot.products, pickup: snapshot.pickup, revision: manualRevision }
     return snapshot.products
   }
 
@@ -380,16 +412,21 @@ export function createPbService() {
     const target = before.lines.find(line => line.ref === ref)
     if (!controls || !target || !controls.canEdit(before.lines, equivalentRefs.length ? equivalentRefs : [ref]))
       throw new Error('購物車行無法唯一對應畫面，尚未操作。')
+    let verified: CartSnapshot | undefined
     await controls.edit(before.lines, ref, amount, async () => {
       if (JSON.stringify(await readCart()) !== JSON.stringify(before))
         throw new Error('移動期間購物車已變更，尚未操作。')
     }, async () => {
       const current = await readCart()
-      return verifyCartRowEdit(before, current, ref, amount ?? 0, equivalentRefs)
+      if (!verifyCartRowEdit(before, current, ref, amount ?? 0, equivalentRefs))
+        return false
+      verified = current
+      return true
     }, () => {
       beginWrite()
       onDispatch()
     }, equivalentRefs)
+    return verified
   }
 
   const cartOperations = createCartOperations({
@@ -397,16 +434,21 @@ export function createPbService() {
     clear: async (before, onDispatch) => {
       if (!currentControls)
         throw new Error('缺少目前購物車畫面，尚未清空。')
+      let verified: CartSnapshot | undefined
       await currentControls.clearCart(async () => {
         if (JSON.stringify(await readCart()) !== JSON.stringify(before))
           throw new Error('移動期間購物車已變更，尚未清空。')
       }, async () => {
         const after = await readCart()
-        return !after.lines.length && after.subtotal === 0
+        if (after.lines.length || after.subtotal !== 0)
+          return false
+        verified = after
+        return true
       }, () => {
         beginWrite('reset')
         onDispatch()
       })
+      return verified
     },
     canEdit: (cart, ref) => Boolean(currentControls?.canEdit(cart.lines, [ref])),
     prepare: async ({ productRef, quantity: amount, note, selection }) => {
@@ -429,17 +471,35 @@ export function createPbService() {
       // Native commit revalidates configuration and cart at the actual press,
       // after pointer travel. Repeating the same configuration fetch immediately
       // before that travel would add IO without strengthening the final gate.
-      return { productRef, name: product.name, unitPrice: selected.unitPrice, configuration: selected.configuration, commit: onDispatch => controls.add(product.name, productRef, async () => {
-        const [products, cart] = await Promise.all([readCatalog([productRef]), readCart()])
-        const current = products.find(candidate => candidate.ref === productRef)?.configurations.find(candidate => candidate.variantRef === selection.variantRef)
-        if (!current || current.version !== selection.version)
-          throw new Error('派送前餐點規格或價格已變更，尚未加入。')
-        if (JSON.stringify(cart) !== JSON.stringify(before))
-          throw new Error('移動期間購物車已變更，尚未加入。')
-      }, async () => count((await readCart()).lines) === count(before.lines) + amount, () => {
-        beginWrite()
-        onDispatch()
-      }) }
+      return {
+        productRef,
+        name: product.name,
+        unitPrice: selected.unitPrice,
+        configuration: selected.configuration,
+        async commit(onDispatch) {
+          let observed: CartSnapshot | undefined
+          await controls.add(product.name, productRef, async () => {
+            const [products, cart] = await Promise.all([readCatalog([productRef]), readCart()])
+            const current = products.find(candidate => candidate.ref === productRef)?.configurations.find(candidate => candidate.variantRef === selection.variantRef)
+            if (!current || current.version !== selection.version)
+              throw new Error('派送前餐點規格或價格已變更，尚未加入。')
+            if (JSON.stringify(cart) !== JSON.stringify(before))
+              throw new Error('移動期間購物車已變更，尚未加入。')
+          }, async () => {
+            const cart = await readCart()
+            if (count(cart.lines) !== count(before.lines) + amount)
+              return false
+            observed = cart
+            return true
+          }, () => {
+            beginWrite()
+            onDispatch()
+          })
+          if (!observed)
+            throw new Error('PB 加車結果尚未確認。')
+          return observed
+        },
+      }
     },
     setQuantity: (ref, amount, onDispatch, equivalentRefs) => editLine(ref, amount, onDispatch, equivalentRefs),
     remove: (ref, onDispatch, equivalentRefs) => editLine(ref, undefined, onDispatch, equivalentRefs),
@@ -458,7 +518,7 @@ export function createPbService() {
   }
 
   /** Reads live site state without navigation; account fields never leave this document. */
-  async function recoveryContext() {
+  async function recoveryContext(observation?: { products: Awaited<ReturnType<typeof readCatalog>>, cart: CartSnapshot }, readingOperation?: string) {
     const atTable = location.pathname === journey.tablePath
     let state: unknown
     if (atTable) {
@@ -468,7 +528,7 @@ export function createPbService() {
       state = { manualRevision, table: tablePicker?.selection(), page: 'table' }
     }
     else {
-      const [products, cart] = await Promise.all([readCatalog(), readCart()])
+      const [products, cart] = observation ? [observation.products, observation.cart] as const : await Promise.all([readCatalog(), readCart()])
       // Re-read only: an earlier add/edit can have committed before its readback
       // failed. Clear this document's cart marker only after the coordinator
       // proves the entire expected result. Submission/reset markers never qualify.
@@ -483,7 +543,7 @@ export function createPbService() {
     }
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(state)))
     const contextKey = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
-    const canRetry = !atTable && !localStorage.getItem(blockedKey) && cartOperations.canRecover() && ![...(active?.operations.values() ?? [])].some(operation => operation.name !== 'browser_recovery_context' && operation.status === 'pending')
+    const canRetry = !atTable && !localStorage.getItem(blockedKey) && cartOperations.canRecover() && ![...(active?.operations.entries() ?? [])].some(([id, operation]) => id !== readingOperation && operation.name !== 'browser_recovery_context' && operation.status === 'pending')
     const marker = localStorage.getItem(blockedKey)
     let blockedBy: 'order' | 'reset' | 'cart' | 'operation' | undefined
     if (marker?.startsWith('order:'))
@@ -494,7 +554,7 @@ export function createPbService() {
       blockedBy = 'cart'
     else if (!canRetry && !atTable)
       blockedBy = 'operation'
-    return { source: 'browser', documentId, contextKey, canRetry, canReset: canResetCart(), ...(blockedBy ? { blockedBy } : {}) }
+    return { source: 'browser', documentId, contextKey, canRetry, canReset: canResetCart(readingOperation), ...(blockedBy ? { blockedBy } : {}) }
   }
 
   /** Presents fresh facts only after every selected ref has a unique rendered card. */
@@ -751,7 +811,7 @@ export function createPbService() {
         const after = await readCart()
         if (JSON.stringify(before) !== JSON.stringify(after))
           return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '已返回菜單，但購物車內容有變動，請先重新核對。' }
-        const receipt = { ok: true, source: 'browser', status: 'verified', effect: 'none', page: 'menu', cart: await cartOperations.observe(), customerMessage: '已清除搜尋，回到完整菜單。想點哪道餐點？也可以請我推薦。' }
+        const receipt = { ok: true, source: 'browser', status: 'verified', effect: 'none', page: 'menu', cart: cartOperations.publish(after), customerMessage: '已清除搜尋，回到完整菜單。想點哪道餐點？也可以請我推薦。' }
         parse(pbEditorStateSchema, receipt)
         return receipt
       }
@@ -766,8 +826,11 @@ export function createPbService() {
         // can fail or the customer must speak; do not depend on forAdmission.
         if (location.pathname === journey.menuPath)
           await controls.dismissAnnouncement()
-        const [products, observed] = await Promise.all([includeCatalog ? readCatalog() : undefined, cartOperations.observe()])
-        let cart = observed
+        const current = await readCart()
+        const products = includeCatalog ? await planningCatalog(current, true) : undefined
+        // Retry evidence is optional. Losing it must not discard a verified editor read.
+        const recovery = products ? await recoveryContext({ products, cart: current }, operationId).catch(() => undefined) : undefined
+        let cart = cartOperations.publish(current)
         if (name === 'browser_cart_review' && cart.lines.length) {
           await controls.navigate(journey.cartPath)
           cart = await cartOperations.observe()
@@ -775,7 +838,7 @@ export function createPbService() {
         }
         const productDialog = observe().productDialog.flatMap(dialog => dialog.name ? [{ name: dialog.name }] : [])
         const checkoutState = checkout.read()
-        const receipt = { ok: true, source: 'browser', observedAt: Date.now(), documentId, menuReady: location.pathname === journey.menuPath && observe().products.length > 0, itemSelectionOpen: productDialog.length > 0, productDialog, search: document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value ?? '', page: location.pathname === journey.cartPath ? 'cart' : 'menu', cart, ...(checkoutState ? { checkout: checkoutState } : {}), ...(products ? { products, dataOnly: true } : { customerMessage: cart.lines.length ? `目前購物車：${describeCartLines(cart.lines)}。小計 ${cart.subtotal} 元。` : '購物車目前沒有餐點。' }) }
+        const receipt = { ok: true, source: 'browser', ...(recovery ? { recovery } : {}), observedAt: Date.now(), documentId, menuReady: location.pathname === journey.menuPath && observe().products.length > 0, itemSelectionOpen: productDialog.length > 0, productDialog, search: document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value ?? '', page: location.pathname === journey.cartPath ? 'cart' : 'menu', cart, ...(checkoutState ? { checkout: checkoutState } : {}), ...(products ? { products, dataOnly: true } : { customerMessage: cart.lines.length ? `目前購物車：${describeCartLines(cart.lines)}。小計 ${cart.subtotal} 元。` : '購物車目前沒有餐點。' }) }
         parse(includeCatalog ? pbCatalogStateSchema : pbEditorStateSchema, receipt)
         return receipt
       }
@@ -785,10 +848,17 @@ export function createPbService() {
         if (name === 'browser_order_submit') {
           const { confirmationToken } = parse(strictObject({ confirmationToken: text }), input)
           invoiceInput.leave()
-          return checkout.submit(confirmationToken, controls)
+          const result = await checkout.submit(confirmationToken, controls, operationId)
+          if (result.status === 'rejected')
+            catalogIndex = undefined
+          return result
         }
         await controls.navigate(journey.cartPath)
         await checkout.reveal(controls)
+        let receiptCart: CartSnapshot | undefined
+        const captureCart = (cart: CartSnapshot) => {
+          receiptCart = cart
+        }
         let state
         if (name === 'browser_invoice_select') {
           state = await checkout.choose(parse(strictObject({ method: pbInvoiceMethodSchema }), input).method, controls)
@@ -797,31 +867,32 @@ export function createPbService() {
         else if (name === 'browser_invoice_tax') {
           await checkout.tax(parse(strictObject({ code: text }), input).code, controls)
           await checkout.focus('next', controls)
-          state = await checkout.prepare()
+          state = await checkout.prepare(captureCart)
         }
         else if (name === 'browser_invoice_donation') {
           await checkout.donate(parse(strictObject({ code: text }), input).code, controls)
           await checkout.focus('next', controls)
-          state = await checkout.prepare()
+          state = await checkout.prepare(captureCart)
         }
         else if (name === 'browser_notification_phone') {
           await checkout.phone(parse(strictObject({ phone: text }), input).phone, controls)
           // Phone consent fills a draft only. Prepare a fresh final-summary
           // ticket after its native input events, never reuse the pre-fill form.
-          state = await checkout.prepare()
+          state = await checkout.prepare(captureCart)
         }
         else {
           const { focus } = parse(strictObject({ focus: optional(picklist(['invoice', 'next'])) }), input)
           await checkout.focus(focus ?? 'next', controls)
-          state = await checkout.prepare()
+          state = await checkout.prepare(captureCart)
         }
         if (state.ready)
           invoiceInput.leave()
-        return { ok: true, source: 'browser', page: 'cart', dataOnly: true, cart: await cartOperations.observe(), checkout: state }
+        return { ok: true, source: 'browser', page: 'cart', dataOnly: true, cart: receiptCart ? cartOperations.publish(receiptCart) : await cartOperations.observe(), checkout: state }
       }
       else if (name === 'browser_product_get') {
         const { names } = parse(strictObject({ names: pipe(array(text), minLength(1), maxLength(10)) }), input)
-        const index = await readCatalog(undefined, false)
+        const current = await readCart()
+        const index = await planningCatalog(current, false)
         const references: string[] = []
         for (const name of new Set(names)) {
           const matches = index.filter(product => product.name === name)
@@ -829,11 +900,9 @@ export function createPbService() {
             return { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: matches.length ? `目前有同名的「${name}」，請先在畫面確認是哪一項。` : `目前完整分類資料沒有找到「${name}」，請確認名稱。` }
           references.push(matches[0].ref)
         }
-        const fresh = await readCatalog(references)
-        const products = fresh.filter(product => references.includes(product.ref))
-        if (products.length !== references.length || products.some(product => !names.includes(product.name)))
-          throw new Error('讀取期間菜單已變更，請重新確認商品。')
-        return { ok: true, source: 'browser', dataOnly: true, products, cart: await cartOperations.observe() }
+        const products = index.filter(product => references.includes(product.ref))
+        await loadPlanningConfigurations(products)
+        return { ok: true, source: 'browser', dataOnly: true, products, cart: cartOperations.publish(current) }
       }
       else if (['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'].includes(name)) {
         const previousMarker = localStorage.getItem(blockedKey)
@@ -863,7 +932,7 @@ export function createPbService() {
           return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '這組餐點的畫面配置仍無法唯一對應；尚未變更購物車，請先確認。' }
         }
         const targetRef = 'productRef' in fields ? fields.productRef : priorLine?.productRef
-        const result = await cartOperations.execute({ ...fields, action, quantity: 'quantity' in fields ? fields.quantity : 1, note: 'note' in fields ? fields.note : '' })
+        const result = await cartOperations.execute({ ...fields, action, quantity: 'quantity' in fields ? fields.quantity : 1, note: 'note' in fields ? fields.note : '' }, beforeCart)
         if (result.status === 'rejected' && 'reason' in result && result.reason === 'unit-price-mismatch') {
           return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, expectedUnitPrice: result.expectedUnitPrice, explanation: `提案單價不符，尚未派送任何寫入。unitPrice 是每份含所選加購的單價 ${result.expectedUnitPrice}，不是整行總價；selection.choices[].quantity 也是每份數量。請依原句與最新規格修正參數，不改選商品。` }
         }
@@ -911,6 +980,7 @@ export function createPbService() {
         const priorWriteMarker = writeMarker
         const previousMarker = localStorage.getItem(blockedKey)
         writeMarker = previousMarker ?? undefined
+        catalogIndex = undefined
         const cleared = await cartOperations.clear()
         if (!cleared.ok) {
           // A missing/disabled clear control dispatched nothing. Keep the old

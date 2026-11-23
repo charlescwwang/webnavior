@@ -95,7 +95,7 @@ import { conversationDecisionStateFrom, conversationSource, createDecisionFeedba
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
 import { applyAudioOutput } from '../services/kioskAudioOutput'
-import { BrowserRecoveryBlocked, BrowserRestartBlocked, createRetryContext, isKioskConversationRetrySafeTool, readConversationRetryContext, recoverConversationService, resumeConversationRetry } from '../services/kioskConversationRetry'
+import { BrowserRecoveryBlocked, BrowserRestartBlocked, isKioskConversationRetrySafeTool, readConversationRetryContext, recoverConversationService, resumeConversationRetry } from '../services/kioskConversationRetry'
 import { createSpeechPlayer } from '../services/kioskSpeech'
 import { createUtteranceTiming } from '../services/kioskTiming'
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
@@ -1713,10 +1713,6 @@ async function presentFastPathResult(
     // A greeting is a conversational receipt, never an ordering command or
     // acknowledgement of the pending operation question.
     let question = result.kind === 'FAST_ACTION' ? await validatedQuestionReceipt(result.result) : undefined
-    if (!question && result.kind === 'FAST_ACTION')
-      question = await offerCheckout(interactiveServiceClient, browserDialogue, result.result, () => interactionTurn.isCurrent(turn))
-    if (!interactionTurn.isCurrent(turn))
-      return
     let answer: string
     if (result.kind === 'CUSTOMER_ENTRY_REQUIRED')
       answer = t('stage.kiosk.customer-entry.complete-first')
@@ -1739,6 +1735,16 @@ async function presentFastPathResult(
           { role: 'assistant', id: requestMessageId(input.id, 'reply'), content: answer, slices: [], tool_results: [] },
         ]
     turnTimings.get(turn.id)?.mark('reply-text-visible', undefined, 'reply')
+    if (!question && result.kind === 'FAST_ACTION') {
+      const replyIndex = earlyReplyIndex ?? conversationMessages.value.length - 1
+      question = await offerCheckout(interactiveServiceClient, browserDialogue, result.result, () => interactionTurn.isCurrent(turn))
+      if (!interactionTurn.isCurrent(turn))
+        return
+      if (question) {
+        answer = replyWithQuestion(answer, question)
+        conversationMessages.value = conversationMessages.value.map((message, index) => index === replyIndex ? { ...message, content: answer } : message)
+      }
+    }
     await interactionRecording.append('assistant_text', answer, { decisionRoute: 'fast_path', utteranceId: input.id })
     if (result.kind === 'FAST_ACTION')
       await acknowledgePresentedReply(answer, () => interactionTurn.isCurrent(turn), question)
@@ -2650,7 +2656,7 @@ async function sendConversationMessage(
     conversationExecutionDurationMs.value = 0
     timingTimer = setInterval(updateExecutionDuration, 100)
   }
-  const retryContext = createRetryContext(interactiveServiceClient)
+  let retryCaptured = false
   const taskSessionId = interactionRecording.visitorSessionId.value
   let taskOutcome: 'completed' | 'failed' = 'failed'
   let retryContextKey: string | undefined
@@ -2736,13 +2742,13 @@ async function sendConversationMessage(
           if (browserOrdering) {
             if (!interactionTurn.isCurrent(turn) || interactiveServiceClient.availability.value !== 'ready')
               throw new Error('External browser document is unavailable.')
-            // Payment/result documents expose browser_state_get only. They
-            // retain native protocol ownership but have no editor retry ticket.
-            retryContextKey = interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_recovery_context') ? await retryContext.capture() : undefined
-            if (!interactionTurn.isCurrent(turn))
-              throw new Error('External browser request was superseded.')
             const browserTools = activeTools.value.filter(tool => Object.hasOwn(orderingTools, tool.function.name))
-            const observed = await readBrowserConversation(interactiveServiceClient, taskId, interactiveServiceClient.tools.value.map(tool => tool.name))
+            const observed = await readBrowserConversation(interactiveServiceClient, taskId, interactiveServiceClient.tools.value.map(tool => tool.name), (key) => {
+              if (!retryCaptured) {
+                retryContextKey = key
+                retryCaptured = true
+              }
+            })
             const browserContext = { ...observed, allowedToolNames: availableOrderingTools(observed) }
             if (!interactionTurn.isCurrent(turn))
               throw new Error('External browser context belongs to a superseded task.')
@@ -2820,7 +2826,7 @@ async function sendConversationMessage(
             if (browserOrdering)
               menuReply.beginOperation(toolName, { maySubmit: browserDialogue.hasSubmissionQuestion() })
             browserEffectAttempted = true
-            retryContext.invalidate()
+            retryCaptured = true
             retryContextKey = undefined
             request.stage = 'mutating'
           }
@@ -2909,11 +2915,6 @@ async function sendConversationMessage(
     if (entryPhase === 'customer_entry' && presented.content === entryPrompt)
       questionReceipt = undefined
     let answer = presented.role === 'assistant' ? presented.content : undefined
-    if (answer && browserOrdering && reply.status === 'completed' && !presented.recovery && !questionReceipt) {
-      questionReceipt = await offerCheckout(interactiveServiceClient, browserDialogue, menuReply.cartChange(), () => interactionTurn.isCurrent(turn))
-      if (questionReceipt)
-        answer = replyWithQuestion(answer, questionReceipt)
-    }
     customerRecoveryPresented = presented.recovery === true
     taskOutcome = answer && !customerRecoveryPresented ? 'completed' : 'failed'
     const replyKind = presented.clarification ? 'clarification' : reply.reply?.kind
@@ -2931,6 +2932,17 @@ async function sendConversationMessage(
         : { role: 'error', id: requestMessageId(options.utteranceId, 'reply'), content: presented.content },
     ]
     timing?.mark('reply-text-visible', undefined, 'reply')
+    if (answer && browserOrdering && reply.status === 'completed' && !presented.recovery && !questionReceipt) {
+      const replyIndex = conversationMessages.value.length - 1
+      questionReceipt = await offerCheckout(interactiveServiceClient, browserDialogue, menuReply.cartChange(), () => interactionTurn.isCurrent(turn))
+      if (!interactionTurn.isCurrent(turn))
+        return
+      if (questionReceipt) {
+        const content = replyWithQuestion(answer, questionReceipt)
+        answer = content
+        conversationMessages.value = conversationMessages.value.map((message, index) => index === replyIndex ? { ...message, content } : message)
+      }
+    }
     if (!answer && !browserEffectAttempted)
       retryableConversationRequest.value = retryContextKey && interactionRecording.visitorSessionId.value ? { state: 'available', text, sessionId: interactionRecording.visitorSessionId.value, iframeRevision: scenarioRegistry.iframeRevision.value, originalUtteranceId: options.utteranceId, requestId: turn.id, contextKey: retryContextKey } : undefined
     updateAgentStep(reply.status === 'completed' && answer && !presented.recovery ? 'Main Agent 已完成' : presented.content)

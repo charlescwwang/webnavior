@@ -154,7 +154,7 @@ export function createInteractiveServiceClient() {
         const submission = safeParse(pbSubmissionResultSchema, response.result)
         const returned = journey?.tablePath && tool.name === 'browser_return_table' && issuedUrl === activeUrl
           && safeParse(tableSelectionReceiptSchema, response.result).success
-        const submitted = journey && tool.name === 'browser_order_submit' && submission.success && issuedUrl === activeUrl
+        const submitted = journey && tool.name === 'browser_order_submit' && submission.success && submission.output.dispatch === 'dispatched' && submission.output.status !== 'rejected' && issuedUrl === activeUrl
         // Only PB's bounded entry/submission acknowledgement may settle across
         // rediscovery. It cannot complete another write, restore old handles or
         // authorize any action in the replacement document.
@@ -173,7 +173,7 @@ export function createInteractiveServiceClient() {
       publish({ ...correlation, phase: 'resolved', tool, input, result })
       const submission = safeParse(pbSubmissionResultSchema, result)
       if (connection === current && issuedUrl && readPbJourney(issuedUrl)
-        && tool.name === 'browser_order_submit' && submission.success) {
+        && tool.name === 'browser_order_submit' && submission.success && submission.output.status !== 'rejected') {
         // SPA submission may never emit loading. Re-discover a read-only peer;
         // even a delayed navigation cannot restore cart/reset/submit tools.
         // Native unknown-write markers survive this transport replacement.

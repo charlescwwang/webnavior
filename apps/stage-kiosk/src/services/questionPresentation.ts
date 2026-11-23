@@ -1,5 +1,6 @@
 import type { BrowserConversation } from '@proj-airi/stage-shared/browser-conversation'
 import type { ConversationContext, ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { PbSubmissionResult } from '@proj-airi/stage-shared/pb-checkout'
 
 import type { KioskDecisionState, KioskInteractionDecision, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
@@ -133,6 +134,7 @@ export function createMenuReplyWindow(options: { sourceUtterance?: string } = {}
   let presentationFailure: string | undefined
   let cartChange: unknown
   let orderUnconfirmed = false
+  let submissionNotice: PbSubmissionResult | undefined
   let effectState: BrowserEffectState | undefined
   // Counts correlate repeated same-name operations in this one Host turn. An
   // operation with no receipt remains unknown even after another call settled.
@@ -162,6 +164,7 @@ export function createMenuReplyWindow(options: { sourceUtterance?: string } = {}
       if (execution.success && execution.output.steps.some(step => step.effect === 'order' && step.state === 'unknown'))
         orderUnconfirmed = true
       const payload = result as Record<string, unknown>
+      const submission = safeParse(pbSubmissionResultSchema, payload)
       const pending = pendingOperations.get(name) ?? 0
       if (pending > 0)
         pendingOperations.set(name, pending - 1)
@@ -182,7 +185,7 @@ export function createMenuReplyWindow(options: { sourceUtterance?: string } = {}
           observedEffect = 'none'
         if (writes.some(step => step.state === 'unknown' || (step.dispatchMs !== undefined && step.state !== 'completed')))
           observedEffect = 'unknown'
-        else if (writes.some(step => step.state === 'completed') && observedEffect === 'none')
+        else if (!submission.success && writes.some(step => step.state === 'completed') && observedEffect === 'none')
           observedEffect = 'applied'
       }
       if (payload.execution !== undefined && !execution.success && pending > 0)
@@ -203,9 +206,11 @@ export function createMenuReplyWindow(options: { sourceUtterance?: string } = {}
         else
           effectState = 'none'
       }
-      const submission = safeParse(pbSubmissionResultSchema, payload)
-      if (submission.success && ['pending', 'unknown'].includes(submission.output.status))
-        orderUnconfirmed = true
+      if (submission.success && submission.output.status !== 'accepted') {
+        if (submission.output.status !== 'rejected')
+          orderUnconfirmed = true
+        submissionNotice = submission.output
+      }
 
       if (['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_confirm_add', 'browser_question_answer'].includes(name))
         cartChange = payload.ok === true && payload.status === 'verified' ? payload : undefined
@@ -319,6 +324,7 @@ export function createMenuReplyWindow(options: { sourceUtterance?: string } = {}
       return !!query && options.sourceUtterance !== undefined && !options.sourceUtterance.includes(query)
     },
     effectState: (): BrowserEffectState | undefined => [...pendingOperations.values()].some(count => count > 0) ? 'unknown' : effectState,
+    submissionNotice: () => submissionNotice,
     orderUnconfirmed: () => orderUnconfirmed || pendingSubmissions.size > 0,
     cartChange: () => cartChange,
     presentationFailure: () => presentationFailure,
@@ -373,6 +379,11 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   const entryRequired = result.requestedTools.some(name => name !== 'kiosk_session_history')
   if (options.customerEntry?.phase === 'customer_entry' && (entryRequired || options.requireMenuRead))
     return { role: 'assistant' as const, content: options.customerEntry.prompt }
+  // Keep a pending result or a definite refusal ahead of lookup prose and
+  // stale checkout questions. A finished model round cannot change that result.
+  const submission = options.menu.submissionNotice()
+  if (submission)
+    return browserRecoveryReply({ operationAttempted: true, receipt: submission })
   // A final navigation or service-policy receipt cannot erase the dishes
   // actually checked in this turn. Preserve query facts before its next step.
   const searched = result.requestedTools.some(name => nativeOrderingToolName(name) === 'browser_search')

@@ -43,11 +43,44 @@ function taxIdInput(transcript: string) {
 
 // Phone fragments are literal data only inside a bound notification question.
 // Keep leading zeroes; never pull digits from an unrelated ordering sentence.
-function notificationPhoneInput(transcript: string) {
-  if (/^(?:重來|重新輸入|重新說|重新報)[。！!\s]*$/.test(transcript.trim()))
-    return { digits: '', replace: true }
-  const text = normalizeSlotNumbers(transcript).replaceAll(/[零〇]/g, '0').replaceAll(/幺/g, '1').replace(/^(?:我的)?(?:通知)?(?:手機|電話)(?:號碼)?是?[：:\s]*/, '').replace(/^(?:更正|改成)[：:\s]*/, '').replaceAll(/[\s，,。！!、.-]/g, '')
-  return /^\d+$/.test(text) ? { digits: text, replace: text.length === 10 || /^(?:更正|改成)/.test(transcript.trim()) } : undefined
+const spokenPhoneDigits: Record<string, string> = {
+  零: '0',
+  〇: '0',
+  鈴: '0',
+  靈: '0',
+  林: '0',
+  幺: '1',
+  么: '1',
+  壹: '1',
+  衣: '1',
+  貳: '2',
+  參: '3',
+  山: '3',
+  肆: '4',
+  伍: '5',
+  午: '5',
+  陸: '6',
+  溜: '6',
+  柒: '7',
+  妻: '7',
+  捌: '8',
+  吧: '8',
+  玖: '9',
+  酒: '9',
+}
+
+function notificationPhoneInput(transcript: string, previous: string) {
+  const compact = transcript.trim().replaceAll(/[\s，,。！!、：:.-]/g, '')
+  if (/^(?:重來|重新輸入|重新說|重新報|不對|不是|錯了|不正確|更正|改成|尾數|尾碼|後面|最後|第.+碼)/.test(compact))
+    return { digits: '' }
+  const text = normalizeSlotNumbers(compact.replace(/^(?:我的)?(?:通知)?(?:手機|電話)(?:號碼)?是?/, ''))
+  const digits = Array.from(text, char => spokenPhoneDigits[char] ?? char).join('')
+  if (!/^\d+$/.test(digits))
+    return
+  if (digits.length === 10)
+    return { digits }
+  // A fragment after read-back cannot identify which digits were misheard.
+  return { digits: previous.length === 10 ? '' : previous + digits }
 }
 
 /** Original customer request and actual bound answers used for independent plan admission. */
@@ -179,7 +212,7 @@ export function createBrowserDialogue(io: {
       && /^(?:ok|okay|好|好的|好了|填好了|資料填好了)[。！!，,\s]*$/i.test(transcript.trim())) {
       return 'yes'
     }
-    if (pending.kind === 'service' && pending.purpose === 'cart-review'
+    if (pending.kind === 'service' && ['review-checkout', 'cart-review'].includes(pending.purpose)
       && /^(?:這樣就好|就這樣|餐點正確|餐點沒問題)[。！!，,\s]*$/.test(transcript.trim())) {
       return 'yes'
     }
@@ -311,7 +344,7 @@ export function createBrowserDialogue(io: {
       const checkout = safeParse(looseObject({ checkout: pbCheckoutSchema }), raw)
       return !!browserQuestionChoice(transcript, pending.question)
         || (pending.kind === 'service' && !!choice)
-        || (pending.kind === 'service' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pending.purpose) && notificationPhoneInput(transcript) !== undefined)
+        || (pending.kind === 'service' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pending.purpose) && notificationPhoneInput(transcript, pending.query ?? '') !== undefined)
         || (pending.kind === 'service' && ['invoice-details', 'invoice-tax', 'invoice-tax-confirm'].includes(pending.purpose) && checkout.success && checkout.output.checkout.methods.some(method => method.method === 'tax' && method.selected) && taxIdInput(transcript) !== undefined)
         || (pending.kind === 'service' && ['invoice-details', 'invoice-donation-confirm'].includes(pending.purpose) && checkout.success && checkout.output.checkout.methods.some(method => method.method === 'donation' && method.selected) && donationCodeInput(transcript) !== undefined)
         || !!namedAnswer
@@ -489,6 +522,10 @@ export function createBrowserDialogue(io: {
       const pending = pendingQuestion(raw, binding)
       if (!binding || !pending || !isCurrent())
         return
+      if (pending.kind === 'service' && ['notification-phone-confirm', 'submit-order'].includes(pending.purpose)
+        && /^(?:這樣就好|就這樣)[。！!，,\s]*$/.test(transcript.trim())) {
+        return { kind: 'receipt' as const, result: receipt(pending.question) }
+      }
       const signature = JSON.stringify({ owner: binding.owner, documentId: binding.documentId, cartVersion: binding.cartVersion, purpose: pending.question.purpose, question: pending.question.question, choices: pending.question.choices })
       if (unresolvedQuestion?.signature !== signature)
         unresolvedQuestion = undefined
@@ -534,13 +571,12 @@ export function createBrowserDialogue(io: {
         }
       }
       if (pending.kind === 'service' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pending.purpose)) {
-        const input = notificationPhoneInput(transcript)
+        const input = notificationPhoneInput(transcript, pending.query ?? '')
         if (input) {
           unresolvedQuestion = undefined
           // The question's query is the only buffer. Its owner/document/cart and
           // 120-second expiry also retire partial numbers on reset or navigation.
-          const previous = pending.purpose === 'notification-phone' ? pending.query ?? '' : ''
-          const digits = input.replace ? input.digits : previous + input.digits
+          const digits = input.digits
           const validPrefix = !digits || /^0(?:9\d*)?$/.test(digits)
           const complete = /^09\d{8}$/.test(digits)
           const invalid = !validPrefix || digits.length > 10
@@ -558,7 +594,7 @@ export function createBrowserDialogue(io: {
             query: invalid ? '' : digits,
             request: pending.request,
             question: message,
-            choices: complete ? [{ id: 'yes', description: '號碼正確，填入剛才覆誦的通知手機，不送出訂單。' }, { id: 'no', description: '號碼不正確，清除暫存號碼，重新報。' }] : [],
+            choices: complete ? [{ id: 'yes', description: '號碼正確，填入剛才覆誦的通知手機，不送出訂單。' }, { id: 'no', description: '號碼有誤，請從頭重新報通知手機。' }] : [],
           })
           return { kind: 'receipt' as const, result: receipt(question) }
         }

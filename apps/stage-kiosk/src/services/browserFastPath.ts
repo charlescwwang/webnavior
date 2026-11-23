@@ -152,6 +152,11 @@ export function createBrowserFastPathSource(io: {
         return { phase: 'selecting_table', tableSelectionRequired: true, tableSelection: { choices: table.output.tableChoices, selectedTable: table.output.selectedTable }, candidates: offered.map(choice => ({ ...choice, description: `使用${plans[choice.id].input.name}開始點餐` })) }
       }
 
+      if (!io.hasPendingQuestion() && /^(?:這樣就好|就這樣)[。！!，,\s]*$/.test(transcript) && io.tools.some(tool => tool.name === 'browser_cart_review')) {
+        const editor = safeParse(pbEditorStateSchema, raw)
+        if (editor.success && editor.output.page === 'menu' && !editor.output.itemSelectionOpen && editor.output.cart.lines.length)
+          navigation = { id: 'intent:view-cart', name: 'browser_cart_review', description: '顧客點完了，開始結帳並核對已點餐點與總額。' }
+      }
       if (navigation) {
         const observed = safeParse(pbEditorStateSchema, raw)
         if (!observed.success)
@@ -270,7 +275,7 @@ export function createBrowserFastPathSource(io: {
         const matchedLabel = mentions[0].label
         const remainder = transcript.replace(matchedLabel, '').replace(/[\s，。！!、]/g, '')
         const amount = quantityFromTranscript(remainder)
-        const covered = /^(?:[請要加來]|幫我|請幫我|我要|我想要|給我|請給我|再來|再加|[再多])?(?:要|加)?(?:[1-9]|1\d|20|[一二兩三四五六七八九十]{1,3})份(?:謝謝)?$/.test(remainder)
+        const covered = /^(?:[請要加來]|幫我|請幫我|我要|我想要|給我|請給我|再來|再加|[再多])?[要加點]?(?:[1-9]|1\d|20|[一二兩三四五六七八九十]{1,3})[份碗](?:謝謝)?$/.test(remainder)
         const configuration = product.configurations.length === 1 ? product.configurations[0] : undefined
         if (covered && amount && product.kind === 'product' && product.priceType === 1 && configuration && !configuration.variantRef && !configuration.groups.some(group => group.required)) {
           issued.add = { version: facts.cart.version, productRef: product.ref, quantity: amount, unitPrice: configuration.unitPrice, note: '', selection: { version: configuration.version, variantRef: configuration.variantRef, choices: [] } }
@@ -296,7 +301,8 @@ export function createBrowserFastPathSource(io: {
         issued.plans['intent:return-menu'] = { name: 'browser_return_menu', input: {} }
         candidates.push({ id: 'intent:return-menu', description: selectedItemName ? `關閉目前「${selectedItemName}」餐點視窗並返回完整菜單，清除搜尋，保留購物車裡的餐點。` : '回到完整菜單，清除搜尋或結束目前推薦，保留購物車。' })
       }
-      const replay = (io.shownRecommendations?.().length ?? 0) > 0
+      // A complete literal add cannot be fulfilled by asking about a recommendation.
+      const replay = !issued.add && (io.shownRecommendations?.().length ?? 0) > 0
       if (replay) {
         const refs = io.shownRecommendations?.().filter(ref => issued!.productRefs.includes(ref)) ?? []
         if (refs.length) {
@@ -304,7 +310,7 @@ export function createBrowserFastPathSource(io: {
           candidates.push({ id: 'intent:show-recommendations', description: '重新顯示剛才已成功介紹的同一批餐點，不加入購物車。' })
         }
       }
-      const recommendation = io.tools.some(tool => tool.name === 'browser_present')
+      const recommendation = !issued.add && io.tools.some(tool => tool.name === 'browser_present')
       if (recommendation) {
         const eligible = io.recommendationPool?.(facts.products) ?? issued.productRefs
         // Literal mentions/fragments constrain display targets, never purchase

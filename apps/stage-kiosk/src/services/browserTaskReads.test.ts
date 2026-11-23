@@ -151,3 +151,13 @@ it.each(['checkout', 'itemSelectionOpen'])('refreshes %s after a cart edit rathe
   await readBrowserOrderingFacts(client)
   expect(execute.mock.calls.map(([tool]) => tool.name)).toEqual(['browser_state_get', 'browser_cart_quantity', 'browser_cart_get'])
 })
+
+it.each([true, false])('uses the initial editor read for retry evidence only when the document matches (%s)', async (matches) => {
+  const { client, facts, execute } = setup()
+  const recovery = { source: 'browser', documentId: matches ? facts.documentId : 'replaced', contextKey: 'before', canRetry: true, canReset: true }
+  execute.mockResolvedValueOnce({ ...facts, recovery })
+  const capture = vi.fn()
+  await readBrowserConversation(client, 'task', [], capture)
+  expect(capture).toHaveBeenCalledWith(matches ? JSON.stringify(['browser', facts.documentId, 'before']) : undefined)
+  expect(execute).toHaveBeenCalledTimes(1)
+})

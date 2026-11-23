@@ -63,19 +63,20 @@ export function describeCartLines(lines: readonly Pick<CartLine, 'name' | 'quant
 export interface PreparedItem extends Omit<CartLine, 'ref' | 'quantity'> {
   /** Rechecks vendor product/option facts after asynchronous UI preparation. */
   revalidate?: () => Promise<void>
-  commit: (onDispatch: () => void) => Promise<void>
+  /** Returns the fresh cart observation that settled this one native click. */
+  commit: (onDispatch: () => void) => Promise<CartSnapshot>
 }
 
 /** IO belongs to the PB browser adapter; reconciliation and retry policy live here. */
 export interface CartGateway {
   read: () => Promise<CartSnapshot>
   /** Clear all unsubmitted rows through the native control, bound to this fresh snapshot. */
-  clear: (before: CartSnapshot, onDispatch: () => void) => Promise<void>
+  clear: (before: CartSnapshot, onDispatch: () => void) => Promise<CartSnapshot | void>
   /** Proves that the native adapter can distinguish this observed row before merging an add. */
   canEdit: (cart: CartSnapshot, lineRef: string) => boolean
   prepare: (input: { productRef: string, quantity: number, note: string, selection: ProductSelection }) => Promise<PreparedItem>
-  setQuantity: (ref: string, quantity: number, onDispatch: () => void, equivalentRefs?: readonly string[]) => Promise<void>
-  remove: (ref: string, onDispatch: () => void, equivalentRefs?: readonly string[]) => Promise<void>
+  setQuantity: (ref: string, quantity: number, onDispatch: () => void, equivalentRefs?: readonly string[]) => Promise<CartSnapshot | void>
+  remove: (ref: string, onDispatch: () => void, equivalentRefs?: readonly string[]) => Promise<CartSnapshot | void>
 }
 
 function fingerprint(cart: CartSnapshot) {
@@ -142,6 +143,7 @@ export function createCartOperations(gateway: CartGateway) {
   }
 
   return {
+    publish,
     canRecover: () => !busy && !uncertain,
     /** Clears an unknown single-cart effect only against a fresh gateway observation. No writes are replayed. */
     verifyPending(cart: CartSnapshot) {
@@ -163,9 +165,9 @@ export function createCartOperations(gateway: CartGateway) {
       let dispatched = false
       try {
         const before = await gateway.read()
-        if (before.lines.length)
-          await gateway.clear(before, () => { dispatched = true })
-        const after = await gateway.read()
+        const after = before.lines.length
+          ? await gateway.clear(before, () => { dispatched = true }) ?? await gateway.read()
+          : before
         if (after.lines.length || after.subtotal !== 0)
           throw new Error('購物車明細或小計尚未清空。')
         return { ok: true, status: 'verified', cart: publish(after), customerMessage: '未結帳餐點已清空，可以開始新的點餐。' }
@@ -179,7 +181,7 @@ export function createCartOperations(gateway: CartGateway) {
       }
       finally { busy = false }
     },
-    async execute(input: { action: 'add' | 'quantity' | 'remove' | 'replace', version: string, productRef?: string, lineRef?: string, lineRefs?: string[], quantity: number, note: string, unitPrice?: number, selection?: ProductSelection, retainQuantity?: number }) {
+    async execute(input: { action: 'add' | 'quantity' | 'remove' | 'replace', version: string, productRef?: string, lineRef?: string, lineRefs?: string[], quantity: number, note: string, unitPrice?: number, selection?: ProductSelection, retainQuantity?: number }, observed?: CartSnapshot) {
       if (busy || uncertain)
         return { ok: false, status: uncertain ? 'unknown' : 'rejected', effect: uncertain ? 'unknown' : 'none', customerMessage: '先前操作尚未確認，請先確認購物車，暫停新的代操作。' }
       busy = true
@@ -188,7 +190,7 @@ export function createCartOperations(gateway: CartGateway) {
       try {
         if (!Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > 99)
           throw new Error('數量必須介於 1 到 99。')
-        const before = await gateway.read()
+        const before = observed ?? await gateway.read()
         if (!advertised || advertised.version !== input.version || advertised.key !== fingerprint(before)) {
           // A changed pickup/table/manual generation is stale admission, not
           // an unknown merchant effect. The Host must refresh and revalidate
@@ -276,8 +278,9 @@ export function createCartOperations(gateway: CartGateway) {
         const onDispatch = () => {
           dispatched = true
         }
+        let committedCart: CartSnapshot | undefined
         if (prepared) {
-          await prepared.commit(onDispatch)
+          committedCart = await prepared.commit(onDispatch)
         }
         else if (group.length > 1) {
           // Equivalent rows are fungible only within this admitted group. Remove
@@ -294,30 +297,31 @@ export function createCartOperations(gateway: CartGateway) {
             if (fingerprint(await gateway.read()) !== fingerprint(stage))
               throw new Error('合計調整期間購物車已變更。')
             const row = rows.at(-1)!
-            await gateway.remove(row.ref, onDispatch, refs)
-            const next = await gateway.read()
+            const next = await gateway.remove(row.ref, onDispatch, refs) ?? await gateway.read()
             if (!verifyCartRowEdit(stage, next, row.ref, 0, refs))
               throw new Error('合計調整的中途結果尚未確認。')
             stage = next
+            committedCart = next
             rows = stage.lines.filter(line => refs.includes(line.ref))
           }
           if (operation === 'quantity') {
             target = rows[0]
             if (fingerprint(await gateway.read()) !== fingerprint(stage))
               throw new Error('合計調整期間購物車已變更。')
-            await gateway.setQuantity(target.ref, quantity, onDispatch)
-            if (!verifyCartRowEdit(stage, await gateway.read(), target.ref, quantity))
+            committedCart = await gateway.setQuantity(target.ref, quantity, onDispatch) ?? await gateway.read()
+            if (!verifyCartRowEdit(stage, committedCart, target.ref, quantity))
               throw new Error('合計調整的最後份數尚未確認。')
           }
         }
         else if (operation === 'quantity') {
-          await gateway.setQuantity(target!.ref, quantity, onDispatch)
+          committedCart = await gateway.setQuantity(target!.ref, quantity, onDispatch) ?? undefined
         }
         else {
-          await gateway.remove(target!.ref, onDispatch)
+          committedCart = await gateway.remove(target!.ref, onDispatch) ?? undefined
         }
 
-        let after = await gateway.read()
+        // Native controls return the full observation that verified their last click.
+        let after = committedCart ?? await gateway.read()
         // The first add legitimately creates an order identity. This exception
         // applies only to an empty, identity-free cart; pickup/manual generation
         // and the entire requested effect are still verified below.
@@ -343,11 +347,10 @@ export function createCartOperations(gateway: CartGateway) {
                 throw new Error('替換中途購物車已變更。')
               const removed = Math.min(remaining, line.quantity)
               const kept = line.quantity - removed
-              if (kept)
-                await gateway.setQuantity(line.ref, kept, onDispatch, refs)
-              else
-                await gateway.remove(line.ref, onDispatch, refs)
-              after = await gateway.read()
+              const edited = kept
+                ? await gateway.setQuantity(line.ref, kept, onDispatch, refs)
+                : await gateway.remove(line.ref, onDispatch, refs)
+              after = edited ?? await gateway.read()
               if (!verifyCartRowEdit(stage, after, line.ref, kept, refs))
                 throw new Error('新餐已加入，但原餐調整結果尚未確認。')
               stage = after

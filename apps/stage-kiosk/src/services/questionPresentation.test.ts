@@ -707,3 +707,30 @@ it('keeps the native order outcome message instead of generic cart recovery', ()
   expect(result.content).toBe(message)
   expect(result.content).not.toContain('購物車')
 })
+
+// Report: this chat, 2026-11-23. Same-page merchant refusal is a final
+// no-effect reply even when the final confirmation button was dispatched.
+it.each(['dispatched', 'not-dispatched'])('reports the PB closed-store refusal (%s) without order recovery', (dispatch) => {
+  const menu = createMenuReplyWindow()
+  const message = '目前非營業時間，暫時無法點餐。'
+  menu.beginOperation('browser_cart_get', { maySubmit: true })
+  menu.record('browser_cart_get', {
+    schemaVersion: 1,
+    ok: true,
+    source: 'browser',
+    code: 'order-submission-result',
+    dispatch,
+    status: 'rejected',
+    effect: 'none',
+    consistency: 'unavailable',
+    reason: 'store-closed',
+    customerMessage: message,
+  })
+  expect(menu.orderUnconfirmed()).toBe(false)
+  expect(menu.effectState()).toBe('none')
+  expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['browser_cart_get'] }, {
+    menu,
+    failureMessage: '未完成',
+    browserRecovery: { operationAttempted: true, page: 'cart' },
+  })).toMatchObject({ role: 'assistant', content: message })
+})

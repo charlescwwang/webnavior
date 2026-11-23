@@ -12,14 +12,28 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, totalmoney: 64 }, submissionDelay = 0, staleBootstrap = false) {
+function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, totalmoney: 64 }, submissionDelay = 0, staleBootstrap = false, refusal?: 'open' | 'confirm' | 'response') {
   history.replaceState({}, '', '/order/store/1kgJeql/internal_use/orders/create')
   document.body.innerHTML = `<section class="order-create"><label><input type="radio" name="invoice" value="5" checked>無載具</label><label><input type="radio" name="invoice" value="3">手機載具</label><input placeholder="請輸入共8碼編號"><div class="el-form-item"><label>手機號碼</label><input type="email"></div><div class="el-form-item"><label>E-mail</label><input type="email"></div></section><p>總金額<span>$64</span></p><button>送出訂單</button>`
   const clicked = vi.fn()
+  const showRefusal = () => document.querySelector('.order-create')!.insertAdjacentHTML('beforeend', '<p>目前非營業時間，暫時無法點餐。</p>')
   document.querySelector('button')!.addEventListener('click', () => {
+    if (refusal === 'open') {
+      showRefusal()
+      return
+    }
     document.body.insertAdjacentHTML('beforeend', '<div role="dialog" aria-label="確認訂單"><div class="el-message-box__message">訂單送出後將無法修改，請確認所有資訊是否正確。</div><button>取消</button><button>確定</button></div>')
     document.querySelectorAll('[role="dialog"] button')[1].addEventListener('click', () => {
       clicked()
+      if (refusal === 'response') {
+        document.dispatchEvent(new CustomEvent('pb-submit-confirmed', { detail: '水餃已售完' }))
+        return
+      }
+      if (refusal === 'confirm') {
+        document.querySelector('[role="dialog"]')!.remove()
+        showRefusal()
+        return
+      }
       const finish = () => {
         document.body.innerHTML = '<p>取餐編號：TEST-0001</p>'
         history.replaceState({}, '', '/order/store/1kgJeql/internal_use/orders/TEST-123/choosePayment')
@@ -48,6 +62,54 @@ function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, tot
   const controls = createControls(operation, controller.signal)
   return { checkout, controls, cart, clicked, dispatched, accepted, readResultPage, touch: () => revision++ }
 }
+
+// Report: this chat, 2026-11-23. The actual checkout page retained this
+// refusal as visible text after the modal disappeared and stayed on Order/Create.
+it('reports a visible closed-store refusal without dispatching or waiting for navigation', async () => {
+  const { checkout, controls, clicked, dispatched, readResultPage } = setup()
+  await checkout.phone('0912345678', controls)
+  const prepared = await checkout.prepare()
+  document.querySelector('.order-create')!.insertAdjacentHTML('beforeend', '<p>目前非營業時間，暫時無法點餐。</p>')
+  expect(await checkout.submit(prepared.confirmationToken!, controls)).toMatchObject({
+    status: 'rejected',
+    effect: 'none',
+    dispatch: 'not-dispatched',
+    customerMessage: '目前非營業時間，暫時無法點餐。',
+  })
+  expect(clicked).not.toHaveBeenCalled()
+  expect(dispatched).not.toHaveBeenCalled()
+  expect(readResultPage).not.toHaveBeenCalled()
+})
+
+it.each(['open', 'confirm'] as const)('settles a newly rendered same-page refusal at %s', async (refusal) => {
+  const { checkout, controls, clicked, dispatched, accepted, readResultPage } = setup(undefined, 0, false, refusal)
+  await checkout.phone('0912345678', controls)
+  const prepared = await checkout.prepare()
+  const url = location.href
+  const count = refusal === 'confirm' ? 1 : 0
+  expect(await checkout.submit(prepared.confirmationToken!, controls)).toMatchObject({
+    status: 'rejected',
+    effect: 'none',
+    dispatch: count ? 'dispatched' : 'not-dispatched',
+    reason: 'store-closed',
+  })
+  expect(location.href).toBe(url)
+  expect(clicked).toHaveBeenCalledTimes(count)
+  expect(dispatched).toHaveBeenCalledTimes(count)
+  expect(accepted).toHaveBeenCalledTimes(count)
+  expect(readResultPage).not.toHaveBeenCalled()
+  await expect(checkout.submit(prepared.confirmationToken!, controls)).rejects.toThrow('核對')
+  expect(clicked).toHaveBeenCalledTimes(count)
+})
+
+it('ignores refusal text hidden in the checkout document', async () => {
+  const { checkout, controls, clicked } = setup()
+  document.querySelector('.order-create')!.insertAdjacentHTML('beforeend', '<p hidden>目前非營業時間，暫時無法點餐。</p>')
+  await checkout.phone('0912345678', controls)
+  const prepared = await checkout.prepare()
+  expect(await checkout.submit(prepared.confirmationToken!, controls)).toMatchObject({ status: 'accepted' })
+  expect(clicked).toHaveBeenCalledOnce()
+})
 
 // Report: this chat Nov17 — DEV-642583 dispatched the final submit but timed out after five seconds.
 it('waits for a slow merchant submission result without clicking submit twice', async () => {
@@ -269,3 +331,12 @@ it('keeps an unavailable fresh result pending and never submits again', async ()
   await expect(checkout.submit(prepared.confirmationToken!, controls)).rejects.toThrow('核對')
   expect(clicked).toHaveBeenCalledOnce()
 })
+
+it('returns the merchant order error from the current POST before any refusal text renders', async () => {
+  const { checkout, controls, clicked, readResultPage } = setup(undefined, 0, false, 'response')
+  await checkout.phone('0912345678', controls)
+  const prepared = await checkout.prepare()
+  expect(await checkout.submit(prepared.confirmationToken!, controls, 'confirmed')).toMatchObject({ status: 'rejected', customerMessage: '水餃已售完' })
+  expect(clicked).toHaveBeenCalledTimes(1)
+  expect(readResultPage).not.toHaveBeenCalled()
+}, 20000)
