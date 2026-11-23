@@ -1,0 +1,30 @@
+{
+  "exclude": [
+    "/*",
+    "!/apps/",
+    "!/packages/",
+    "!/package.json",
+    "!/pnpm-workspace.yaml",
+    "!/tsconfig*.json",
+    "!/vitest.config.ts",
+    "/apps/*",
+    "!/apps/stage-kiosk/",
+    "!/apps/stage-kiosk-desktop/",
+    "!/apps/order-menu/",
+    "!/apps/order-menu-server/",
+    "!/apps/server/",
+    "**/.codegraph/",
+    "**/node_modules/",
+    "**/*.local/",
+    "**/*.local.*",
+    "**/.env",
+    "**/.env.*",
+    "**/dist/",
+    "**/out/",
+    "**/bundle/",
+    "**/coverage/",
+    "**/.cache/",
+    "**/__screenshots__/",
+    "/apps/server/data/"
+  ]
+}

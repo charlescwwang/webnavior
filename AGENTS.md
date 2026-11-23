@@ -252,6 +252,15 @@ Concise but detailed reference for contributors working across the `moeru-ai/air
 - Explore progressively: begin with the relevant implementation, callers, tests, package manifest, and design document. Widen the search only when the handoff is insufficient, an architecture change is evident, a dependency/caller cannot be found, or the task genuinely crosses modules.
 - When a file location is known, search that directory or file rather than the whole repository. Filter tool output and inspect relevant ranges; do not load generated output, lockfiles, dependency trees, build artifacts, large logs, or unrelated assets without a task-specific reason.
 
+### CodeGraph navigation
+
+- The optional project MCP server `codegraph` indexes Kiosk, Kiosk Desktop, Order Menu, Order Menu Server, Server, and shared `packages/`. Other apps and local/generated data are excluded by `codegraph.json`.
+- When the tools are available, check `codegraph_status` before using the graph for cross-file impact analysis, then use `codegraph_explore`, `codegraph_node`, or `codegraph_callers` as needed. Keep `projectPath` in the current Git worktree; each worktree owns its index.
+- The native watcher updates the index while its MCP daemon runs. It does not edit source or automatically invoke tools for every save. During pending/stale results or ongoing edits, read current source and recheck before changing interfaces or removing code.
+- Zero pending changes does not prove successful parsing. Inspect the relevant source and run scoped validation; the pinned version has a known JSON import-attributes parse warning. Distinguish calls from imports/type references, and trace Eventa contracts plus producers/handlers directly. No graph result is not proof of unused code.
+- Use `python3 scripts/codegraph/run.py init`, `status`, or `serve` for the bounded local CLI. Do not bypass the launcher with a raw binary or installer. Before a manual `sync` or full `index`, disable MCP and close its clients so the writer can be released. `stop` stops only this integration's shared slice, including its CodeGraph worktrees; it never restarts API or website services.
+- The launcher uses the verified local Linux v1.6.3 bundle, systemd, and Bubblewrap. Setup, limits, known gaps, and rollback are documented in `docs/plans/codegraphWatcherIntegration.md`. If MCP is unavailable, continue with `rg` and source reads.
+
 ### Scope and stopping
 
 - Keep the task to the requested behavior. Record unrelated defects, TODOs, formatting, refactor opportunities, or architectural debt, but do not fix them unless they block the task, are a regression introduced by the task, or are required for the requested behavior to work.

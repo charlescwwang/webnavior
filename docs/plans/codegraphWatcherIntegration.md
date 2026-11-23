@@ -1,12 +1,12 @@
 # CodeGraph 原生 watcher 與 MCP 導入計畫
 
-日期：2026-11-19。狀態：隔離原生 watcher 與負載驗證完成；目前工作目錄的索引、watcher 與專案 MCP 尚未啟用。
+更新：2026-11-20。狀態：目前工作目錄索引、受限原生 watcher 與專案 MCP 接入完成；已直接在這個 chat 呼叫 CodeGraph 成功，不需要額外尋找 Restart 按鈕。
 
 ## 目標與執行方式
 
 讓 Codex 能查詢目前工作目錄的程式關係，並由 CodeGraph 原生 watcher 在存檔後更新索引。日常開發不需要每改一個檔案就手動重建；Codex 在理解跨檔案流程、修改共享契約或判斷影響範圍時查詢圖譜。
 
-沿用使用者指定的 `colbymchenry/codegraph`，固定 v1.6.3。先在隔離來源副本驗證持續更新，再建立 live worktree 索引，最後接入專案 MCP。每階段須取得下表列出的證據，才進入下一階段。本輪只在隔離副本啟動原生 MCP／watcher，測試程序已全部關閉。
+沿用使用者指定的 `colbymchenry/codegraph`，固定 v1.6.3。隔離來源副本驗證持續更新後，已建立 live worktree 索引並設定專案 MCP。使用上游原生 watcher／daemon；本專案啟動器只處理作業系統資源、檔案與網路限制，不代理 MCP 訊息或實作監看器。
 
 watcher 更新的是索引，原始碼仍由開發者或 Codex 修改。CodeGraph 的查詢是導航與修改影響線索；編譯、測試與實際原始碼仍負責確認行為。Eventa／IPC 的跨程序執行關係不能由「沒有找到呼叫端」推斷不存在。
 
@@ -44,7 +44,19 @@ flowchart LR
 
 服務共 372 個取樣點、1,116 次 HTTP probe，其中 1,114 次為 200。台北 21:54:16 一個取樣點的兩個 API probe 無法連線，前後兩秒取樣均成功，靜態頁仍為 200；同時另一份 r4 啟用紀錄與 API PID 更換可見，證據保留於 `concurrent-service-change.json`。本次沒有部署或重啟 API，未達連續三次停止門檻；但這個同時變更使本輪不能宣稱零中斷或完成因果隔離。收尾三端點皆 200，測試 units／bundle 程序／daemon pidfile／socket 均無殘留。
 
-目前未建立原專案 `.codegraph`、`codegraph.json` 或 `.codex/config.toml`。尚未驗證 live Vite／tsx 熱重載、Codex app 的實際 MCP 接入、強制 OOM 復原或營運高峰；訂單、音訊與模型品質不在本輪驗收範圍。
+以上為 11 月 19 日隔離階段紀錄；當時尚未建立原專案索引或設定。11 月 20 日接入結果如下。強制 OOM、營運高峰、訂單、音訊與模型品質仍不在本輪驗收範圍。
+
+### 2026-11-20 Live 接入結果
+
+目前工作目錄完成 2,468 檔索引，與上游 `scanDirectory` 的候選清單完全一致；本輪初始化 wall time 18.298 秒，受限 slice 峰值 955.12 MiB。六項 live 檢查通過：初始化、實際範圍與 Git hooks 未變、原生 MCP 與來源唯讀、雙連線共用、未 import 的臨時模組新增／刪除自動同步，以及既有 listener 程序身分不變。臨時模組已刪除，圖譜中的定義也已消失；兩次在後續查詢前觀測到持久化 hash 的時間皆約 0.502 秒。
+
+前／中／後共 35 個取樣點、105 次 HTTP probe 全為 200；可辨識 API listener PID／starttime 前後一致，收尾三端點亦為 200。沒有部署、重啟服務或保留產品來源變更。本輪確認的是當時既有服務，不是所有可能的 Vite／tsx 啟動設定；未另外啟動開發伺服器或執行營運負載驗收。
+
+Codex CLI 已確認 trusted project 的 MCP 設定可見。再用指定本專案 cwd 的 ephemeral Codex runtime，直接從專案設定載入六個工具，完成 `codegraph_status`、`codegraph_node(readPbJourney)`、`codegraph_callers(readPbJourney)` 呼叫；沒有執行模型 turn 或建立持久側欄 chat。一般不帶 thread 的 app-server 工具清單讀取使用者設定層，不能拿它的空結果判定 project MCP 失敗，也不能據此把啟動 cwd 固定到另一個 worktree。
+
+後續確認：這個既有 chat 已取得 CodeGraph 工具，直接呼叫 `mcp__codegraph__codegraph_status` 成功，當次狀態為 2,448 檔、零待同步變更；不需要額外按 Restart。這是後續時間點的索引狀態，不覆蓋初次建立時的 2,468 檔測量。沒有重啟整個 Codex app 或其他 chat。完整證據見 [live verification.json](/home/aimax/webnavior/codegraph-pilot.local/live-20261120-r1/verification.json)；原生查詢、Codex 實際呼叫、資源與服務取樣皆保留在同目錄。
+
+仍有一處既知 JSON import-attributes 解析警告，見 `parse-warnings.json`。狀態已同步不等於語法、型別或跨程序語意均正確；本次沒有為了工具改寫產品程式。未跑產品測試／全專案 typecheck，已執行實際 CLI／MCP 整合檢查與啟動器語法檢查。
 
 ## 索引範圍與程序所有權
 
@@ -54,6 +66,10 @@ flowchart LR
 
 每個 worktree 使用自己的索引。同一 worktree 的多個 Codex 連線優先沿用 CodeGraph 原生共享 daemon 與 writer lock，避免重複 watcher 或跨分支共用資料庫。資源限制必須涵蓋實際 daemon、worker 與同步程序，不能只限制短命的 MCP 啟動器；多連線的關閉順序也必須先驗證，不能讓一個 chat 結束就誤停另一個 chat 的共享程序。
 
+目前由 `scripts/codegraph/run.py` 建立每次連線的 transient scope，所有 scope 共用 `webnaviorCodegraph.slice`：CPUQuota100%、MemoryHigh1536MiB、MemoryMax2GiB、無 swap、TasksMax128，CLI／daemon／worker 繼承 nice19 與 idle IO。關閉第一個連線後，daemon 留在原 scope 服務其他連線；scope 不會跟著第一個 stdio EOF 被整組終止。slice 只在使用者 runtime 連結，不安裝開機服務。
+
+已安裝的 Bubblewrap 將檔案系統掛載為唯讀，只讓當前 worktree `.codegraph/` 與 `/tmp/webnavior-codegraph-<uid>/` 持久寫入，並隔離對外網路；原生 daemon 的實際 mountinfo 與 cgroup 已核對。私有 `/dev` 提供 detached spawn 所需的 `/dev/null`。MCP 顯式轉交 `DBUS_SESSION_BUS_ADDRESS` 與 `XDG_RUNTIME_DIR` 兩個非機密變數供啟動器連接使用者 systemd bus；工具程序再清空環境，不接收模型金鑰。全域 daemon registry 不在可寫範圍，管理本次程序以 worktree pidfile／slice 為準。
+
 原生 watcher 可由 `serve --no-watch`／`CODEGRAPH_NO_WATCH=1` 關閉。`CODEGRAPH_NO_DAEMON=1` 控制直接／共享服務模式，不能單獨當作關閉 watcher 的依據。這項區分已由安裝版本的 CLI help、watch policy 與 project lifecycle 實作核對；實作時以實際程序與變更是否仍自動同步驗證開關。
 
 ## 分階段執行與驗收
@@ -62,8 +78,8 @@ flowchart LR
 | --- | --- | --- |
 | A 隔離 watcher 驗證（已執行） | 在新的來源副本啟動原生 MCP／watcher，執行下列檔案變更與重新連線案例 | 不手動 sync 也能取得最新結果；失敗或尚未同步時，開發流程不把舊結果當成最新；關閉後無本次殘留程序 |
 | B 持續負載與多連線（隔離驗證已執行） | 一般編輯、批次寫入與閒置取樣；測試兩個 MCP 連線及不同 worktree | 實際 worker／daemon 受同一組限制，無重複 writer、跨 worktree 汙染或持續重建迴圈；關閉一個連線不破壞另一個連線 |
-| C Live worktree 索引 | 合併排除設定，低優先權建立目前工作目錄的索引，再啟動原生 watcher | 索引清單符合範圍；新增但尚未 git add 的來源也能追蹤；不因索引資料庫寫入觸發既有 Vite／tsx 重建或重啟 |
-| D 專案 MCP 接入 | 合併專案設定與 AGENTS 查詢規則，在實際 Codex 工作階段驗證 | 工具確實可見且可呼叫；存檔後可查到更新；停用 CodeGraph 後，Codex 的既有讀檔／搜尋流程仍可使用 |
+| C Live worktree 索引（已執行） | 合併排除設定，低優先權建立目前工作目錄的索引，再啟動原生 watcher | 清單與新增／刪除同步已確認；現行服務程序未變；其他 Vite／tsx 啟動設定仍需在使用時確認 |
+| D 專案 MCP 接入（完成） | 合併專案設定與 AGENTS 查詢規則，在實際 Codex 執行環境驗證 | 六工具可見、三種工具呼叫成功；後續亦在這個既有 chat 直接呼叫成功 |
 
 ### 檔案與同步案例
 
@@ -99,7 +115,7 @@ flowchart LR
 
 MCP 初始只提供結構查詢與狀態所需工具，狀態工具是否需顯式加入上游 catalog 以實際 tools/list 驗證。保持 MCP 為可選工具，沿用現有權限政策，停用或離線時使用既有搜尋與原始碼查閱。實際 tools/call 成功才算接通，不能只以設定檔存在或 mcp list 有紀錄宣稱完成。
 
-## 預定變更
+## 已落地設定與操作
 
 | 位置 | 用途 |
 | --- | --- |
@@ -107,10 +123,21 @@ MCP 初始只提供結構查詢與狀態所需工具，狀態工具是否需顯�
 | [gitignore](/home/aimax/webnavior/.gitignore) | 忽略 live 索引與固定版本的本機工具檔案 |
 | `/home/aimax/webnavior/.codex/config.toml` | 加入本專案 MCP 的啟動與環境設定 |
 | [AGENTS.md](/home/aimax/webnavior/AGENTS.md) | 合併上述查詢、新鮮度與已知解析限制的使用規則 |
-| 固定版本本機 CLI 與必要的啟動設定 | 使用已驗證 bundle；執行位置須持久存在且不依賴 `/tmp` 快照；資源與生命週期封裝方式以階段 B 的實測決定 |
+| [啟動器](/home/aimax/webnavior/scripts/codegraph/run.py) 與 [slice](/home/aimax/webnavior/scripts/codegraph/webnaviorCodegraph.slice) | 使用既有 v1.6.3 bundle、systemd 與 Bubblewrap；資源與寫入權限限制涵蓋原生 daemon／worker |
 | 本計畫與 [交接文件](/home/aimax/webnavior/docs/codex-handoff.md) | 保留驗收結果、操作方式與仍存在的限制 |
 
 所有變更限於開發工具接入；使用上游 watcher、索引與 MCP，不另寫監看器、圖譜引擎或 daemon 協定。初始化與 installer 的副作用須先檢查，尤其是自動修改 AGENTS、權限與 Git sync hooks；正式接入採最小設定合併。產品 app／package 的執行依賴、營運服務與發布流程不屬於這次變更。
+
+本機 CLI 位於 `codegraph-pilot.local/tool-v1.6.3/codegraph-linux-x64`，沿用上方核對的官方 bundle；不是全域安裝。MCP 設定中的啟動器路徑為此 Linux 主機路徑，搬到其他主機時需調整；worktree 索引根目錄則取各自 Codex 專案 runtime 的 cwd，不固定指向本目錄。新的 worktree 須有相同排除設定，並先執行受限初始化。缺少 bundle／systemd／Bubblewrap 時直接失敗，不改用無限制啟動。
+
+在目標 worktree 根目錄操作：
+
+```bash
+python3 /home/aimax/webnavior/scripts/codegraph/run.py status
+python3 /home/aimax/webnavior/scripts/codegraph/run.py init
+```
+
+日常由 Codex 啟動 MCP，原生 watcher 隨 daemon 運行；最後一個連線關閉後，原生預設約五分鐘閒置退出，再連線會啟動並補齊離線變更。索引會保留，但沒有連線且 daemon 已退出時不持續監看。存檔不會自動修改其他原始碼，也不會保證模型每次呼叫工具。
 
 ## 停用與回退
 
@@ -118,9 +145,18 @@ MCP 初始只提供結構查詢與狀態所需工具，狀態工具是否需顯�
 
 保留來源與本機索引，不以刪除資料庫代替正常關閉。要改成手動模式時，先確認目前 writer 已釋放，驗證原生 sync／查詢可用後再使用；要恢復自動模式則重新檢查追上來源與 watcher 所有權。回退只處理本次 CodeGraph 設定與其擁有的程序，不重啟現行 API 或網站，也不覆蓋其他人的未提交修改。
 
+停用時在 `.codex/config.toml` 將 `mcp_servers.codegraph.enabled` 設為 `false` 並重新載入 MCP，再執行：
+
+```bash
+python3 /home/aimax/webnavior/scripts/codegraph/run.py stop
+```
+
+此命令停止本 integration slice 內所有 worktree 的 CodeGraph 連線／daemon，不影響產品服務。手動更新在 writer 已釋放後使用 `run.py sync`；完整重建使用 `run.py index`。重新啟用則恢復 `enabled = true` 並重新載入 MCP，既有索引可沿用。
+
 ## 參考
 
 - [CodeGraph v1.6.3 索引與同步](https://github.com/colbymchenry/codegraph/blob/v1.6.3/site/src/content/docs/guides/indexing.md)
 - [CodeGraph v1.6.3 索引範圍設定](https://github.com/colbymchenry/codegraph/blob/v1.6.3/site/src/content/docs/getting-started/configuration.md)
 - [OpenAI 官方 MCP 設定](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+- [systemd scope 與 slice](https://www.freedesktop.org/software/systemd/man/latest/systemd-run.html)
 - 本機已核對的 v1.6.3 CLI help，以及 bundle 內的 `sync/watch-policy.js`、`mcp/index.js`、`mcp/project-lifecycle.js`、`index.js`。控制開關與同步行為若和文件摘要有差異，以固定版本實作及上述驗收結果判定。

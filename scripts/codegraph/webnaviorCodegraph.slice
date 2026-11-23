@@ -1,0 +1,11 @@
+[Unit]
+Description=Shared resource budget for Webnavior CodeGraph clients and native daemons
+
+[Slice]
+CPUQuota=100%
+CPUWeight=10
+MemoryHigh=1536M
+MemoryMax=2G
+MemorySwapMax=0
+TasksMax=128
+IOWeight=1
