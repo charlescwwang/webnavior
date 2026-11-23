@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-23T06:21:06.682500+00:00",
+  "release": "kiosk-task-reads-20261123-r1",
+  "sourceCommit": "313485df8f4194d714a24221acbfc9ba0181182f",
+  "status": "frontend-deployed",
+  "desktopVersion": "0.7.8-rc.6",
+  "newExeRequired": false,
+  "assumption": "Agent-only website operation; no concurrent customer edits.",
+  "changes": [
+    "Task-local validated state shared between model context and tool planning; concurrent reads coalesced.",
+    "Verified complete cart/navigation/form receipts refresh state; unchanged same-store catalog retained.",
+    "Unknown/incomplete results, document changes and existing checkout/open selection after edits force refresh.",
+    "Native prewrite validation, result readback, final consent, one-use submit and live payment reads retained."
+  ],
+  "checks": {
+    "kioskUnit": {
+      "passed": 1220,
+      "expectedFail": 1,
+      "skipped": 49
+    },
+    "newRegressionCases": 14,
+    "regressionFirst": {
+      "initialCases": 6,
+      "failedBeforeFix": 4
+    },
+    "unchangedPlanningReads": {
+      "before": 3,
+      "after": 1
+    },
+    "browserCheckoutPayment": 24,
+    "kioskTypecheck": "passed",
+    "changedCodeLint": "passed",
+    "frontendBuild": "passed",
+    "productionModuleAudit": {
+      "moduleCount": 2921,
+      "forbidden": []
+    },
+    "rootTypecheck": "not run"
+  },
+  "frontend": {
+    "release": "kiosk-task-reads-20261123-r1",
+    "status": "activated-http-verified",
+    "apiRestart": false,
+    "changed": 96,
+    "apiPid": "421721"
+  },
+  "httpChecks": 9,
+  "health": [
+    {
+      "url": "http://127.0.0.1:5169/readyz",
+      "response": {
+        "status": "ready",
+        "checks": {
+          "db": "ok",
+          "redis": "ok"
+        }
+      }
+    },
+    {
+      "url": "https://webnavior.aikcitri.qzz.io/readyz",
+      "response": {
+        "status": "ready",
+        "checks": {
+          "db": "ok",
+          "redis": "ok"
+        }
+      }
+    }
+  ],
+  "logs": "/home/aimax/webnavior/pb-test.local/kiosk-task-reads-20261123-r1",
+  "limitations": [
+    "No end-to-end field latency measurement or physical Windows acceptance.",
+    "No screenshot inference; paid TTS, ASR and model policies untouched.",
+    "Login refusal exercised only as an automated exception fixture; no new login requirement or live login incident observed by this task."
+  ]
+}
