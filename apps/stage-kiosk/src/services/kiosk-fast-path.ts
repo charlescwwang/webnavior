@@ -15,6 +15,11 @@ import { normalizeTranscript } from '../../../server/src/services/domain/kiosk-i
 import { decisionQuestionBudget } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import { presentedQuestionFrom } from './questionPresentation'
 
+/** Native read-only order pages retain browser ownership without editor/visual tools. */
+export function conversationSource(tools: readonly ServiceTool[]): 'browser' | 'owned-menu' {
+  return tools.some(tool => tool.name === 'browser_state_get') ? 'browser' : 'owned-menu'
+}
+
 export interface FastPathCandidate {
   description: string
   id: string

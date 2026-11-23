@@ -142,7 +142,7 @@ function checkBrowserState(task: NonNullable<typeof active>, raw: unknown) {
   const tableEntry = safeParse(tableEntrySchema, raw)
   if (tableEntry.success) {
     const question = task.dialogue?.tables.offer(raw, task.transcript) ?? task.dialogue?.tables.pending(raw)
-    return { ok: true, source: 'browser', status: 'clarification', page: 'table', code: 'table-selection-required', tableChoices: tableEntry.output.tableChoices, selectedTable: tableEntry.output.selectedTable, ...(question ? { pendingCustomerChoice: question } : {}), customerMessage: question?.question ?? missingTableMessage(tableEntry.output.tableChoices, task.transcript) ?? tableEntry.output.customerMessage, effect: 'none' }
+    return { ok: true, source: 'browser', status: 'clarification', page: 'table', code: 'table-selection-required', tableChoices: tableEntry.output.tableChoices, selectedTable: tableEntry.output.selectedTable, ...(question ? { pendingCustomerChoice: question } : {}), customerMessage: question?.question ?? missingTableMessage(tableEntry.output.tableChoices, task.transcript) ?? orderingMessages['zh-Hant'].recovery.table, effect: 'none' }
   }
   if (raw && typeof raw === 'object' && 'ok' in raw && raw.ok === false) {
     const signIn = safeParse(browserSignInRequiredSchema, raw)
@@ -1150,8 +1150,6 @@ export async function executeBrowserQuantityQuestion(client: Pick<ReturnType<typ
   const context = client.tools.value.find(tool => tool.name === 'browser_cart_get')
   if (!task?.dialogue || !context || !task.isCurrent())
     return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
-  if (task.dialogue.hasPending() && !task.answerResolved)
-    return executeBrowserCartTool(client, context, { includeCatalog: true })
   const facts = await executeBrowserTool(client, context, { includeCatalog: true })
   if (active !== task || !task.isCurrent())
     return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
@@ -1160,6 +1158,18 @@ export async function executeBrowserQuantityQuestion(client: Pick<ReturnType<typ
     return denied
   const catalog = parse(looseObject({ products: array(looseObject({ ref: string(), name: string() })) }), facts)
   const product = catalog.products.find(product => product.ref === productRef)
+  if (task.dialogue.hasPending() && !task.answerResolved) {
+    if (product && mentionsProduct(task, product.name, catalog.products) && task.dialogue.checkoutStep(facts)) {
+      // The customer explicitly named a meal while checkout was waiting. The
+      // model has already requested that meal's quantity question; do not ask
+      // an old checkout-answer resolver to reinterpret it as invoice/contact.
+      // Suspend only local checkout dialogue; merchant fields and cart persist.
+      task.dialogue.pauseCheckout(facts)
+    }
+    else {
+      return executeBrowserCartTool(client, context, { includeCatalog: true })
+    }
+  }
   if (product && task.selected?.productRef !== productRef && !mentionsProduct(task, product.name, catalog.products)) {
     return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, explanation: '顧客尚未選定這項商品，不可替自行挑選的餐點問份數。推薦需求使用 browser_present；片段餐名才用 browser_clarify_product，query 保留顧客原用語。' }
   }

@@ -2210,3 +2210,14 @@ owner performs only capture/reference clock pairing, with the existing 100 ms in
 delay and bounded drift correction; it loads no denoising/RTF model. Source timestamps
 subtract the reported native input delay after the connection is ready. Physical
 Windows clocks, AEC quality, recognition and device switching remain acceptance tests.
+
+### PB flow ownership audit
+
+Native `browser_state_get` identifies the PB protocol across editor and read-only
+payment documents. Missing editor/visual tools do not switch it to the owned
+Order Menu protocol. Explicit named-meal quantity requests suspend a prior local
+checkout question through the existing dialogue policy, preserving merchant
+fields and cart. Ordinary captured/completed speech has no age-based queue
+expiry; cancelled/reset/disposed capture ownership is diagnosed as retired,
+not as an expired recording. Historical architecture audit:
+[conversation repair](../../docs/plans/2026-10-28-kiosk-conversation-repair.md).

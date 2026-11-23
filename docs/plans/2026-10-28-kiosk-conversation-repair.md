@@ -2,6 +2,26 @@
 
 日期：2026-10-28（Asia/Taipei）。狀態：使用者已核准並完成主要流程的本機實作；整體驗收尚未通過，未commit、未部署。實際結果與限制見末節。
 
+## 2026-11-23 舊流程誤用稽核（PB / Electron）
+
+本文件下方保留的是舊自有 Order Menu 架構的歷史設計，不能把其中的
+`kiosk_conversation_context`、`kiosk_agent_task`、`kiosk_interaction_state`
+直接當成 PB 工具。PB 目前以原生 `browser_state_get` 識別協定；付款／結果頁
+保留該唯讀工具，刻意不提供菜單編輯與視覺操作工具。
+
+| 檢查項目 | 本輪確認與處理 |
+| --- | --- |
+| PB 被當成舊 Menu | RC6 修正 Main 與 recovery；本輪又找到 handoff 仍用 `browser_observe` 判身分，改成共用協定判斷，包含付款頁；保留自有 Menu 本身的合法支援。 |
+| 舊結帳問題蓋掉新餐點需求 | 現場問油雞份數卻回發票；已有 dialogue-level NEW_REQUEST 測試，但 Host quantity wrapper 更早處理舊問題。新增 wrapper regression，再使用既有 pauseCheckout 暫停舊結帳問題，不改商家欄位或購物車。 |
+| 再說一次開始點餐 | Server prompt／Host 已改自動開始，但 native 選桌讀取與 recovery 文案仍留舊說法；同步為報有效桌號後直接開始。手動選桌畫面的 Start 按鈕仍是正常控制。 |
+| 錄音依等待時間過期 | 先前已修正：正常 reserve('asr') 不傳 deadline；已完成語句排隊不按時間丟棄。重跑舊 deadline／FIFO／並行 ASR tests；capture membership 只因取消、reset 或 dispose 失效，診斷改稱 retired-capture。明確指定 provider watchdog 的測試與網路取消不等於背景過濾。 |
+| 背景過濾關閉 | off/observe 不提供 IGNORE，保留必要問題解析與權限邊界；未更改設定或重開過濾。 |
+| 已修正的結果頁誤判 | RC6 以新鮮 Inertia HTTP 讀取代替 bootstrap data-page，付款頁 recovery 不走 Menu；本輪保持此修正及單次 submit 約束。 |
+| Hush／演算法選擇 | 現場入口維持 November Chromium／Spatial Mask 基線；離線比較檔不代表正式 selector 恢復。此輪不改收音或 TTS。 |
+
+驗證範圍是程式、既有實際紀錄及隔離回歸測試，不冒充 Windows／實際商家付款
+完整驗收。詳細來源、發布與未驗項記錄在 `docs/codex-handoff.md` 及 release records。
+
 ## 2026-10-29 本機補強與模型控制實驗
 
 本次已實作以下兩個共用邊界，沒有新增特定語句比對或另一個語意reviewer：

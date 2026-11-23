@@ -1829,3 +1829,13 @@ it('discards partial tax digits after manual entry and only confirms the newly s
   expect(checkout.fields[0].value).toBe('9999')
   expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_invoice_tax')).toBe(false)
 })
+
+// Report: this chat, Nov23 — native default-table text still requested a separate Start utterance.
+it('uses the current table-entry policy instead of replaying a native default-selection prompt', async () => {
+  const { call, facts, execute } = setup('我要點餐')
+  Object.assign(facts, { page: 'table', code: 'table-selection-required', tableChoices: ['櫃台取餐', 'A3 桌'], selectedTable: '櫃台取餐', customerMessage: '已選擇櫃台取餐，請說「開始點餐」。' })
+  const result = await call('ask_customer_question', { questionType: 'table' })
+  expect(result.customerMessage).toContain('我會直接開始點餐')
+  expect(result.customerMessage).not.toContain('已選擇櫃台')
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_start_ordering')).toBe(false)
+})

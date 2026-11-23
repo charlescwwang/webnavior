@@ -91,7 +91,7 @@ import { createFixedGreetings, createGreetingDelivery, readGreetingPhase } from 
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { transcribeKioskUtterance } from '../services/kiosk-audio'
 import { admitBrowserPlan, decideBrowserAnswer, decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
-import { conversationDecisionStateFrom, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../services/kiosk-fast-path'
+import { conversationDecisionStateFrom, conversationSource, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../services/kiosk-fast-path'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
 import { applyAudioOutput } from '../services/kioskAudioOutput'
@@ -1030,7 +1030,8 @@ async function processVoiceCandidate(
     }
     updateVoiceDiagnostic(diagnosticId, { status: 'recognized', text })
     if (!interactionTurn.isCurrentVoiceCandidate(candidate)) {
-      disposition = 'stale-capture'
+      // Capture ownership is retired by cancellation/reset, not elapsed time.
+      disposition = 'retired-capture'
       updateVoiceDiagnostic(diagnosticId, { status: 'interrupted', reason: disposition })
       return
     }
@@ -1199,7 +1200,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       })
     }
     // Keep the owner when a failed/native navigation clears discovered tools.
-    const browserOrdering = interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get' || tool.name === 'browser_state_get')
+    const browserOrdering = conversationSource(interactiveServiceClient.tools.value) === 'browser'
     const result = await runFastPath({
       isEnabled: isKioskFastPathEnabled,
       source: browserOrdering
@@ -1747,7 +1748,7 @@ async function presentFastPathResult(
       playTransientMotion('greeting')
     // PB gestures already follow the correlated service receipt. Owned Menu
     // keeps its existing fast-action acknowledgement path.
-    else if (!interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get' || tool.name === 'browser_state_get'))
+    else if (conversationSource(interactiveServiceClient.tools.value) !== 'browser')
       playTransientMotion('acknowledge')
     return answer
   }
@@ -1789,7 +1790,7 @@ async function presentFastPathResult(
     return content
   }
 
-  const decisionState = conversationDecisionStateFrom(invitationWindow.decisionState(result.decisionState, Date.now()), result, interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_observe') ? 'browser' : 'owned-menu')
+  const decisionState = conversationDecisionStateFrom(invitationWindow.decisionState(result.decisionState, Date.now()), result, conversationSource(interactiveServiceClient.tools.value))
 
   if (result.kind === 'NEEDS_ASSISTANT') {
     if (earlyReadMessages.length)
@@ -2602,7 +2603,7 @@ async function sendConversationMessage(
   let browserEffectAttempted = false
   let browserRequestComplete = false
   // Capture the protocol owner before navigation can replace its tool list.
-  const browserOrdering = interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get' || tool.name === 'browser_state_get')
+  const browserOrdering = conversationSource(interactiveServiceClient.tools.value) === 'browser'
   const serviceReply = options.decisionState?.serviceReply === true || /^(?:你好|您好|嗨|哈囉|哈啰|hello|hi)[！!。.?？\s]*$/i.test(text)
   let browserPage: BrowserConversation['page']
   let customerRecoveryPresented = false
@@ -2694,7 +2695,7 @@ async function sendConversationMessage(
       if (!interactionTurn.isCurrent(turn))
         return
     }
-    if (interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get' || tool.name === 'browser_state_get')) {
+    if (conversationSource(interactiveServiceClient.tools.value) === 'browser') {
       releaseBrowserCartTask = beginBrowserCartTask(text, {
         utteranceId: options.utteranceId,
         informationUnavailable: () => t('stage.kiosk.information-unavailable'),

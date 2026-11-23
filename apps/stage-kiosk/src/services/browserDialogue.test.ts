@@ -278,7 +278,7 @@ it('gives Main a table task without inventing cart facts or exposing meal tools'
   expect(context.cart).toBeUndefined()
   expect(context.catalog.complete).toBe(false)
   expect(context.allowedToolNames).toEqual(['browser_cart_get', 'browser_respond'])
-  expect(await executeBrowserReply(client, 'checkout-guidance')).toMatchObject({ code: 'table-selection-required', customerMessage: pending.customerMessage })
+  expect(await executeBrowserReply(client, 'checkout-guidance')).toMatchObject({ code: 'table-selection-required', customerMessage: expect.stringContaining('我會直接開始點餐') })
   expect(client.execute.mock.calls.every(([tool]) => ['browser_cart_get', 'browser_state_get'].includes(tool.name))).toBe(true)
 })
 
@@ -375,7 +375,7 @@ function setup(labels: { name: string, aliases: string[], category: string }[] =
   const client = { tools: readonly(shallowRef([context, { ...context, name: 'browser_state_get' }, { ...context, name: 'browser_start_ordering' }, add, clarify, present, { ...context, name: 'browser_product_get' }])), execute }
   const decide = vi.fn<(proposal: BrowserEffect) => Promise<EffectDecision>>(async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }))
   const onRequestComplete = vi.fn()
-  const begin = (text: string, jev = false) => release.push(beginBrowserCartTask(text, { ...(jev ? { intentSource: 'jev' as const } : {}), dialogue, decide, onRequestComplete, isCurrent: () => true }))
+  const begin = (text: string, jev = false) => release.push(beginBrowserCartTask(text, { ...(jev ? { intentSource: 'jev' as const } : {}), catalogLabels: () => labels, dialogue, decide, onRequestComplete, isCurrent: () => true }))
   return { state, answer, dialogue, facts, client, context, add, clarify, present, begin, decide, onRequestComplete }
 }
 
@@ -1066,4 +1066,31 @@ it('resets the unresolved count after a valid quantity answer', async () => {
   expect(await dialogue.answer(facts, '一份', async () => facts, () => true, 11)).toMatchObject({ kind: 'product' })
   dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
   expect(await dialogue.answer(facts, '聽不懂', async () => facts, () => true, 12)).toMatchObject({ result: { pendingCustomerChoice: { purpose: 'browser-order-quantity' } } })
+})
+
+// Report: this chat, Nov23 — an oil-chicken quantity request received the old invoice question instead.
+it.each(['invoice-method', 'notification-details'] as const)('lets an explicitly requested meal quantity replace the old %s question', async (purpose) => {
+  const { dialogue, facts, begin, client, answer } = setup([{ name: '乙餐', aliases: ['油雞'], category: '便當' }])
+  dialogue.presentService(facts, { purpose, request: '結帳', question: '發票或通知資料？', choices: [{ id: 'none', description: '無載具' }] })
+  answer.mockResolvedValue({ kind: 'UNCERTAIN', provider: 'main' })
+  begin('我要油雞')
+  const result = await executeBrowserQuantityQuestion(client, { productRef: 'p-1' })
+  expect(result).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-order-quantity', question: '請問「乙餐」要幾份？' } })
+  expect(answer).not.toHaveBeenCalled()
+  expect(facts.cart.lines).toEqual([])
+  expect(client.execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add' || tool.name === 'browser_order_submit')).toBe(false)
+  begin('一份')
+  const next = await prepareBrowserQuestionAnswer(client)
+  expect(next).toBeTypeOf('function')
+  expect(await next!()).toMatchObject({ selectedProduct: { productRef: 'p-1' }, requestedQuantity: 1 })
+  expect(client.execute.mock.calls.some(([tool]) => tool.name === 'browser_order_submit')).toBe(false)
+})
+
+it('does not let a model-chosen unmentioned meal retire a checkout question', async () => {
+  const { dialogue, facts, begin, client, answer } = setup()
+  dialogue.presentService(facts, { purpose: 'invoice-method', request: '結帳', question: '發票要哪種？', choices: [{ id: 'none', description: '無載具' }] })
+  answer.mockResolvedValue({ kind: 'UNCERTAIN', provider: 'main' })
+  begin('好')
+  expect(await executeBrowserQuantityQuestion(client, { productRef: 'p-1' })).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-service-question', question: '發票要哪種？' } })
+  expect(facts.cart.lines).toEqual([])
 })

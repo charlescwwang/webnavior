@@ -702,7 +702,7 @@ export function createPbService() {
             admission = { cartAdmission: 'after-table-entry' }
           }
         }
-        const receipt = { ok: true, source: 'browser', observedAt: Date.now(), documentId, page: 'table', code: 'table-selection-required', effect: 'none', tableChoices, ...(selectedTable ? { selectedTable } : {}), ...admission, customerMessage: selectedTable ? `已選擇${selectedTable}，請說「開始點餐」。` : '內用請先找到座位，再回來告訴我您的桌號；外帶可以選櫃台自取。這裡沒有外送服務。' }
+        const receipt = { ok: true, source: 'browser', observedAt: Date.now(), documentId, page: 'table', code: 'table-selection-required', effect: 'none', tableChoices, ...(selectedTable ? { selectedTable } : {}), ...admission, customerMessage: orderingMessages['zh-Hant'].recovery.table }
         parse(pbTableStateSchema, receipt)
         return receipt
       }

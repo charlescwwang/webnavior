@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { priceEvidence } from '../../../order-menu/src/domain/pricing'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
-import { conversationDecisionStateFrom, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from './kiosk-fast-path'
+import { conversationDecisionStateFrom, conversationSource, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from './kiosk-fast-path'
 import { createKioskUtteranceQueue } from './kioskUtteranceQueue'
 import { createVoicePresenceGate } from './voicePresence'
 
@@ -672,4 +672,15 @@ it('keeps manual payment out of model routing and unavailable-service recovery',
   expect(await runFastPath({ transcript: '好', isEnabled: async () => true, decide, webMcp: { availability: 'manual-payment', tools: [], execute } })).toMatchObject({ kind: 'INCOMPLETE' })
   expect(decide).not.toHaveBeenCalled()
   expect(execute).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov23 — read-only PB payment documents were mistaken for owned Menu.
+it('keeps PB context ownership when navigation removes editor tools', () => {
+  const editor = [{ ...stateTool, name: 'browser_state_get' }, { ...stateTool, name: 'browser_observe' }]
+  expect(conversationSource(editor)).toBe('browser')
+  const resultPage = editor.filter(tool => tool.name !== 'browser_observe')
+  expect(conversationSource(resultPage)).toBe('browser')
+  expect(conversationDecisionStateFrom({ phase: 'ordering' }, { reason: 'UNCERTAIN_OPERATION' }, conversationSource(resultPage))?.readOnly).toBeUndefined()
+  expect(conversationSource([stateTool])).toBe('owned-menu')
+  expect(conversationDecisionStateFrom({ phase: 'ordering' }, { reason: 'UNCERTAIN_OPERATION' }, conversationSource([stateTool]))?.readOnly).toBe(true)
 })
