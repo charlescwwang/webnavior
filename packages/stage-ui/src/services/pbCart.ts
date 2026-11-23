@@ -40,11 +40,16 @@ export function readCartPage(value: unknown, pickup: { date: string, time: strin
       throw new Error('PB 空訂單的明細與小計不一致。')
     return { lines: [], subtotal: 0, context: { ...pickup, manualRevision, ...tableContext } }
   }
-  const cart = parse(looseObject({ subtotal: number(), order: looseObject({ hash: string(), pick_up_date: nullable(string()), pick_up_time: nullable(string()) }), details: array(looseObject({ id: number(), amount: number(), unit_price: number(), note: unknown(), item_type: string(), item: looseObject({ id: number(), name: string() }), product_prices: array(looseObject({ parent_id: unknown(), product_attrs: array(looseObject({ amount: number(), attr: looseObject({ name: string() }) })) })) })) }), value)
+  const cart = parse(looseObject({ subtotal: number(), order: looseObject({ hash: nullable(string()), pick_up_date: nullable(string()), pick_up_time: nullable(string()) }), details: array(looseObject({ id: number(), amount: number(), unit_price: number(), note: unknown(), item_type: string(), item: looseObject({ id: number(), name: string() }), product_prices: array(looseObject({ parent_id: unknown(), product_attrs: array(looseObject({ amount: number(), attr: looseObject({ name: string() }) })) })) })) }), value)
+  // PB can create the empty draft before assigning its hash during the first
+  // add. Returning explicit emptiness lets the existing readback poll wait for
+  // the accepted add; a populated or nonzero anonymous cart is never trusted.
+  if (cart.order.hash === null && (cart.details.length || cart.subtotal !== 0))
+    throw new Error('PB 購物車已有內容但訂單編號尚未確認。')
   // PB Create-CjexdErb.js leaves draft pickup fields null until checkout.
   // Resolve only explicit nulls against a fresh menu context, as for the empty
   // cart; persisted strings remain authoritative and malformed fields reject.
-  return { context: { orderRef: cart.order.hash, date: cart.order.pick_up_date ?? pickup.date, time: cart.order.pick_up_time ?? pickup.time, manualRevision, ...tableContext }, subtotal: cart.subtotal, lines: cart.details.map(line => ({ ref: String(line.id), productRef: `${line.item_type === 'product' ? 'p' : 'pg'}-${line.item.id}`, name: line.item.name, options: line.product_prices.flatMap(price => price.product_attrs.map(choice => ({ name: choice.attr.name, quantity: choice.amount }))), description: line.product_prices.flatMap(price => price.product_attrs.map(choice => `${choice.attr.name} ×${choice.amount}`)).join('、'), quantity: line.amount, unitPrice: line.unit_price, note: typeof line.note === 'string' ? line.note : '', configuration: cartConfiguration(typeof line.note === 'string' ? line.note : '', line.product_prices) })) }
+  return { context: { ...(cart.order.hash === null ? {} : { orderRef: cart.order.hash }), date: cart.order.pick_up_date ?? pickup.date, time: cart.order.pick_up_time ?? pickup.time, manualRevision, ...tableContext }, subtotal: cart.subtotal, lines: cart.details.map(line => ({ ref: String(line.id), productRef: `${line.item_type === 'product' ? 'p' : 'pg'}-${line.item.id}`, name: line.item.name, options: line.product_prices.flatMap(price => price.product_attrs.map(choice => ({ name: choice.attr.name, quantity: choice.amount }))), description: line.product_prices.flatMap(price => price.product_attrs.map(choice => `${choice.attr.name} ×${choice.amount}`)).join('、'), quantity: line.amount, unitPrice: line.unit_price, note: typeof line.note === 'string' ? line.note : '', configuration: cartConfiguration(typeof line.note === 'string' ? line.note : '', line.product_prices) })) }
 }
 
 /** Formats vendor-confirmed rows for both read-back and write receipts without merging configurations. */

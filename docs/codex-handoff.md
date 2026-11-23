@@ -1,5 +1,14 @@
 # Codex Handoff
 
+## 2026-11-23 菜單轉購物車實測根因與修正（RC3，未部署）
+
+- 使用者補充最常在菜單轉購物車後顯示完整資料讀取失敗；真 Linux Electron/native IPC/PB 隔離profile重現：購物車導航與 includeCatalog=false 成功，includeCatalog=true 三次皆拒絕。HTTP證據為裸 menu 302 至同店 menu?table=... 再200；原本 response.url 必須等於request URL，把正常canonical redirect當登入錯誤。並非已證明商家改版或此次由跨document競態造成。僅保留rendered link參數的嘗試沒有解決，已移除該嘗試。
+- pbRoutes.matchesPageResponseUrl 只接受同店裸guest menu補上一個非空table參數；登入、選桌、跨店／來源、cart redirect、替換明確table、額外query皆拒絕。pbBrowserService仍驗component/buyer/store/flow，payload URL對final response URL核對；不刪guard、不新增模型／查詢、不重播寫入。
+- 同次實測發現首次add讀回會短暫出現subtotal0/details[]/order.hash=null；readCartPage要求string導致輪詢立即拋錯、結果unknown。已補先紅後綠測試，只接受這個明確空草稿，保持orderRef未指派，讓既有readback poll繼續等原add；非空／非零或缺details仍拒絕。不是任意忽略parse錯誤。
+- 修後真Electron連續3次menu→cart→完整context→return menu皆成功；一份草稿只add一次，最後remove並核實空車，無送單，profile刪除。100個PB/routes/transport定向unit、stage-ui/desktop types、變更程式eslint、Electron main/preload/PB build、diffcheck通過；未重跑root checks。不是正式Vue/API/LLM/ASR或Windows實機驗收。
+- Artifacts pb-test.local/cart-transition-20261123-r1/：pre-fix三次失敗、HTTP302證據、最初空draft失敗及最終成功結果、unit/types/lint/build與summary。新immutable tag kiosk-v0.7.8-rc.3，RC1/2不移動。舊ZIP不含修正；沒有新Windows包、push或部署。全域service-recovery鎖定流程是另個尚未此輪變更的問題，不把共用錯誤提示當作該鎖定的證據。
+
+
 ## 2026-11-23 PB 資料缺口修正（RC2，未部署）
 
 - 使用者要求直接修正已發現漏洞。新增 stage-shared `pb-browser-state` 中立契約，按 table/editor/order 分頁驗證；editor 必須明確提供有效 cart.version 與 cart.lines，不再將缺明細預設為空車。includeCatalog=true 另要求 products/configurations；空 configurations 仍代表未核實，不授權猜測規格。

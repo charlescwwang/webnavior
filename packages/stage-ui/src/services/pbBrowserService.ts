@@ -22,7 +22,7 @@ import { createOperation } from './pbOperation'
 import { installPaymentPolicy } from './pbPayment'
 import { createPresentation } from './pbPresentation'
 import { prepareAddition, resolveSelection } from './pbProduct'
-import { resolveRoute } from './pbRoutes'
+import { matchesPageResponseUrl, resolveRoute } from './pbRoutes'
 import { installTablePicker } from './pbTablePicker'
 
 function describeProducts(products: readonly { name: string, price?: number }[]) {
@@ -242,7 +242,7 @@ export function createPbService() {
     })
     if (response.status === 409)
       throw new Error('PB 頁面已更新，請重新載入後再試。')
-    if (!response.ok || response.url !== url.href)
+    if (!response.ok || !matchesPageResponseUrl(journey, url, response.url))
       throw new Error('PB page is unavailable or requires sign-in.')
     if (response.headers.get('X-Inertia') !== 'true')
       throw new Error('PB 資料回應格式已變更，請重新載入後再試。')
@@ -253,7 +253,7 @@ export function createPbService() {
     if (!menu && location.pathname === journey.tablePath && tableRequired.success && new URL(tableRequired.output.url, location.origin).href === url.href)
       throw new Error('PB requires table entry before cart inspection.', { cause: 'pb-table-entry-required' })
     const page = parse(looseObject({ component: literal(component), url: string(), props: looseObject({ storeHash: literal(journey.store), flowType: literal(journey.flow), auth: optional(looseObject({ user: optional(unknown()) })), buyer: optional(looseObject({ type: string() })) }) }), raw)
-    if (new URL(page.url, location.origin).href !== url.href)
+    if (new URL(page.url, location.origin).href !== response.url)
       throw new Error('PB 資料與目前店家頁面不符，尚未操作。')
     assertScope()
     const { props } = page

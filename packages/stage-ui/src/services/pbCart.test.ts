@@ -497,6 +497,20 @@ describe('pb empty order lifecycle', () => {
     expect(cart.lines[0].name).toBe('炸排骨便當')
     expect(cart.lines[0].quantity).toBe(1)
   })
+  // Report: this chat, 2026-11-23 live Electron. PB briefly exposes an empty
+  // draft with hash:null after the first add click, before its rows settle.
+  it('reads an explicitly empty draft before its order hash is assigned', () => {
+    const cart = readCartPage({ subtotal: 0, diningTable: '櫃台取餐', order: { hash: null, pick_up_date: 'today', pick_up_time: 'noon' }, details: [] }, pickup, 0)
+    expect(cart.lines).toEqual([])
+    expect(cart.subtotal).toBe(0)
+    expect(cart.context).toEqual({ date: 'today', time: 'noon', manualRevision: 0, tableName: '櫃台取餐' })
+  })
+  it('rejects a draft without an order hash when rows or subtotal already exist', () => {
+    const draft = { order: { hash: null, pick_up_date: 'today', pick_up_time: 'noon' }, details: [], subtotal: 0 }
+    expect(() => readCartPage({ ...draft, subtotal: 80 }, pickup, 0)).toThrow()
+    expect(() => readCartPage({ ...draft, details: [{ id: 1, amount: 1, unit_price: 80, note: '', item_type: 'product', item: { id: 2503, name: '炸雞腿便當' }, product_prices: [] }] }, pickup, 0)).toThrow()
+    expect(() => readCartPage({ ...draft, details: undefined }, pickup, 0)).toThrow()
+  })
   it('accepts an explicit null order only when no details and zero subtotal agree', () => {
     expect(readCartPage({ order: null, subtotal: 0 }, pickup, 3)).toEqual({ lines: [], subtotal: 0, context: { ...pickup, manualRevision: 3 } })
     expect(readCartPage({ order: null, details: null, subtotal: 0 }, pickup, 3).lines).toEqual([])

@@ -42,8 +42,13 @@ result-page editor controls.
 
 Menu pickup and cart snapshots use PB's existing versioned Inertia partial JSON
 responses, with no HTTP cache or merging from old DOM props. Required fields
-include buyer/auth, store and flow; component and response URL must also match.
-An asset-version conflict requires reload. Full HTML/dev assets are not fetched
+include buyer/auth, store and flow; the page payload URL must match the HTTP
+response URL. A bare guest menu read may follow PB's same-store menu redirect
+that adds exactly one table token; login, cross-store, cart and explicit-table
+replacement redirects remain rejected. An asset-version conflict requires reload.
+PB's transient empty draft with `hash:null` is readable only with explicit empty
+rows and zero subtotal, letting the existing add readback poll finish without
+replaying the add. Missing rows or an unassigned hash on a populated cart reject. Full HTML/dev assets are not fetched
 for these reads; category, price and option requests remain fresh vendor reads.
 
 `pbTablePicker.ts` adds large, name-based buttons alongside PB's real selector.

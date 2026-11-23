@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "tag": "kiosk-v0.7.8-rc.3",
+  "branch": "codex/kiosk-text-rc-20261123",
+  "createdDate": "2026-11-23",
+  "sourceReference": "refs/tags/kiosk-v0.7.8-rc.3^{}",
+  "previousCandidate": "kiosk-v0.7.8-rc.2",
+  "status": "release-candidate-validation-incomplete",
+  "purpose": "Fix live-reproduced native PB cart context failures despite a working cart page.",
+  "changes": [
+    "Accept only the same-store bare guest menu canonicalization that adds one table query; continue validating response component, buyer, store, flow and payload URL against the final HTTP URL.",
+    "Read the observed transient empty draft with hash:null only when explicit details are empty and subtotal is zero. Existing add readback polling waits for the original effect without repeating the add."
+  ],
+  "checks": {
+    "liveElectron": {
+      "preFixFullCartContextFailures": 3,
+      "postFixSuccessfulCycles": 3,
+      "postFixCartFullContextReads": 3,
+      "postFixAddDispatches": 1,
+      "postFixRemoveDispatches": 1,
+      "cartCleared": true,
+      "submitted": false,
+      "physicalWindows": false,
+      "formalVueApiLlmAsr": false,
+      "profile": "isolated temporary Electron profile, removed after test",
+      "limitations": "Live Linux Electron/native IPC/PB adapter; no formal Vue/API/model/ASR or Windows field acceptance."
+    },
+    "scopedUnit": {
+      "status": "passed",
+      "tests": 100,
+      "files": 5,
+      "newRegressionTests": 4
+    },
+    "scopedTypecheck": {
+      "status": "passed",
+      "packages": [
+        "stage-ui",
+        "stage-kiosk-desktop"
+      ]
+    },
+    "changedCodeLint": "passed",
+    "electronBuild": "passed",
+    "whitespaceCheck": "passed",
+    "rootChecks": "not-rerun; scoped validation policy; RC1 records global lint failures"
+  },
+  "artifacts": {
+    "logs": "pb-test.local/cart-transition-20261123-r1/",
+    "desktopPackageVersion": "0.7.8",
+    "newWindowsExeOrZip": false,
+    "note": "Existing RC1 portable archive does not contain RC2 or RC3. Native PB bundle rebuild requires packaging/updating Electron to deploy."
+  },
+  "pendingValidation": [
+    "Windows physical and formal Vue/API/ASR end-to-end acceptance.",
+    "Global service-recovery lock behavior remains separate from these two native data-reading defects.",
+    "Previously recorded release-relevant root lint reconciliation."
+  ],
+  "deployment": {
+    "productionServiceChanged": false,
+    "frontendReplaced": false,
+    "modelSettingsChanged": false,
+    "webpageScreenshotRecognition": false
+  },
+  "tagPolicy": {
+    "immutable": true,
+    "nextCandidate": "kiosk-v0.7.8-rc.4",
+    "stableAfterAcceptance": "kiosk-v0.7.8"
+  }
+}

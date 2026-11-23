@@ -1,3 +1,6 @@
+import type { PbJourney } from '@proj-airi/stage-shared/pb-journey'
+
+import { isPbJourneyPage } from '@proj-airi/stage-shared/pb-journey'
 import { array, looseObject, parse, string } from 'valibot'
 
 const methods = {
@@ -39,4 +42,22 @@ export function resolveRoute(name: RouteName, parameters: readonly string[], exp
   if (url.href !== expected.href || url.username || url.password)
     throw new Error('PB route is outside the approved store.')
   return url
+}
+
+/** Accepts PB's same-menu table canonicalization without admitting login/store redirects. */
+export function matchesPageResponseUrl(journey: PbJourney, requested: URL, receivedUrl: string): boolean {
+  const menu = new URL(journey.menuPath, journey.origin)
+  if (!isPbJourneyPage(menu.href, requested.href) || ![journey.menuPath, journey.cartPath].includes(requested.pathname))
+    return false
+  const received = new URL(receivedUrl)
+  if (received.href === requested.href)
+    return true
+  // PB redirects a cart's bare menu link to menu?table=<current signed token>.
+  // The browser follows this normally. Only this canonical read target is
+  // accepted; replacing an explicit table or redirecting cart reads is rejected.
+  return Boolean(journey.tablePath && requested.pathname === journey.menuPath && !requested.search
+    && received.origin === journey.origin && received.pathname === journey.menuPath
+    && !received.username && !received.password && !received.hash
+    && [...received.searchParams.keys()].length === 1 && received.searchParams.has('table')
+    && received.searchParams.get('table')?.trim())
 }
