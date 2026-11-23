@@ -19,7 +19,7 @@ EXE 的 HTTP 影音特例僅適用設定的 Kiosk 入口，普通瀏覽器仍須
 
 ## 想直接執行 EXE：使用可攜版 ZIP
 
-一般機台請使用本次提供的 `Webnavior-Kiosk-Windows-x64-*.zip`，將整包解壓縮，雙擊
+一般機台請使用本次提供的 `Webnavior-Kiosk-v<版本號>-Windows-x64-<日期時間>.zip`，將整包解壓縮，雙擊
 `Webnavior Kiosk.exe`。不需要安裝 Node、pnpm，也不必執行下方 Setup／Build。
 設定與簡單操作見包內「先看我.txt」及本目錄 [portableQuickStart.txt](portableQuickStart.txt)。
 這是 Intel x64、未簽章的可攜版；保留同一 Windows 使用者的

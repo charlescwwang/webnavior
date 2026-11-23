@@ -31,8 +31,9 @@ def package(runtime_zip, output):
     # Include compiled JS only; source, maps and local profiles stay out.
     outputs = sorted(set(outputs) | {str(path.relative_to(built)) for path in (built / 'main').rglob('*.js')})
     output.mkdir(parents=True, exist_ok=True)
+    app_version = json.loads((ROOT / 'apps/stage-kiosk-desktop/package.json').read_text())['version']
     stamp = datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')
-    archive = output / f'Webnavior-Kiosk-Windows-x64-{stamp}.zip'
+    archive = output / f'Webnavior-Kiosk-v{app_version}-Windows-x64-{stamp}.zip'
     with tempfile.TemporaryDirectory(prefix='webnavior-portable-') as temporary:
         app = Path(temporary) / 'Webnavior Kiosk'
         app.mkdir()
@@ -54,7 +55,6 @@ def package(runtime_zip, output):
         (app / 'resources/default_app.asar').unlink(missing_ok=True)
         payload = app / 'resources/app'
         payload.mkdir(parents=True)
-        app_version = json.loads((ROOT / 'apps/stage-kiosk-desktop/package.json').read_text())['version']
         (payload / 'package.json').write_text(json.dumps({'name': 'webnavior-kiosk', 'version': app_version, 'type': 'module', 'main': 'out/main/index.js'}), encoding='utf-8')
         for relative in outputs:
             target = payload / 'out' / relative

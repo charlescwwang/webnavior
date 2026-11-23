@@ -1,5 +1,11 @@
 # Codex Handoff
 
+## 2026-11-23 Windows 包檔名納入版本號
+
+- 使用者要求往後檔名必須有版本號。packagePortable.py 現在由Desktop package.json取得version，產生 `Webnavior-Kiosk-v<version>-Windows-x64-<timestamp>.zip`；checksum檔沿用同名規則，Windows README已更新。
+- 本次RC3 ZIP已改名為 `Webnavior-Kiosk-v0.7.8-rc.3-Windows-x64-20261123-110857.zip`，相鄰sha256、最新包metadata與deployment記錄同步更新。改名前後SHA256仍為f0148f2f31f3abeac83d567d9fbd006171c9d2efdb863130eecbc22167aae853，內容／內嵌來源commit與正式前端均未變更，沒有重部署。`archive-rename.json`保留對照，Python語法檢查與diffcheck通過；單純命名修改未重跑應用測試。
+
+
 ## 2026-11-23 RC3 部署與 Windows 打包完成
 
 - 使用者明確要求部署與打包。包版本改為0.7.8-rc.3以區別舊0.7.8，來源commit 95ad652625c144024ec068a41b73b9b203379809（RC3修正加包版號／說明），不移動既有RC tags、不宣稱stable。Windows README與包內先看我已更新。

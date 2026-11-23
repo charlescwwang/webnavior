@@ -19,7 +19,7 @@
     "redis": "ready"
   },
   "windows": {
-    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc3-20261123-r1/windows/Webnavior-Kiosk-Windows-x64-20261123-110857.zip",
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc3-20261123-r1/windows/Webnavior-Kiosk-v0.7.8-rc.3-Windows-x64-20261123-110857.zip",
     "sha256": "f0148f2f31f3abeac83d567d9fbd006171c9d2efdb863130eecbc22167aae853",
     "bytes": 163763236,
     "files": 81,
