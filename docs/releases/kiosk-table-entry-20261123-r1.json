@@ -3,7 +3,7 @@
   "createdAt": "2026-11-23T04:19:12.614350+00:00",
   "release": "kiosk-table-entry-20261123-r1",
   "sourceCommit": "521065201717ae7a95e71a3c586d44d36a483e51",
-  "status": "frontend-deployed-api-prompt-update-pending",
+  "status": "deployed",
   "desktopVersion": "0.7.8-rc.4",
   "newExeRequired": false,
   "features": [
@@ -17,7 +17,7 @@
     "status": "activated-http-verified",
     "apiRestart": false,
     "changed": 97,
-    "apiPid": "400244"
+    "apiPidAtPublish": "400244"
   },
   "httpChecks": 9,
   "health": [
@@ -43,8 +43,7 @@
     }
   ],
   "apiPromptDeployment": {
-    "status": "not-deployed-runtime-restored",
-    "reason": "System authorization timed out; current runtime originals verified restored.",
+    "previousPid": "400244",
     "files": [
       {
         "path": "apps/server/src/services/domain/browser-ordering/skills/common/SKILL.md",
@@ -61,7 +60,16 @@
         "before": "4af967d995cef054fd192495889c22027374e0be106026f6c6d86b1fdbf0095c",
         "after": "2a5ebbc3a6282d6c96d4e76f33a8e6f3eefe1a9113e3ef3c6cd08f2536984fb2"
       }
-    ]
+    ],
+    "status": "deployed",
+    "apiPid": "421721",
+    "health": {
+      "status": "ready",
+      "checks": {
+        "db": "ok",
+        "redis": "ok"
+      }
+    }
   },
   "validation": {
     "kioskPassed": 1199,
@@ -76,8 +84,8 @@
   },
   "notes": [
     "Existing RC4 package unchanged; restart app to load new hosted frontend.",
-    "Old API prompts may still describe separate selection/Start; frontend Host enforces combined Start for both public table tools.",
-    "Runtime original files restored after authorization timeout; no forced process termination.",
-    "Runtime review_required policy differs from Git baseline and was preserved in staged API source."
-  ]
+    "Runtime review_required policy differs from Git baseline and was preserved in staged API source.",
+    "System authorization completed on retry; prompt and tool-description runtime hashes verified, API restarted normally."
+  ],
+  "apiPid": "421721"
 }

@@ -1,5 +1,9 @@
 # Codex Handoff
 
+## 2026-11-23 Spoken table server prompts activated after authorization
+
+- User reported password entered. Initial audit still found original runtime/PID400244; retried normal systemctl authorization, succeeded PID421721. Both common/table prompts and tool description match staged after hashes (runtime-only review_required guard retained). All9 frontend HTTP byte checks repeated and local/public readyz db/redis ok. Supersedes pending prompt limitation below. Frontend and backend now agree on valid spoken table→Start and reselect mechanism. RC4 ZIP unchanged, no EXE upgrade needed for this feature. Deployment record/latest pointer updated.
+
 ## 2026-11-23 Spoken table selection now starts ordering
 
 - User requested direct Start after a valid spoken table, with correction for wrong speech/ASR. Host table selection now dispatches combined browser_start_ordering once; preserves live approximate-table confirmation, missing/ambiguous rejection, one-use answers, menu readiness and matching-table readback. Confirmation wording and public select_table semantics/common+table prompts agree. No native contract change.
