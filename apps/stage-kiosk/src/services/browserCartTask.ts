@@ -3,6 +3,7 @@ import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
 import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
 import type { ServicePolicyReply } from '@proj-airi/stage-shared/ordering-tools'
 import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/services/interactiveServiceClient'
+import type { InferOutput } from 'valibot'
 
 import type { BrowserEffect, BrowserPlan, EffectDecision } from '../../../server/src/services/domain/browser-ordering/contracts'
 import type { createBrowserDialogue, OrderEvidence, SelectedBrowserAnswer } from './browserDialogue'
@@ -17,7 +18,7 @@ import { contextReplySchema, replyToConversation } from '@proj-airi/stage-shared
 import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { explicitServingQuantities, normalizeSlotNumbers } from '@proj-airi/stage-shared/ordering-slots'
 import { customerReplySchema, servicePolicyReplySchema } from '@proj-airi/stage-shared/ordering-tools'
-import { pbBrowserStateSchema, pbCatalogStateSchema, pbEditorStateSchema, pbTableStateSchema } from '@proj-airi/stage-shared/pb-browser-state'
+import { pbBrowserStateSchema, pbCartStateSchema, pbCatalogStateSchema, pbEditorStateSchema, pbTableStateSchema } from '@proj-airi/stage-shared/pb-browser-state'
 import { pbCheckoutSchema, pbInvoiceMethodSchema, pbOrderStateSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { menuEntryReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
 import { describePbMeal, pbBasicServing, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
@@ -63,32 +64,103 @@ interface VerifiedReceipt {
   addition?: NonNullable<BrowserEffect['completedAdditions']>[number]
 }
 
+type BrowserClient = Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>
+
+interface TaskObservation {
+  /** Tools are replaced on document discovery/reconnection; never cross that boundary. */
+  tools: readonly ServiceTool[]
+  execute: BrowserClient['execute']
+  raw: InferOutput<typeof pbEditorStateSchema>
+  catalog: boolean
+}
+
+interface TaskReads {
+  snapshot?: TaskObservation
+  pending?: { tools: readonly ServiceTool[], execute: BrowserClient['execute'], catalog: boolean, result: Promise<unknown> }
+}
+
 // Server admission compares transcript with this turn's stored customer text.
 // Matching text and orderEvidence may include prior answers; transcript may not.
-let active: TaskQuestions & { tableSelectionRequired?: boolean, answerResolved?: boolean, selectedAnswer?: SelectedBrowserAnswer, selected?: { productRef: string, request: string, requestTarget?: string, requestedQuantity?: number, orderSelection?: true }, confirmed?: { proposal: AdditionProposal, binding: QuestionSnapshot }, confirmedOrder?: { proposals: AdditionProposal[], binding: QuestionSnapshot, evidence?: OrderEvidence }, text: string, readonly transcript: string, decide: (proposal: BrowserEffect, plan: Pick<BrowserPlan, 'toolName' | 'arguments'>) => Promise<EffectDecision>, isCurrent: () => boolean, orderEvidence?: OrderEvidence, receipts: Map<string, VerifiedReceipt> } | undefined
+let active: TaskQuestions & { tableSelectionRequired?: boolean, answerResolved?: boolean, selectedAnswer?: SelectedBrowserAnswer, selected?: { productRef: string, request: string, requestTarget?: string, requestedQuantity?: number, orderSelection?: true }, confirmed?: { proposal: AdditionProposal, binding: QuestionSnapshot }, confirmedOrder?: { proposals: AdditionProposal[], binding: QuestionSnapshot, evidence?: OrderEvidence }, text: string, readonly transcript: string, decide: (proposal: BrowserEffect, plan: Pick<BrowserPlan, 'toolName' | 'arguments'>) => Promise<EffectDecision>, isCurrent: () => boolean, orderEvidence?: OrderEvidence, receipts: Map<string, VerifiedReceipt>, reads: TaskReads } | undefined
 const writes = new Set(['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'])
 const orderingAnswerFactsSchema = looseObject({ products: array(looseObject({ ref: string(), name: string(), configurations: array(productConfigurationSchema) })) })
 const tableEntrySchema = looseObject({ ...pbTableStateSchema.entries, code: literal('table-selection-required'), customerMessage: string() })
 
-/** Validates native context reads before any Main planning or answer resolution. */
-async function executeBrowserTool(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'execute'>, tool: ServiceTool, input: Record<string, unknown>): Promise<unknown> {
-  const result = await client.execute(tool, input)
-  if (!['browser_state_get', 'browser_cart_get', 'browser_cart_review', 'browser_return_menu'].includes(tool.name))
+/** Owns task-local PB observations; this phase assumes no concurrent customer edits. */
+async function executeBrowserTool(client: BrowserClient, tool: ServiceTool, input: Record<string, unknown>): Promise<unknown> {
+  const task = active
+  const reads = task?.reads
+  const tools = client.tools.value
+  const contextRead = ['browser_state_get', 'browser_cart_get'].includes(tool.name) && input.forAdmission !== true
+  const catalog = input.includeCatalog === true
+  if (contextRead && task?.isCurrent() && reads) {
+    const snapshot = reads.snapshot
+    // Full data can answer a smaller read, but a cart-only read cannot provide
+    // an absent catalog. This is valid only within this unchanged agent task.
+    if (snapshot?.tools === tools && snapshot.execute === client.execute && (!catalog || snapshot.catalog))
+      return structuredClone(snapshot.raw)
+    const pending = reads.pending
+    if (pending?.tools === tools && pending.execute === client.execute && (!catalog || pending.catalog))
+      return structuredClone(await pending.result)
+  }
+  const previous = reads?.snapshot
+  if (task) {
+    // Invalidate before dispatch: an effect may already have changed the site,
+    // or a larger/new-document read may fail. Late reads cannot repopulate it.
+    task.reads = {}
+  }
+  const currentReads = task?.reads
+  const execute = async () => {
+    const result = await client.execute(tool, input)
+    if (contextRead && task && active === task && task.isCurrent() && (client.tools.value !== tools || task.reads !== currentReads))
+      throw new Error('Browser observation belongs to a retired task or document.')
+    const stateRead = ['browser_state_get', 'browser_cart_get', 'browser_cart_review', 'browser_return_menu'].includes(tool.name)
+    if (stateRead && (!result || typeof result !== 'object' || !('ok' in result) || result.ok !== false)) {
+      const state = parse(pbBrowserStateSchema, result)
+      if (catalog && ['menu', 'cart', 'checkout'].includes(state.page))
+        parse(pbCatalogStateSchema, result)
+    }
+    if (task && active === task && task.isCurrent() && task.reads === currentReads && client.tools.value === tools) {
+      const editor = safeParse(pbEditorStateSchema, result)
+      // Table/payment state is intentionally live: navigation and external
+      // payment settlement must not be inferred from an earlier observation.
+      const checkoutReceipt = ['browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_invoice_tax'].includes(tool.name)
+        && result && typeof result === 'object' && 'checkout' in result && safeParse(pbCheckoutSchema, result.checkout).success
+      if ((stateRead || checkoutReceipt) && editor.success && input.forAdmission !== true) {
+        const raw = editor.output
+        // Same-store navigation/form receipts refresh page/cart/checkout facts.
+        // The catalog is unchanged by these operations in the agent-only flow.
+        if (!('products' in raw) && previous?.catalog && previous.tools === tools && previous.execute === client.execute)
+          raw.products = previous.raw.products
+        task.reads.snapshot = { tools, execute: client.execute, raw: structuredClone(raw), catalog: safeParse(pbCatalogStateSchema, raw).success }
+      }
+      else if (writes.has(tool.name) && previous?.tools === tools && previous.execute === client.execute && !('checkout' in previous.raw) && previous.raw.itemSelectionOpen !== true) {
+        const receipt = safeParse(looseObject({ ok: literal(true), status: literal('verified'), cart: looseObject({ ...pbCartStateSchema.entries, subtotal: number() }) }), result)
+        if (receipt.success) {
+          // Native cart writes return their verified full-cart readback. Keep
+          // the catalog, replace the entire cart; never calculate a local delta.
+          task.reads.snapshot = { ...previous, raw: { ...previous.raw, cart: receipt.output.cart } }
+        }
+      }
+    }
     return result
-  // Failure receipts keep their sign-in/vendor explanation. Successful reads
-  // must carry a complete page-specific snapshot, including explicit cart rows.
-  if (result && typeof result === 'object' && 'ok' in result && result.ok === false)
-    return result
-  const state = parse(pbBrowserStateSchema, result)
-  if (input.includeCatalog === true && ['menu', 'cart', 'checkout'].includes(state.page))
-    parse(pbCatalogStateSchema, result)
-  return result
+  }
+  const result = execute()
+  if (contextRead && currentReads)
+    currentReads.pending = { tools, execute: client.execute, catalog, result }
+  try {
+    return await result
+  }
+  finally {
+    if (currentReads?.pending?.result === result)
+      currentReads.pending = undefined
+  }
 }
 
 // Dispatch is the uncertainty boundary: a thrown transport or missing receipt
 // may follow an applied merchant effect. Preserve it for both Main and Jev;
 // neither adapter may reinterpret it as a definite no-effect refusal.
-async function dispatchCartWrite(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'execute'>, tool: ServiceTool, input: Record<string, unknown>): Promise<unknown> {
+async function dispatchCartWrite(client: BrowserClient, tool: ServiceTool, input: Record<string, unknown>): Promise<unknown> {
   let error: string | undefined
   try {
     const receipt = await executeBrowserTool(client, tool, input)
@@ -116,7 +188,7 @@ function missingTableMessage(choices: readonly string[], transcript: string) {
 
 /** Owns one current utterance; only validated one-use question answers extend its target scope. */
 export function beginBrowserCartTask(text: string, options: TaskQuestions & { decide: (proposal: BrowserEffect, plan: Pick<BrowserPlan, 'toolName' | 'arguments'>) => Promise<EffectDecision>, isCurrent: () => boolean }) {
-  const task: NonNullable<typeof active> = { text: text.replaceAll(/\s/g, ''), transcript: text, ...options, receipts: new Map<string, VerifiedReceipt>() }
+  const task: NonNullable<typeof active> = { text: text.replaceAll(/\s/g, ''), transcript: text, ...options, receipts: new Map<string, VerifiedReceipt>(), reads: {} }
   active = task
   return () => {
     if (active === task)

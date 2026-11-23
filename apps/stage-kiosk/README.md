@@ -241,6 +241,23 @@ diagnostics never authorize browser writes. Diagnostic metadata includes
 Both lanes retain the captured visitor session when a reception ends; late
 acknowledgements cannot block or set the next reception's recording error.
 
+PB planning currently assumes customers do not operate the website concurrently
+with the agent. One utterance owns one validated editor snapshot, shared by model
+rounds and tool planning; overlapping identical reads share the pending request.
+The snapshot ends with the task or a replaced document/tool connection. A smaller
+read can reuse a full catalog snapshot, never the reverse. Reads and receipts are
+copied so consumers cannot mutate the retained facts.
+
+Operations invalidate that snapshot before dispatch. Complete verified cart
+receipts replace the whole cart without computing local deltas; same-store
+navigation/checkout receipts update page and form state while retaining the
+unchanged catalog. Missing/uncertain receipts force a new read. Cart edits with
+existing checkout data refresh the form rather than retaining old totals or
+confirmation tokens. Native write/version/specification checks, result readback,
+customer final consent and one-use submission remain in place. Table discovery,
+external payment settlement and explicit recovery remain live reads. This is not
+a cross-utterance or browser-global cache and does not add screenshot inference.
+
 External PB does not expose the owned Menu's `kiosk_conversation_context`.
 The Server now selects one fixed workflow skill from the verified page and
 pending task. Explicit Restart records a retired prior-operation warning as a

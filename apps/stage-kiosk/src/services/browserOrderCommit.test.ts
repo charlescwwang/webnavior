@@ -16,11 +16,10 @@ function setup(fail?: 'unknown' | 'throw' | 'manual' | 'login' | 'read-failure',
   const read: ServiceTool = { name: 'browser_cart_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
   const add = { ...read, name: 'browser_cart_add' }
   let additions = 0
-  let reads = 0
   const execute = vi.fn(async (tool: ServiceTool, _input: Record<string, unknown>): Promise<unknown> => {
     if (tool.name === read.name) {
-      reads++
-      if (reads === 3 && fail === 'login')
+      // Sign-in refusal is a state, independent of redundant preparation reads.
+      if (fail === 'login')
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none', code: 'sign-in-required', error: 'PB requires manual sign-in.' }
       // Inject between verified effects rather than depending on how many
       // read-only preparation/plan-admission observations preceded the first write.
