@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-23T05:26:05.901252+00:00",
+  "release": "kiosk-flow-audit-20261123-r1",
+  "sourceCommit": "e9fec4e09893c3be6cffea384d3e4816590b3a92",
+  "status": "frontend-deployed",
+  "desktopVersion": "0.7.8-rc.6",
+  "newExeRequired": false,
+  "nativeSourceNote": "Native table wording synchronized in source for a future complete build. Current RC6 hosts are supported because Host independently owns the customer table guidance; no new native contract is required.",
+  "auditDocument": "docs/plans/2026-10-28-kiosk-conversation-repair.md",
+  "findingsFixed": [
+    "PB handoff source incorrectly keyed on editor-only browser_observe; common conversationSource now uses native state protocol.",
+    "Quantity wrapper resolved old checkout question before a validated explicitly named meal; existing pauseCheckout policy now applied.",
+    "Old separate-Start guidance survived native/default-table replies; Host current table policy and translations synchronized.",
+    "Misleading stale-capture diagnostic renamed retired-capture; no age-expiry added or removed."
+  ],
+  "verifiedExistingFixes": [
+    "Ordinary ASR reserve has no queue deadline; accepted transcripts survive preceding request latency.",
+    "Concurrent voice candidates remain independent of Main/tool/new capture lifecycle.",
+    "Off/observe background mode offers no IGNORE; no setting changed.",
+    "RC6 fresh submission reader and native read-only payment recovery remain passing."
+  ],
+  "checks": {
+    "kioskUnit": {
+      "passed": 1206,
+      "expectedFail": 1,
+      "skipped": 49
+    },
+    "browserCheckoutPayment": 24,
+    "serverBackgroundDirect": 18,
+    "scopedTypes": "stage-ui and desktop passed; Kiosk passed after task-caused comparison fix.",
+    "changedCodeLint": "passed",
+    "frontendBuild": "passed",
+    "rootChecks": "not run under scoped policy"
+  },
+  "frontend": {
+    "release": "kiosk-flow-audit-20261123-r1",
+    "status": "activated-http-verified",
+    "apiRestart": false,
+    "changed": 98,
+    "apiPid": "421721"
+  },
+  "httpChecks": 9,
+  "health": [
+    {
+      "url": "http://127.0.0.1:5169/readyz",
+      "response": {
+        "status": "ready",
+        "checks": {
+          "db": "ok",
+          "redis": "ok"
+        }
+      }
+    },
+    {
+      "url": "https://webnavior.aikcitri.qzz.io/readyz",
+      "response": {
+        "status": "ready",
+        "checks": {
+          "db": "ok",
+          "redis": "ok"
+        }
+      }
+    }
+  ],
+  "logs": "/home/aimax/webnavior/pb-test.local/kiosk-flow-audit-20261123-r1",
+  "limitations": [
+    "Scoped audit of critical PB ordering/voice paths, not proof all monorepo legacy code is unreachable.",
+    "Physical Windows / formal ASR / merchant payment end-to-end acceptance not performed."
+  ],
+  "notChanged": [
+    "API runtime",
+    "Background mode",
+    "TTS",
+    "Audio algorithms",
+    "RC6 archive or tags"
+  ]
+}
