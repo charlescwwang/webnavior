@@ -35,6 +35,13 @@ The original retained `0.7.8` archive remains unchanged and lacks RC2/RC3 fixes.
 Windows physical and formal application acceptance remain pending. Existing tags
 are never moved, and webpage image recognition remains separate.
 
+RC4 is packaged as `0.7.8-rc.4` with matching frontend deployed. See the
+[RC4 deployment record](../../docs/releases/kiosk-v0.7.8-rc.4-deployment.json).
+Manual payment navigation and regular announcement acknowledgement require this
+complete new portable folder. Server history shortening is committed but has not
+been activated: service restart privileges were unavailable and the original
+runtime was restored. The API remains healthy. Windows acceptance is pending.
+
 ## Manual payment handoff (0.7.8-rc.4)
 
 Customers can click the merchant's LINE Pay or credit link themselves. The host

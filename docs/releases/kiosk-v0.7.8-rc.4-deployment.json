@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-23T04:10:08.511315+00:00",
+  "release": "kiosk-rc4-20261123-r1",
+  "sourceCandidate": "kiosk-v0.7.8-rc.4",
+  "sourceCommit": "b598ef9a3d974d88aba49181766b7ac153512b37",
+  "desktopVersion": "0.7.8-rc.4",
+  "status": "frontend-deployed-and-packaged-api-history-pending",
+  "frontend": {
+    "target": "/var/www/airi/kiosk",
+    "changedFiles": 98,
+    "httpChecks": 9,
+    "entryLast": true,
+    "previousHashedAssetsRetained": true,
+    "backup": "/home/aimax/webnavior/pb-test.local/kiosk-rc4-20261123-r1/before-activation",
+    "apiRestart": false,
+    "apiPid": "137553"
+  },
+  "windows": {
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc4-20261123-r1/windows/Webnavior-Kiosk-v0.7.8-rc.4-Windows-x64-20261123-120801.zip",
+    "sha256": "8a9669d1edc3227de8cfd17d8e5d1a2ce3e4f2103f8fe2a9c0e32097736108ce",
+    "bytes": 163764467,
+    "files": 81,
+    "version": "0.7.8-rc.4",
+    "gitCommit": "b598ef9a3d974d88aba49181766b7ac153512b37",
+    "crc": true,
+    "payloadHashes": 81,
+    "compiledMainPreloadPbIdentical": true,
+    "windowsPhysicalValidation": false,
+    "signed": false,
+    "physicalValidation": false
+  },
+  "paymentVerification": {
+    "nativeFixture": "passed: LINE / credit / credit POST",
+    "realCharges": 0,
+    "liveReadOnlyPaymentState": "passed after adding Inertia version",
+    "physicalWindows": "pending"
+  },
+  "apiHistory": {
+    "status": "not-deployed-runtime-restored",
+    "reason": "systemctl restart authorization timed out; sudo denied by NoNewPrivs environment. Original API process remains ready.",
+    "changes": "12 messages / 6000 chars and recovery-guidance inference filtering are committed but not active."
+  },
+  "logs": "/home/aimax/webnavior/pb-test.local/kiosk-rc4-20261123-r1",
+  "installation": "Exit the old application completely and extract the complete new folder; native navigation fixes require the new Electron package.",
+  "limitations": [
+    "Physical Windows and real provider authorization remain unverified.",
+    "Earlier field context-unavailable event did not retain its original exception; RC4 adds diagnostic details.",
+    "Webpage screenshot recognition is not included."
+  ]
+}
