@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-23T06:07:31.860696+00:00",
+  "release": "kiosk-production-boundary-20261123-r1",
+  "sourceCommit": "0b17b6434bb135855956691447434ca2a35fd694",
+  "status": "frontend-deployed",
+  "desktopVersion": "0.7.8-rc.6",
+  "newExeRequired": false,
+  "findingsFixed": [
+    "Moved host-only tool names from demo source to stage-shared/kiosk-host-tools.",
+    "Moved price clarification copy to shared i18n orderingMessages.",
+    "DEV-only async simulation panel; browser fixture pages moved outside runtime source."
+  ],
+  "checks": {
+    "productionModuleAudit": {
+      "moduleCount": 2921,
+      "forbidden": []
+    },
+    "kioskUnit": {
+      "passed": 1206,
+      "expectedFail": 1,
+      "skipped": 49
+    },
+    "pricingUnit": 87,
+    "browserBridge": 20,
+    "browserSimulation": 1,
+    "scopedTypes": [
+      "stage-kiosk",
+      "order-menu",
+      "stage-shared",
+      "stage-ui"
+    ],
+    "changedCodeLint": "passed",
+    "frontendBuild": "passed",
+    "rootTypecheck": "not run"
+  },
+  "frontend": {
+    "release": "kiosk-production-boundary-20261123-r1",
+    "status": "activated-http-verified",
+    "apiRestart": false,
+    "changed": 99,
+    "apiPid": "421721"
+  },
+  "httpChecks": 9,
+  "health": [
+    {
+      "url": "http://127.0.0.1:5169/readyz",
+      "response": {
+        "status": "ready",
+        "checks": {
+          "db": "ok",
+          "redis": "ok"
+        }
+      }
+    },
+    {
+      "url": "https://webnavior.aikcitri.qzz.io/readyz",
+      "response": {
+        "status": "ready",
+        "checks": {
+          "db": "ok",
+          "redis": "ok"
+        }
+      }
+    }
+  ],
+  "logs": "/home/aimax/webnavior/pb-test.local/kiosk-production-boundary-20261123-r1",
+  "limitations": [
+    "Physical Windows / merchant payment end-to-end acceptance not performed.",
+    "This change isolates production code from demo source; it does not resolve all ordering latency."
+  ]
+}
