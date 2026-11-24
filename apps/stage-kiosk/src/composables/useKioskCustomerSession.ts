@@ -28,16 +28,16 @@ export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions
       const pb = readPbStateJourney(kioskInteractionProfile.profile.value.services[0]?.serviceUrl ?? '')
         || interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_state_get' || tool.name === 'browser_recovery_context')
       if (reason === 'staff' && pb) {
-        // Explicit initialization retires our reception only. PB owns its cart,
-        // submitted order and payment; none is read, cleared, cancelled or replayed.
-        const localReset = interactiveServiceClient.tools.value.find(tool => tool.name === 'browser_reception_reset')
-        try {
-          if (localReset)
-            await interactiveServiceClient.execute(localReset, {}, AbortSignal.timeout(1500))
-        }
-        catch {
-          // A failed/disconnected PB transport must not veto local initialization.
-          // Its previous result remains in the ending visitor's operation history.
+        const outcome = await resetConversationService(interactiveServiceClient, 'new-order')
+        if (outcome === 'reload') {
+          const localReset = interactiveServiceClient.tools.value.find(tool => tool.name === 'browser_reception_reset')
+          try {
+            if (localReset)
+              await interactiveServiceClient.execute(localReset, {}, AbortSignal.timeout(1500))
+          }
+          catch {
+            // An unavailable order/payment page cannot veto local initialization.
+          }
         }
         interactiveServiceClient.activate(undefined)
       }
@@ -45,8 +45,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions
         await resetConversationService(interactiveServiceClient)
       }
       const changingSite = hasPendingOrderingSite()
-      // Renew the configured entry without requiring merchant readiness.
-      // Explicit staff initialization has deliberately left the PB cart intact.
+      // Both an empty editable cart and a retired order start at the configured entry.
       if (!changingSite)
         await scenarioRegistry.reloadActive()
       await options.endVisitorSession?.()

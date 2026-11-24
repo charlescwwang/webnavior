@@ -1223,13 +1223,12 @@ document to verify the result. The Host then reloads the configured entry URL
 (PB's select-table page), replacing the previous customer's document and tool
 handles while retaining the dedicated browser profile's login. A successful
 native reset alone does not prepare the next customer's entry screen.
-Manual **重新開始** instead initializes Host reception state without requiring
-PB order/payment readback or cart clearing. Desktop 0.6.9 exposes Host-only
-`browser_reception_reset` even after submission: it retires our local marker,
-invalidates queued controls and confirmation, and preserves PB state for staff.
-It bypasses the commerce FIFO; it never replays or cancels already-dispatched
-merchant work. The ending visitor retains audit evidence. Neither lifecycle
-command is a Main tool.
+Manual **重新開始／新訂單** checks the editable PB cart. When it contains
+items, the Host uses the same verified clear operation before opening the
+configured entry. A failed clear keeps the current reception active. An empty
+cart, a submitted order, or an unresolved submission takes the local reception
+reset path. This retires Host controls and preserves the merchant order and
+payment for staff. The standby **開始新交談／新訂單** button starts a reception.
 The customer restart button sits at the lower left of the avatar column, clear
 of conversation text and the native website on desktop and browser hosts.
 Checkout asks for invoice details before notification contact details. Each

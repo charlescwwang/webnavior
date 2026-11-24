@@ -166,9 +166,14 @@ export async function recoverConversationService(client: Pick<ReturnType<typeof 
 export class BrowserRestartBlocked extends Error {}
 
 /** Retires terminal orders by entry reload; unfinished carts still require verified native clearing. */
-export async function resetConversationService(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute' | 'refresh' | 'waitUntilReady' | 'getDocumentId'>) {
+export async function resetConversationService(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute' | 'refresh' | 'waitUntilReady' | 'getDocumentId'>, mode: 'session-end' | 'new-order' = 'session-end') {
   const stateReader = client.tools.value.find(tool => tool.name === 'browser_state_get')
-  if (stateReader) {
+  const manual = mode === 'new-order'
+  // A submitted order or payment document has no editor. Explicit restart can
+  // renew the reception without touching that order, even if payment is pending.
+  if (manual && !['browser_customer_reset', 'browser_cart_get', 'browser_recovery_context'].every(name => client.tools.value.some(tool => tool.name === name)))
+    return 'reload' as const
+  if (stateReader && !manual) {
     const documentId = client.getDocumentId()
     let raw: unknown
     try {
@@ -200,6 +205,16 @@ export async function resetConversationService(client: Pick<ReturnType<typeof cr
     throw new Error('Browser service does not support a verified customer reset.')
   const reader = client.tools.value.find(tool => tool.name === 'browser_cart_get')
   if (reader) {
+    // Inspect the barrier on both table and checkout pages before offering
+    // Restart. An unknown final submission is not an ordinary leftover cart.
+    const recovery = client.tools.value.find(tool => tool.name === 'browser_recovery_context')!
+    const state = parse(browserRecoveryContextSchema, await client.execute(recovery, {}))
+    if (manual && state.blockedBy === 'order')
+      return 'reload' as const
+    if (!state.canReset && state.blockedBy === 'order')
+      throw new Error(orderingMessages['zh-Hant'].recovery.order)
+    if (!state.canReset)
+      throw new Error('上一筆餐點操作的結果仍在確認，請稍候再試；若持續無法重新開始，請洽工作人員。')
     // forAdmission on a menu may click PB's announcement. Reset preflight is
     // read-only; only the table route needs its private previous-cart read.
     let raw = await client.execute(reader, { includeCatalog: false })
@@ -211,14 +226,10 @@ export async function resetConversationService(client: Pick<ReturnType<typeof cr
     const current = parse(looseObject({ ok: literal(true), page: string(), selectedTable: optional(string()), cartAdmission: optional(string()), cart: optional(looseObject({ lines: array(unknown()) })) }), raw)
     if (!current.cart && (current.page !== 'table' || current.cartAdmission !== 'after-table-entry'))
       throw new Error('目前無法核對購物車，請稍後再重新開始。')
-    // Inspect the barrier on both table and checkout pages before offering
-    // Restart. An unknown final submission is not an ordinary leftover cart.
-    const recovery = client.tools.value.find(tool => tool.name === 'browser_recovery_context')!
-    const state = parse(browserRecoveryContextSchema, await client.execute(recovery, {}))
-    if (!state.canReset && state.blockedBy === 'order')
-      throw new Error(orderingMessages['zh-Hant'].recovery.order)
-    if (!state.canReset)
-      throw new Error('上一筆餐點操作的結果仍在確認，請稍候再試；若持續無法重新開始，請洽工作人員。')
+    if (client.getDocumentId() !== state.documentId)
+      throw new BrowserRestartBlocked(orderingMessages['zh-Hant'].restart.unavailable)
+    if (manual && current.cart?.lines.length === 0)
+      return 'reload' as const
     if (current.page === 'table') {
       // A verified empty table cart needs no hidden Start or fake reset receipt.
       // The lifecycle still retires this visitor and reloads the table entry.
@@ -227,7 +238,7 @@ export async function resetConversationService(client: Pick<ReturnType<typeof cr
       if (!current.cart || current.cart.lines.length) {
         const start = client.tools.value.find(tool => tool.name === 'browser_start_ordering')
         if (!start || !current.selectedTable)
-          throw new Error('請先選擇桌號或櫃台取餐，才能清除未完成的購物車。')
+          throw new BrowserRestartBlocked('請先選擇桌號或櫃台取餐，才能清除未完成的購物車。')
         // Explicit Restart authorizes clearing the unfinished cart. Enter through
         // the real selected-table button to reach PB's clear control, without
         // choosing a different table or issuing a merchant order.
@@ -272,7 +283,7 @@ export async function resetConversationService(client: Pick<ReturnType<typeof cr
   const raw = await client.execute(tool, {})
   const failure = safeParse(looseObject({ ok: literal(false), customerMessage: string() }), raw)
   if (failure.success)
-    throw new Error(failure.output.customerMessage)
+    throw new BrowserRestartBlocked(failure.output.customerMessage)
   const result = parse(looseObject({ ok: literal(true), status: literal('customer-reset'), cartCleared: literal(true), documentId: string() }), raw)
   if (!documentId || result.documentId !== documentId || client.getDocumentId() !== documentId)
     throw new Error('Browser document changed during customer reset.')

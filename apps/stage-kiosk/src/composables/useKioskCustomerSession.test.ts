@@ -66,6 +66,44 @@ describe('useKioskCustomerSession', () => {
     expect(reloadScenario).toHaveBeenCalledOnce()
   })
 
+  it.each(['occupied', 'empty', 'uncertain-order', 'clear-failed'])('handles a staff restart with an editable PB cart: %s', async (state) => {
+    const calls: string[] = []
+    interactiveServiceClient.activateTransport('https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table', () => {
+      const lifetime = new AbortController()
+      return {
+        signal: lifetime.signal,
+        dispose: reason => lifetime.abort(reason),
+        discover: async request => ({ ...request, documentId: 'editor', toolsRevision: 1, tools: ['browser_state_get', 'browser_cart_get', 'browser_customer_reset', 'browser_recovery_context', 'browser_reception_reset'].map(name => ({ name, description: '', inputSchema: { type: 'object' } })) }),
+        inspect: async request => ({ ...request, pendingCount: 0, operations: [] }),
+        execute: async (request) => {
+          calls.push(request.name)
+          let result: object = { ok: true, page: 'menu', cart: { lines: state === 'empty' ? [] : [{}] } }
+          if (request.name === 'browser_recovery_context')
+            result = { source: 'browser', documentId: 'editor', contextKey: 'key', canReset: true, canRetry: state !== 'uncertain-order', ...(state === 'uncertain-order' ? { blockedBy: 'order' } : {}) }
+          if (request.name === 'browser_customer_reset')
+            result = state === 'clear-failed' ? { ok: false, customerMessage: '尚未確認清空' } : { ok: true, status: 'customer-reset', cartCleared: true, documentId: 'editor' }
+          return { connectionId: request.connectionId, documentId: request.documentId, operationId: request.operationId, result }
+        },
+      }
+    })
+    await interactiveServiceClient.waitUntilReady()
+    const chatSession = { createSession: vi.fn().mockResolvedValue('chat'), initialize: vi.fn(), deleteSession: vi.fn(), setActiveSession: vi.fn() } as unknown as ReturnType<typeof useChatSessionStore>
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession }))!
+    await session.recordActivity()
+    if (state === 'clear-failed') {
+      await expect(session.end('staff')).rejects.toThrow('尚未確認清空')
+      expect(session.state.value).toBe('active')
+      expect(reloadScenario).not.toHaveBeenCalled()
+      return
+    }
+    await session.end('staff')
+    expect(calls.filter(name => name === 'browser_customer_reset')).toHaveLength(state === 'occupied' ? 1 : 0)
+    expect(session.state.value).toBe('standby')
+    expect(reloadScenario).toHaveBeenCalledOnce()
+  })
+
   // Report: this chat, Nov14; PB's successful in-document reset left the next customer on the menu.
   it.each(['cart', 'paid', 'cancelled'] as const)('reloads the configured entry after a verified %s idle reset, before admitting the next customer', async (stage) => {
     vi.useFakeTimers()
