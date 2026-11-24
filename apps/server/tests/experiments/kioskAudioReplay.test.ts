@@ -47,7 +47,6 @@ it.skipIf(process.env.KIOSK_AUDIO_REPLAY !== '1')('transcribes a synthetic long 
     const durations: number[] = []
     const result = await transcribeKioskUtterance(samples, {
       signal: reservation.signal,
-      onChunkTranscribed: reservation.markTranscriptionProgress,
       transcribe: async (recording, signal, chunk) => {
         expect(recording.size).toBeLessThan(1024 * 1024)
         const gateway = createKioskAudioGateway({ configKV, envelopeCrypto, fetchImpl: (input, init) => fetch(input, { ...init, signal }) })

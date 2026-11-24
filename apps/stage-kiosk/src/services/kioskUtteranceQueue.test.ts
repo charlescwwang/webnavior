@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createKioskUtteranceQueue } from './kioskUtteranceQueue'
 
-it('allows a provider-bounded ASR transcription to finish after the legacy deadline and submits its text once', async () => {
+it('allows an ASR transcription to finish after the legacy deadline and submits its text once', async () => {
   vi.useFakeTimers()
   try {
     const handled: string[] = []
     const queue = createKioskUtteranceQueue({ process: async (utterance) => {
       handled.push(utterance.text)
     } })
-    const reservation = queue.reserve('asr', 60000)
+    const reservation = queue.reserve('asr')
     if (reservation.kind !== 'ACCEPTED')
       throw new Error('Expected capture to be reserved.')
     await vi.advanceTimersByTimeAsync(20000)
@@ -97,29 +97,6 @@ describe('kiosk utterance queue', () => {
     expect(handled).toEqual(['我要水餃'])
   })
 
-  it('releases later utterances if an earlier ASR request never returns', async () => {
-    vi.useFakeTimers()
-    try {
-      const handled: string[] = []
-      const dropped: string[] = []
-      const queue = createKioskUtteranceQueue({
-        onDrop: (utterance) => { dropped.push(utterance.source) },
-        process: async (utterance) => { handled.push(utterance.text) },
-      })
-      const stalled = queue.reserve('asr', 100)
-      expect(stalled.kind).toBe('ACCEPTED')
-      await vi.advanceTimersByTimeAsync(50)
-      queue.submit({ source: 'simulation', text: '我要水餃' })
-      await vi.advanceTimersByTimeAsync(51)
-      await queue.idle()
-      expect(dropped).toEqual(['asr'])
-      expect(handled).toEqual(['我要水餃'])
-    }
-    finally {
-      vi.useRealTimers()
-    }
-  })
-
   it('reports overload instead of silently dropping a new complete utterance', async () => {
     let release: (() => void) | undefined
     const pending = new Promise<void>((resolve) => {
@@ -185,7 +162,7 @@ describe('kiosk utterance queue', () => {
     finally { vi.useRealTimers() }
   })
 
-  it('aborts incomplete transcription on reset and ignores late progress or completion', async () => {
+  it('aborts incomplete transcription on reset and ignores late completion', async () => {
     vi.useFakeTimers()
     try {
       const process = vi.fn(async () => {})
@@ -193,10 +170,8 @@ describe('kiosk utterance queue', () => {
       const reservation = queue.reserve('asr')
       if (reservation.kind !== 'ACCEPTED')
         throw new Error('Expected capture reservation.')
-      reservation.markTranscriptionProgress()
       queue.reset()
       expect(reservation.signal.aborted).toBe(true)
-      reservation.markTranscriptionProgress()
       reservation.complete({ text: '舊會話辨識完成' })
       await vi.advanceTimersByTimeAsync(15_001)
       await queue.idle()

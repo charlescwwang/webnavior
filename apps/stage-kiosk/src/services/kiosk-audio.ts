@@ -12,8 +12,6 @@ const WAV_HEADER_BYTES = kioskAudioLimits.wavHeaderBytes
  */
 export async function transcribeKioskUtterance(samples: Float32Array, options: {
   signal?: AbortSignal
-  /** Called only after a whole chunk succeeds, to renew the capture's inactivity deadline. */
-  onChunkTranscribed?: () => void
   transcribe: (recording: Blob, signal?: AbortSignal, chunk?: KioskAudioChunk) => Promise<{ text: string }>
 }) {
   const texts: string[] = []
@@ -44,7 +42,6 @@ export async function transcribeKioskUtterance(samples: Float32Array, options: {
     if (samples.length > maximumSamples && !text.trim())
       throw new Error('ASR did not recognize every part of this utterance.')
     texts.push(text.trim())
-    options.onChunkTranscribed?.()
     start = end
   }
   return { text: texts.join('\n'), recording: createKioskVadRecording(samples) }

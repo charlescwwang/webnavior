@@ -15,10 +15,8 @@ export interface KioskUtteranceTicket {
 export type KioskUtteranceReservation = {
   kind: 'ACCEPTED'
   id: number
-  /** Aborted on an explicit transcription deadline or reception reset. */
+  /** Aborted when capture is cancelled or the reception resets. */
   signal: AbortSignal
-  /** Restarts the inactivity deadline only after another complete ASR chunk. */
-  markTranscriptionProgress: () => void
   complete: (input: Pick<KioskUtterance, 'text' | 'recording' | 'recognitionMode'>) => void
   cancel: () => void
 } | { kind: 'OVERLOADED' }
@@ -34,7 +32,7 @@ export function createKioskUtteranceQueue(options: {
   maxPending?: number
   now?: () => number
   onReady?: (utterance: KioskUtterance) => void
-  onDrop?: (utterance: KioskUtterance, reason: 'expired' | 'reset') => void
+  onDrop?: (utterance: KioskUtterance) => void
   onError?: (utterance: KioskUtterance, error: unknown) => void
   onState?: (state: { active?: KioskUtterance, pending: readonly KioskUtterance[] }) => void
   process: (utterance: KioskUtterance, ticket: KioskUtteranceTicket) => Promise<void>
@@ -109,7 +107,7 @@ export function createKioskUtteranceQueue(options: {
   }
 
   /** Claims ordering at speech-capture time, before asynchronous ASR completes. */
-  function reserve(source: KioskUtterance['source'], transcriptionTimeoutMs?: number): KioskUtteranceReservation {
+  function reserve(source: KioskUtterance['source']): KioskUtteranceReservation {
     if (pending.length >= maxPending)
       return { kind: 'OVERLOADED' }
     const utterance: KioskUtterance = { capturedAt: now(), id: ++nextId, source, text: '' }
@@ -117,29 +115,14 @@ export function createKioskUtteranceQueue(options: {
     const ready = new Promise<KioskUtterance | undefined>(resolve => resolveReady = resolve)
     let settled = false
     const captureController = new AbortController()
-    let readinessTimeout: ReturnType<typeof setTimeout> | undefined
     const settle = (completed?: KioskUtterance) => {
       if (settled)
         return
       settled = true
       if (!completed)
         captureController.abort()
-      clearTimeout(readinessTimeout)
       resolveReady(completed)
     }
-    // The network/provider owns ordinary ASR failure and cancellation. Only an
-    // explicitly supplied provider deadline adds a queue watchdog; it never
-    // expires a completed transcript waiting behind another operation.
-    const markTranscriptionProgress = () => {
-      if (settled || transcriptionTimeoutMs === undefined)
-        return
-      clearTimeout(readinessTimeout)
-      readinessTimeout = setTimeout(() => {
-        settle()
-        options.onDrop?.(utterance, 'expired')
-      }, transcriptionTimeoutMs)
-    }
-    markTranscriptionProgress()
     pending.push({ ready, settle, utterance })
     publish()
     void drain()
@@ -147,7 +130,6 @@ export function createKioskUtteranceQueue(options: {
       kind: 'ACCEPTED',
       id: utterance.id,
       signal: captureController.signal,
-      markTranscriptionProgress,
       complete: (input) => {
         if (settled)
           return
@@ -183,7 +165,7 @@ export function createKioskUtteranceQueue(options: {
       resolve()
     for (const item of pending.splice(0)) {
       item.settle()
-      options.onDrop?.(item.utterance, 'reset')
+      options.onDrop?.(item.utterance)
     }
     publish()
   }

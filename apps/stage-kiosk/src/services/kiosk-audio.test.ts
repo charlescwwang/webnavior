@@ -23,7 +23,6 @@ describe('complete utterance transcription', () => {
       })
       const result = transcribeKioskUtterance(new Float32Array(16_000 * 45), {
         signal: reservation.signal,
-        onChunkTranscribed: reservation.markTranscriptionProgress,
         transcribe,
       }).then(value => ({ value }), error => ({ error }))
       await vi.advanceTimersByTimeAsync(18_000)
@@ -81,56 +80,13 @@ describe('complete utterance transcription', () => {
     expect(transcribe).toHaveBeenCalledTimes(2)
   })
 
-  // Report: this chat, Nov19: ordinary ASR no longer has a default 15-second watchdog.
-  it('expires a stalled later chunk only with an explicit provider deadline, without executing a partial demand', async () => {
-    vi.useFakeTimers()
-    try {
-      const process = vi.fn(async () => {})
-      const onDrop = vi.fn()
-      const queue = createKioskUtteranceQueue({ process, onDrop })
-      const reservation = queue.reserve('asr', 15_000)
-      if (reservation.kind !== 'ACCEPTED')
-        throw new Error('Expected capture reservation.')
-      const transcribe = vi.fn(async (_recording: Blob, signal?: AbortSignal) => {
-        if (transcribe.mock.calls.length === 1) {
-          await new Promise(resolve => setTimeout(resolve, 6_000))
-          return { text: '我要水餃兩份' }
-        }
-        return await new Promise<{ text: string }>((_resolve, reject) => {
-          signal!.addEventListener('abort', () => reject(signal!.reason), { once: true })
-        })
-      })
-      const result = transcribeKioskUtterance(new Float32Array(16_000 * 45), {
-        signal: reservation.signal,
-        onChunkTranscribed: reservation.markTranscriptionProgress,
-        transcribe,
-      }).then(value => ({ value }), error => ({ error }))
-      await vi.advanceTimersByTimeAsync(20_000)
-      expect(reservation.signal.aborted).toBe(false)
-      queue.submit({ source: 'simulation', text: '後來的一句' })
-      await vi.advanceTimersByTimeAsync(1_001)
-      expect(await result).toHaveProperty('error')
-      expect(reservation.signal.aborted).toBe(true)
-      await queue.idle()
-      expect(onDrop).toHaveBeenCalledTimes(1)
-      expect(process).toHaveBeenCalledTimes(1)
-      expect(process).toHaveBeenCalledWith(expect.objectContaining({ text: '後來的一句' }), expect.any(Object))
-      expect(transcribe).toHaveBeenCalledTimes(2)
-    }
-    finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('rejects empty recognition in a multi-chunk utterance without reporting progress for that chunk', async () => {
-    const onChunkTranscribed = vi.fn()
+  it('rejects empty recognition in a multi-chunk utterance', async () => {
     const transcribe = vi.fn().mockResolvedValueOnce({ text: '我要水餃兩份' }).mockResolvedValueOnce({ text: ' ' })
-    await expect(transcribeKioskUtterance(new Float32Array(16_000 * 41), { transcribe, onChunkTranscribed })).rejects.toThrow('every part')
-    expect(onChunkTranscribed).toHaveBeenCalledTimes(1)
+    await expect(transcribeKioskUtterance(new Float32Array(16_000 * 41), { transcribe })).rejects.toThrow('every part')
     expect(transcribe).toHaveBeenCalledTimes(2)
   })
 
-  it('stops uploading after the capture reservation expires or the visitor changes', async () => {
+  it('stops uploading after capture is cancelled', async () => {
     const controller = new AbortController()
     const transcribe = vi.fn(async () => {
       controller.abort()

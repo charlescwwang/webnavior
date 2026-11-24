@@ -2013,8 +2013,7 @@ are included once. Each upload fits the dedicated 1MiB request limit, including
 multipart headroom. Transcripts are reassembled in sample order and enter the
 decision queue once, after every chunk succeeds. A failed/empty chunk, cancellation,
 explicit provider deadline or visitor reset rejects the whole utterance; partial
-speech never becomes a separate order. The queue adds no default 15-second ASR
-watchdog and never expires a complete transcript behind earlier ASR or Agent work.
+speech never becomes a separate order. The queue sets no ASR timer and keeps complete transcripts waiting behind earlier ASR or Agent work.
 Accepted utterances retain capture order until processed or the reception resets;
 actual request failures still cancel their own reservation. Capacity remains
 bounded, with explicit overload feedback for a new utterance that cannot be accepted.

@@ -340,14 +340,12 @@ const utteranceQueue = createKioskUtteranceQueue({
     showCustomerUtterance(utterance)
     setRequestStatus(utterance.id, 'queued')
   },
-  onDrop: (utterance, reason) => {
+  onDrop: (utterance) => {
     idleUtterances.delete(utterance.id)
     setRequestStatus(utterance.id, 'cancelled')
     finishVoiceDiagnostic(utterance.id, 'failed')
     if (utterance.source === 'simulation')
-      asrSimulationStatus.value = reason === 'expired' ? '這句等待太久，未執行；請重新送出。' : '會話已重設，待處理語句已取消。'
-    else if (reason === 'expired')
-      pendingTranscript.value = '剛才語句等待太久，請再說一次。'
+      asrSimulationStatus.value = '會話已重設，待處理語句已取消。'
   },
   onError: (utterance, error) => {
     setRequestStatus(utterance.id, 'failed')
@@ -1013,7 +1011,6 @@ async function processVoiceCandidate(
     const signal = AbortSignal.any([candidate.signal, reservation.signal, ...(recognitionSignal ? [recognitionSignal] : [])])
     const { recording, text } = await transcribeKioskUtterance(buffer, {
       signal,
-      onChunkTranscribed: reservation.markTranscriptionProgress,
       transcribe: (recording, signal, chunk) => transcribeKioskAudio(recording, signal, chunk, transcriptionContext),
     })
     requestMs = performance.now() - startedAt
