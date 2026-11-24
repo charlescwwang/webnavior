@@ -1,7 +1,7 @@
 {
   "version": "0.7.8-rc.8",
   "sourceCommit": "a2bbc3fc6020a5cda840278850aba3c8b5fe8153",
-  "tag": "kiosk-v0.7.8-rc.8",
+  "tag": "v0.7.8-rc.8",
   "adminRelease": "web-v2026.11.24.2",
   "package": {
     "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc8-20261124-r1/windows/Webnavior-Kiosk-v0.7.8-rc.8-Windows-x64-20261124-165152.zip",
@@ -50,5 +50,20 @@
     "changedCodeLint": "passed"
   },
   "windowsPhysicalValidation": false,
-  "signed": false
+  "signed": false,
+  "previousVersion": "0.7.8-rc.7",
+  "components": {
+    "web": {
+      "version": "0.7.8-rc.8",
+      "deployment": "web-v2026.11.24.2"
+    },
+    "kiosk": {
+      "version": "0.7.8-rc.8",
+      "deployment": "kiosk-rc8-20261124-r1"
+    },
+    "windows": {
+      "version": "0.7.8-rc.8",
+      "sha256": "f1f04ed26669482f5d41988b567660ea97dbb08f4fa789427520a5339937785b"
+    }
+  }
 }

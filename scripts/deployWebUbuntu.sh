@@ -118,6 +118,15 @@ VITE_SERVER_URL="$origin" VITE_ORDER_MENU_URL="$origin/menu/" corepack pnpm -F @
 VITE_API_SERVER_URL="$origin" VITE_ORDERING_SCENARIO_URL="$origin/menu/" corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
 VITE_ORDER_MENU_SERVER_URL="$origin/api/kiosk/pos" VITE_AIRI_ORIGIN="$origin" corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
 
+# Web and Kiosk use the same product version as the Windows portable package.
+node --input-type=module <<'JS'
+import { readFileSync, writeFileSync } from 'node:fs'
+const { version } = JSON.parse(readFileSync('apps/stage-kiosk-desktop/package.json', 'utf8'))
+for (const app of ['web', 'kiosk']) {
+  writeFileSync(`apps/stage-${app}/dist/version.json`, JSON.stringify({ app, version, release: version }) + '\n')
+}
+JS
+
 sudo install -d -m 0755 "$site_root/web" "$site_root/kiosk" "$site_root/menu"
 sudo rsync -a --delete apps/stage-web/dist/ "$site_root/web/"
 sudo rsync -a --delete apps/stage-kiosk/dist/ "$site_root/kiosk/"
