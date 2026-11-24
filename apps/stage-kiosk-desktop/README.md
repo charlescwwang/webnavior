@@ -518,3 +518,7 @@ RC8 adds spoken payment choices and switching for the same pending PB order. Car
 ## Windows 0.7.8-rc.9
 
 Use the RC9 portable folder with the paired Kiosk frontend for visible cart verification, return to the menu after removing the last item, and local menu-entry diagnostics. Speech recognition and progress now appear in the avatar's thought bubble. Exit the previous executable before launching RC9.
+
+## Windows 0.7.8-rc.10
+
+Use the RC10 portable folder with the paired Kiosk frontend to test checkout invitations and alternative recommendations after declining an unfinished selection. Cart review opens the cart before asking the customer to confirm its contents. Customer reset works when the full menu has no search field. Exit the running Kiosk and extract the entire ZIP into a new folder.
