@@ -31,7 +31,7 @@ it('acknowledges speech only in the thought bubble and keeps the follow-up trans
   const screen = render(defineComponent({
     setup: () => () => h('div', [
       h(KioskAssistantThoughtBubble, { recognizing: count.value > 0 }),
-      h(KioskConversation, { ...props, recognizingCount: count.value, activityStatus: '正在辨識語音…', messages: messages.value, sending: true, requestStatuses: { 2: 'queued' }, voiceConversationOnly: true }),
+      h(KioskConversation, { ...props, recognizingCount: count.value, messages: messages.value, sending: true, requestStatuses: { 2: 'queued' }, voiceConversationOnly: true }),
     ]),
   }), { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
   await expect.element(screen.getByText('已收到語音，正在辨識…', { exact: true })).toBeVisible()
@@ -50,7 +50,7 @@ it('shows a pending decision only in the avatar bubble during simulated ordering
   const screen = render(defineComponent({
     setup: () => () => h('div', [
       h(KioskAssistantThoughtBubble, { progress: { phase: 'understanding', message } }),
-      h(KioskConversation, { ...props, decisionPending: true, activityStatus: message, fastPathSimulationStatus: '已收到模擬語句' }),
+      h(KioskConversation, { ...props, fastPathSimulationStatus: '已收到模擬語句' }),
     ]),
   }), { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
   await expect.element(screen.getByText(message, { exact: true })).toBeVisible()
@@ -119,20 +119,14 @@ it('presents conversation text in Taiwan Traditional without rewriting source me
   expect(streaming.slices[0]).toEqual({ type: 'text', text: '正在查询菜单。' })
 })
 
-it.each([true, false])('keeps individual notices but limits inline progress to text mode (voice=%s)', async (voiceConversationOnly) => {
+it.each([true, false])('keeps individual notices but omits inline progress in either mode (voice=%s)', async (voiceConversationOnly) => {
   const screen = render(KioskConversation, {
-    props: { ...props, voiceConversationOnly, pendingTranscript: '请帮我推荐', activityStatus: '正在查询菜单', activitySteps: [{ label: '确认订单', state: 'executing', toolName: 'menu_get' }] },
+    props: { ...props, voiceConversationOnly, pendingTranscript: '请帮我推荐', recognizingCount: 1, assistantPresence: { mode: 'speaking', title: '我正在說明', description: '想換個選擇時，直接說出來就可以。' } },
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
   })
   await expect.element(screen.getByText('請幫我推薦', { exact: true })).toBeVisible()
-  if (voiceConversationOnly) {
-    expect(screen.container.querySelector('.assistant-activity')).toBeNull()
-    expect(screen.container.querySelector('.assistant-activity-steps')).toBeNull()
-  }
-  else {
-    await expect.element(screen.container.querySelector<HTMLElement>('.assistant-activity')).toHaveTextContent('正在查詢菜單')
-    await expect.element(screen.getByText('確認訂單', { exact: true })).toBeVisible()
-  }
+  expect(screen.container.querySelector('.assistant-activity')).toBeNull()
+  expect(screen.container.querySelector('.assistant-activity-steps')).toBeNull()
 })
 
 it('keeps only the simulated ASR input in text mode and forwards its transcript', async () => {
@@ -143,7 +137,7 @@ it('keeps only the simulated ASR input in text mode and forwards its transcript'
   })
   expect(document.querySelectorAll('textarea')).toHaveLength(1)
   expect(screen.container.querySelector('[aria-label="送出訊息"]')).toBeNull()
-  await expect.element(screen.getByText('正在查詢菜單', { exact: true })).toBeVisible()
+  expect(screen.getByText('正在查詢菜單', { exact: true }).query()).toBeNull()
   await screen.getByRole('textbox').fill('我想吃面，一碗')
   await screen.getByRole('button', { name: '模擬辨識並執行' }).click()
   expect(onSimulateAsr).toHaveBeenCalledOnce()
@@ -214,7 +208,7 @@ it('describes missing assistant control without presenting the service as broken
 })
 
 // Report: Nov14 user request; a slow answer must stay below its own customer message.
-it('shows request status in the conversation and groups a late reply before the interruption', async () => {
+it('omits request labels and groups a late reply before the interruption', async () => {
   const messages: ChatHistoryItem[] = [
     { role: 'user', id: 'utterance:1:user', content: '先看雞腿飯' },
     { role: 'user', id: 'utterance:2:user', content: '再看湯' },
@@ -222,12 +216,12 @@ it('shows request status in the conversation and groups a late reply before the 
     { role: 'assistant', id: 'utterance:1:reply:a', content: '雞腿飯在這裡。', slices: [], tool_results: [] },
   ]
   const screen = render(KioskConversation, { props: { ...props, messages, voiceConversationOnly: false, requestStatuses: { 1: 'completed', 2: 'processing' } }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-TW', messages: { 'zh-TW': { stage: { kiosk: { 'request-status': { completed: '已完成', processing: '處理中' } } } } } })] } })
-  await expect.element(screen.getByText('處理中', { exact: true })).toBeVisible()
+  expect(screen.getByText('處理中', { exact: true }).query()).toBeNull()
   await screen.getByRole('button', { name: 'stage.kiosk-agent.previous-conversation' }).click()
   const rows = [...screen.container.querySelectorAll('[data-chat-message-key]')]
   expect(rows.map(row => row.getAttribute('data-chat-message-key'))).toEqual(['utterance:1:user', 'utterance:1:reply:a', 'utterance:2:user', 'utterance:2:reply:a'])
-  expect(rows[0].textContent).toContain('已完成')
-  expect(rows[2].textContent).toContain('處理中')
+  expect(rows[0].textContent).not.toContain('已完成')
+  expect(rows[2].textContent).not.toContain('處理中')
   expect(messages[1].content).toBe('再看湯')
 })
 

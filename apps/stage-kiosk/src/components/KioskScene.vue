@@ -231,7 +231,6 @@ function showCustomerUtterance(utterance: KioskUtterance) {
   conversationMessages.value = messages
 }
 const conversationWorkStatus = shallowRef<string>()
-const conversationActivitySteps = shallowRef<Array<{ label: string, state: 'done' | 'error' | 'executing' | 'selected', toolName: string }>>([])
 const serviceRecoveryBlocked = shallowRef(false)
 const serviceRecovering = shallowRef(false)
 watch([scenarioRegistry.activeScenarioId, scenarioRegistry.iframeRevision], () => serviceRecoveryBlocked.value = false)
@@ -445,18 +444,7 @@ const interactionActivityStatus = computed(() => {
     return conversationWorkStatus.value ?? '正在確認資訊…'
   if (interactionTurn.phase.value === 'thinking')
     return conversationWorkStatus.value ?? '已收到你的需求，正在處理…'
-  if (interactionTurn.phase.value === 'speaking')
-    return '正在說明，可直接說話打斷。'
   return undefined
-})
-const conversationActivityStatus = computed(() => {
-  if (utteranceQueueState.value.pending.some(utterance => utterance.source === 'simulation'))
-    return t('stage.kiosk.service-recovery.queued')
-  if (decisionStatus.value)
-    return t(`stage.kiosk.service-recovery.${decisionStatus.value.messageKey}`)
-  if (fastPathProgress.value)
-    return fastPathProgress.value.text
-  return interactionActivityStatus.value
 })
 const interactionRecording = useKioskInteractionRecording()
 const productPresentation = createBrowserPresentation(interactiveServiceClient, () => interactionRecording.visitorSessionId.value)
@@ -1968,7 +1956,6 @@ function clearConversationPresentation() {
   requestStatuses.value = {}
   streamingReply.clear()
   conversationWorkStatus.value = undefined
-  conversationActivitySteps.value = []
   retryableConversationRequest.value = undefined
   pendingTranscript.value = undefined
   asrSimulationStatus.value = undefined
@@ -2469,11 +2456,11 @@ async function simulateAsrTranscript(text: string) {
   const submission = utteranceQueue.submit({ source: 'simulation', text: transcript })
   if (submission.kind === 'ACCEPTED')
     processingCue.acknowledge()
+  if (submission.kind === 'OVERLOADED')
+    pendingTranscript.value = '語句佇列已滿，這句未送出；請稍後再試。'
   asrSimulationStatus.value = submission.kind === 'ACCEPTED'
     ? `已收到模擬語句；目前排隊 ${utteranceQueueState.value.pending.length} 句。`
-    : submission.kind === 'OVERLOADED'
-      ? '語句佇列已滿，這句未送出；請稍後再試。'
-      : undefined
+    : undefined
 }
 
 interface ProactiveDeliveryResult {
@@ -2637,7 +2624,6 @@ async function sendConversationMessage(
   retryableConversationRequest.value = undefined
   streamingReply.clear()
   conversationWorkStatus.value = undefined
-  conversationActivitySteps.value = []
   const startedAt = conversationDiagnosticsEnabled.value ? performance.now() : undefined
   let timingTimer: ReturnType<typeof setInterval> | undefined
   let longWaitTimer: ReturnType<typeof setTimeout> | undefined
@@ -2846,10 +2832,6 @@ async function sendConversationMessage(
           const label = describeToolActivity(toolName, 'selected')
           selectConversationProgressTool(turn.id, toolName, label)
           conversationWorkStatus.value = label
-          conversationActivitySteps.value = [
-            ...conversationActivitySteps.value.filter(step => step.toolName !== toolName),
-            { label, state: 'selected' as const, toolName },
-          ].slice(-3)
           if (import.meta.env.DEV)
             console.info('[kiosk-tools]', { phase: 'llm-selected', toolName })
         },
@@ -2870,10 +2852,6 @@ async function sendConversationMessage(
           const label = describeToolActivity(toolName, state)
           selectConversationProgressTool(turn.id, toolName, label)
           conversationWorkStatus.value = label
-          conversationActivitySteps.value = [
-            ...conversationActivitySteps.value.filter(step => step.toolName !== toolName),
-            { label, state, toolName },
-          ].slice(-3)
           if (import.meta.env.DEV)
             console.info('[kiosk-tools]', { phase: 'browser-execution', state, toolName })
           if (state === 'done' && ['menu_recommend', 'menu_show_recommendations'].includes(toolName))
@@ -2915,7 +2893,6 @@ async function sendConversationMessage(
     if (reply.reason === 'manual-control') {
       finishConversationProgress(turn.id)
       conversationWorkStatus.value = undefined
-      conversationActivitySteps.value = []
       streamingReply.clear()
       const message = [operationReply, t('stage.kiosk-agent.manual-control')].filter(Boolean).join(' ')
       conversationMessages.value = [...conversationMessages.value, { role: 'assistant', id: requestMessageId(options.utteranceId, 'reply'), content: message, slices: [], tool_results: [] }]
@@ -3052,7 +3029,6 @@ async function sendConversationMessage(
     if (interactionTurn.isCurrent(turn)) {
       interactionTurn.complete(turn)
       conversationWorkStatus.value = undefined
-      conversationActivitySteps.value = []
     }
   }
 }
@@ -3313,9 +3289,6 @@ onUnmounted(() => {
         :service-recovering="serviceRecovering"
         :service-recovery-exhausted="automaticServiceRecovery.exhausted.value"
         class="conversation-region"
-        :activity-status="conversationActivityStatus"
-        :decision-pending="decisionStatus?.pending"
-        :activity-steps="conversationActivitySteps"
         :execution-duration-ms="adminPanelOpen && isKioskAdminSessionActive ? decisionStatus?.elapsedMs ?? (conversationDiagnosticsEnabled ? conversationExecutionDurationMs : undefined) : undefined"
         :fast-path-simulation-status="asrSimulationStatus"
         :fast-path-simulation-trace="asrSimulationTrace"

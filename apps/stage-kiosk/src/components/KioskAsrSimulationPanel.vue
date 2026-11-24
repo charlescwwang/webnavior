@@ -71,9 +71,6 @@ function simulate() {
         模擬辨識並執行
       </button>
     </form>
-    <p v-if="props.status" class="simulation-status" role="status">
-      {{ toOrderingTraditionalChinese(props.status) }}
-    </p>
     <div v-if="props.timing" class="simulation-timing" aria-label="Jev 執行時間">
       <p>計時語句：{{ toOrderingTraditionalChinese(props.timing.transcript) }}</p>
       <p>Jev 請求等待：{{ (props.timing.requestDurationMs / 1000).toFixed(2) }} 秒</p>
@@ -93,6 +90,9 @@ function simulate() {
     </div>
     <details v-if="props.trace" class="simulation-trace">
       <summary>檢視本次 System One 決策 trace</summary>
+      <p v-if="props.status" class="simulation-status">
+        {{ toOrderingTraditionalChinese(props.status) }}
+      </p>
       <Button type="button" size="sm" variant="secondary" :disabled="copyState === 'copying'" :label="t(`stage.kiosk.decision-trace.${copyState === 'failed' ? 'copy' : copyState}`)" :class="['mt-3']" @click="copyTrace" />
       <p v-if="copyState === 'failed'" role="alert">
         {{ t('stage.kiosk.decision-trace.failed') }}

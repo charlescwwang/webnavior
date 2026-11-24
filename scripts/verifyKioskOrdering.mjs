@@ -470,18 +470,18 @@ try {
     }, 2000)
   }
   const state = () => native.evaluate(() => window.pbTest.getState())
-  async function send(text, verify, expectedStatus = 'is-completed') {
+  async function send(text, verify, expectedStatus = 'completed') {
     const started = Date.now()
     const mainRequestStart = report.modelContexts?.length ?? 0
     const assistantStart = await host.locator('[data-chat-message-role="assistant"]').count()
     report.current = { text }
     console.info(`AUDIT: send ${text}`)
-    const before = await host.locator('.request-status').count()
+    const before = await host.locator('[data-request-status]').count()
     await consolePage.locator('textarea').first().fill(text)
     await consolePage.getByRole('button', { name: '模擬辨識並執行', exact: true }).click()
     await host.waitForFunction((count) => {
-      const statuses = [...document.querySelectorAll('.request-status')]
-      return statuses.length > count && ['is-completed', 'is-failed', 'is-review', 'is-cancelled'].some(state => statuses.at(-1)?.classList.contains(state))
+      const statuses = [...document.querySelectorAll('[data-request-status]')]
+      return statuses.length > count && ['completed', 'failed', 'review', 'cancelled'].includes(statuses.at(-1)?.getAttribute('data-request-status'))
     }, before, { timeout: 120000 })
     const requestCompletedMs = Date.now() - started
     const snapshot = await state()
@@ -490,14 +490,14 @@ try {
     const assistantReply = await assistantMessages.count() > assistantStart ? await assistantMessages.last().textContent() : ''
     // Capture the exact decision before assertions, so a failed effect retains
     // the same utterance's candidates/selection rather than the previous step.
-    const step = { text, requestCompletedMs, durationMs: Date.now() - started, path: new URL(native.url()).pathname, response: textResult.slice(-2000), assistantReply, mainPlannerRequests: (report.modelContexts?.length ?? 0) - mainRequestStart, cart: snapshot.cart, decision: await consolePage.locator('.simulation-status').textContent(), trace: await consolePage.locator('.simulation-trace pre').textContent().catch(() => undefined) }
+    const step = { text, requestCompletedMs, durationMs: Date.now() - started, path: new URL(native.url()).pathname, response: textResult.slice(-2000), assistantReply, mainPlannerRequests: (report.modelContexts?.length ?? 0) - mainRequestStart, cart: snapshot.cart, decision: await consolePage.locator('.simulation-status').allTextContents().then(values => values[0]), trace: await consolePage.locator('.simulation-trace pre').textContent().catch(() => undefined) }
     report.current = step
     // Recovery is a settled UI state, but it is not successful ordering. Capture
     // it immediately instead of waiting two minutes or counting it as success.
     assert(!(report.modelContexts ?? []).some(context => context.toolNames?.some(name => name.startsWith('browser_'))), 'Private browser tools reached Main.')
     assert.equal(await host.locator('[data-chat-message-role="error"]').count(), 0, 'Internal error message reached the customer.')
     assert(!textResult.includes('助手已達本次處理上限'), 'Internal tool limit reached the customer.')
-    assert(await host.locator('.request-status').last().evaluate((element, expected) => element.classList.contains(expected), expectedStatus), `Customer request failed: ${textResult.slice(-600)}`)
+    assert(await host.locator('[data-request-status]').last().evaluate((element, expected) => element.getAttribute('data-request-status') === expected, expectedStatus), `Customer request failed: ${textResult.slice(-600)}`)
     report.current.cart = snapshot.cart
     await verify(snapshot, assistantReply)
     step.durationMs = Date.now() - started
@@ -936,7 +936,7 @@ try {
       const reply = await host.locator('[data-chat-message-role="assistant"]').last().textContent()
       assert.match(reply, readbackFailure ? /核對|確認購物車/ : /要結帳嗎[？?]/)
       assert.doesNotMatch(reply, /您是指|要幾份|要來一份|要幫您加入|尚未確認您要進行/)
-    }, readbackFailure ? 'is-review' : 'is-completed')
+    }, readbackFailure ? 'review' : 'completed')
     if (readbackFailure) {
       await host.waitForFunction(() => !document.querySelector('.service-status'), undefined, { timeout: 30000 })
       assert.equal(await host.getByRole('button', { name: '恢復菜單連線' }).count(), 0, 'Customers must not press a recovery control.')
