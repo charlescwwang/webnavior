@@ -162,8 +162,10 @@ function setup(transcript: string, pending = false, labels: CatalogLabel[] = [])
       return { ok: true, source: 'browser', dataOnly: true }
     if (tool.name === 'browser_close_product' || tool.name === 'browser_search')
       return { ok: true, source: 'browser', status: 'verified', effect: 'none', customerMessage: '已更新選餐畫面。' }
-    if (tool.name === 'browser_present')
-      return { ok: true, source: 'browser', presentation: { cue: 'shown', products: facts.products.filter(product => Array.isArray(input.productRefs) && input.productRefs.includes(product.ref)).map(({ ref, name, price }) => ({ ref, name, price })) } }
+    if (tool.name === 'browser_present') {
+      const products = facts.products.filter(product => Array.isArray(input.productRefs) && input.productRefs.includes(product.ref)).map(({ ref, name, price }) => ({ ref, name, price }))
+      return { ok: true, source: 'browser', presentation: { cue: 'shown', products }, ...(input.mode !== 'information' ? { customerMessage: `目前查到：${products.map(product => `${product.name}，單份 ${product.price} 元`).join('；')}。` } : {}) }
+    }
     if (tool.name === 'browser_product_get')
       return { ok: true, source: 'browser', dataOnly: true, products: structuredClone(facts.products) }
     if (tool.name === 'browser_return_menu')
@@ -740,7 +742,7 @@ it.each(['recommendation', 'other-recommendations'].flatMap(purpose => ['好', '
   const { call, client, dialogue, facts, execute } = setup('我想吃魚')
   const shown = await call('point_to_menu_items', { names: ['雞腿飯'], purpose })
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_present' }), expect.objectContaining({ mode: purpose }))
-  expect(shown).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-service-question', question: '要來一份雞腿飯嗎？' } })
+  expect(shown).toMatchObject({ customerMessage: '要來一份雞腿飯嗎？', pendingCustomerChoice: { purpose: 'browser-service-question', question: '要來一份雞腿飯嗎？' } })
   expect(dialogue.hasPending()).toBe(true)
   expect(facts.cart.lines[0].quantity).toBe(3)
   cleanup.push(beginBrowserCartTask(reply, { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
@@ -761,7 +763,7 @@ it('adds the base dumpling serving on assent without Main when the only group is
   product.price = 64
   product.configurations[0].unitPrice = 64
   product.configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', unitPrice: 8, maximum: 100 }] }]
-  expect(await call('point_to_menu_items', { names: [product.name], purpose: 'recommendation' })).toMatchObject({ pendingCustomerChoice: { question: '周氏水餃基本每份8顆，最少8顆，可以加量。要來一份周氏水餃嗎？' } })
+  expect(await call('point_to_menu_items', { names: [product.name], purpose: 'recommendation' })).toMatchObject({ pendingCustomerChoice: { question: '周氏水餃基本每份8顆，最少8顆，可以加量。要來一份嗎？' } })
   expect(dialogue.canAnswerLocally(facts, '好，來十顆')).toBe(false)
   expect(dialogue.canAnswerLocally(facts, '好，來十個')).toBe(false)
   const decide = vi.fn(async () => ({ choice: 'CLARIFY' as const, provider: 'unavailable' as const }))
@@ -856,7 +858,7 @@ it.each(['jev', 'main'] as const)('binds only actually recommended dishes and co
   expect(question.questionId).toBe(shown.pendingCustomerChoice.questionId)
   expect(question.question).toBe('您想點哪一道？')
   expect(question.choices.filter(choice => choice.id.startsWith('product:')).map(choice => choice.description)).toEqual(names.map((name, index) => `這組第 ${index + 1} 項「${name}」，單份基本售價 100 元；只選品項，尚未加入。`))
-  expect(shown.customerMessage).toContain(question.question)
+  expect(shown.customerMessage).toBe(`推薦${names.join('、')}。${question.question}`)
   expect(facts.cart.lines).toHaveLength(0)
   cleanup.push(beginBrowserCartTask(names[1], { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const select = await prepareBrowserQuestionAnswer(client)

@@ -444,7 +444,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         const question = await askBrowserCustomerQuestion(client, { questionType: 'purchase-recommendation', name: presented.output.presentation.products[0].name, quantity: 1 })
         if (!('customerMessage' in question))
           return question
-        return { ...presented.output, ...question, customerMessage: `${presented.output.customerMessage ?? ''} ${question.customerMessage}`.trim() }
+        return { ...presented.output, ...question }
       }
       if (proposed.success && proposed.output.mode !== 'information' && presented.success && task.dialogue && presented.output.presentation.products.length > 1) {
         const facts = await readBrowserOrderingFacts(client)
@@ -453,7 +453,10 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         // Both Jev and Main finish recommendations here. Bind the next answer
         // to the dishes in this receipt, not the whole catalog or model prose.
         const question = task.dialogue.presentProducts(facts, '', task.transcript, presented.output.presentation.products.map(product => product.ref))
-        return { ...presented.output, ...question, customerMessage: `${presented.output.customerMessage ?? ''} ${question.customerMessage}`.trim() }
+        if (!question.ok)
+          return question
+        const names = presented.output.presentation.products.map(product => pbProductName(product.name))
+        return { ...presented.output, ...question, customerMessage: `推薦${names.join('、')}。${question.customerMessage}` }
       }
       return result
     }
@@ -1062,7 +1065,10 @@ export async function askBrowserCustomerQuestion(client: Pick<ReturnType<typeof 
     if (redundant)
       return redundant
     const serving = pbBasicServing(named[0].name, named[0].configurations[0]?.unitPrice)
-    question = `${serving ? `${pbProductName(named[0].name)}${serving}。` : ''}${input.quantity === 1 ? `要來一份${pbProductName(named[0].name)}嗎？` : `您要點${pbProductName(named[0].name)}嗎？要幾份？`}`
+    const name = pbProductName(named[0].name)
+    question = input.quantity === 1 ? `要來一份${name}嗎？` : `您要點${name}嗎？要幾份？`
+    if (serving)
+      question = `${name}${serving}。${input.quantity === 1 ? '要來一份嗎？' : '您要幾份？'}`
     if (input.quantity === 1)
       choices = [{ id: 'yes', description: `購買${named[0].name}一份，必選設定完整才加入購物車；不送單。` }, { id: 'no', description: '不要這道推薦，尚未加入購物車。' }]
   }
