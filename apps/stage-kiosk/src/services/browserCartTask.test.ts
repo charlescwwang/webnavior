@@ -462,3 +462,13 @@ it('returns tool-scoped completion with the complete original request and verifi
   expect(result).toMatchObject({ status: 'verified', completionScope: 'tool-call', originalRequest: request, completedEffects: ['已替換每日新品2份，原餐保留1份。'] })
   expect(onRequestComplete).not.toHaveBeenCalled()
 })
+
+it.each([false, true])('retries a cancelled recommendation once and requires a real batch (still cancelled=%s)', async (stillCancelled) => {
+  const { client, tool } = setup('其他的勒？')
+  const cancelled = { ok: true, source: 'browser', presentation: { cue: 'cancelled', products: [] }, dataOnly: true }
+  const prepared = { ok: true, source: 'browser', presentation: { cue: 'prepared', products: [{ ref: 'new-today', name: '每日新品' }] }, customerMessage: '每日新品' }
+  client.execute.mockResolvedValueOnce(cancelled).mockResolvedValueOnce(stillCancelled ? cancelled : prepared)
+  const result = await executeBrowserCartTool(client, { ...tool, name: 'browser_present' }, { productRefs: ['new-today'], mode: 'other-recommendations' })
+  expect(client.execute).toHaveBeenCalledTimes(2)
+  expect(result).toMatchObject(stillCancelled ? { dataOnly: true, needsAssistant: true } : { customerMessage: '每日新品' })
+})

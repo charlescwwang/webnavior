@@ -434,7 +434,16 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
           return { ok: true, source: 'browser', dataOnly: true, excludedProductRefs: proposed.output.productRefs, explanation: '這批品項剛剛已成功介紹過，尚未重複呈現。請依顧客需求從最新菜單選其他品項；若顧客指定餐點或餐類，改用 recommendation 呈現符合餐點供選擇；只要資訊時用 information。' }
         parameters = { ...proposed.output, productRefs, deferVisual: true }
       }
-      const result = await executeBrowserTool(client, tool, parameters)
+      let result = await executeBrowserTool(client, tool, parameters)
+      // Interrupting the previous spoken batch can cancel its visual while the
+      // next batch is being prepared. Retry only this current, read-only request.
+      const cancelledBatch = looseObject({ ok: literal(true), source: literal('browser'), dataOnly: literal(true), presentation: looseObject({ cue: literal('cancelled') }) })
+      if (proposed.success && proposed.output.productRefs.length && proposed.output.mode !== 'information' && safeParse(cancelledBatch, result).success && active === task && task.isCurrent()) {
+        result = await executeBrowserTool(client, tool, parameters)
+        const retried = safeParse(cancelledBatch, result)
+        if (active === task && task.isCurrent() && retried.success)
+          return { ...retried.output, needsAssistant: true, explanation: '這次推薦呈現已取消，尚未介紹餐點。沿用原本價格及其他條件，重新取得符合的其他餐點。' }
+      }
       if (active !== task || !task.isCurrent())
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
       const presented = safeParse(looseObject({ ok: literal(true), source: literal('browser'), presentation: productPresentationSchema, customerMessage: optional(string()) }), result)
