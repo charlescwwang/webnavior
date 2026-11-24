@@ -251,3 +251,13 @@ it('tours every visible highlighted dish without locking clicks or replacing the
   await page.getByRole('button', { name: '每日湯品', exact: true }).click()
   expect(document.querySelector('[data-webnavior-presentation]')).toBeNull()
 })
+
+it('expires an old frame without invalidating a recommendation reading the catalog', async () => {
+  const { presentation, target } = setup()
+  expect(await presentation.show([{ ref: 'meal', name: '每日新餐' }], target)).toMatchObject({ cue: 'shown' })
+  const readingRevision = presentation.revision()
+  await expect.poll(() => document.querySelector('[data-webnavior-presentation]'), { timeout: 9500 }).toBeNull()
+  expect(presentation.revision()).toBe(readingRevision)
+  presentation.cancel()
+  expect(presentation.revision()).not.toBe(readingRevision)
+}, 12000)

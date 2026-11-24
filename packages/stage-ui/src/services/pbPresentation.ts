@@ -28,7 +28,6 @@ export function createPresentation() {
       const bounds = currentHand.getBoundingClientRect()
       position = { x: bounds.left, y: bounds.top }
     }
-    revision++
     active?.abort()
     active = undefined
     if (!preserveRoot) {
@@ -38,6 +37,7 @@ export function createPresentation() {
     }
   }
   function cancel() {
+    revision++
     introduction = undefined
     retire(false)
   }
@@ -82,6 +82,7 @@ export function createPresentation() {
     async show(products: ProductPresentation['products'], target?: HTMLElement, press = false, related: HTMLElement[] = [], control?: { label: string, dispatch: (onPress: () => void) => Promise<void>, prepare?: () => Promise<void> }, holdMs = 0): Promise<ProductPresentation> {
       const startedAt = performance.now()
       const previous = root
+      revision++
       retire(true)
       if (!products.length && !control) {
         cancel()
@@ -249,8 +250,10 @@ export function createPresentation() {
         // A visible frame expires independently; it is never a durable target.
         if (!signal.aborted) {
           const expiry = setTimeout(() => {
+            // Only the settled frame expires. A newer catalog read may already
+            // be preparing its replacement against the current revision.
             if (active === owner)
-              cancel()
+              retire(false)
           }, 8000)
           signal.addEventListener('abort', () => clearTimeout(expiry), { once: true })
         }
