@@ -355,7 +355,18 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: orderingMessages['zh-Hant'].tableConfirmation.stale }
       let result = await executeBrowserTool(client, start, { name })
       if (safeParse(menuEntryReceiptSchema, result).success && client.waitUntilReady) {
-        await client.waitUntilReady()
+        const startedAt = performance.now()
+        let reads = 0
+        const recordFailure = (reason: string) => {
+          console.info('[webnavior-performance]', JSON.stringify({ kind: 'menu-entry', reason, reads, durationMs: Math.round(performance.now() - startedAt) }))
+        }
+        try {
+          await client.waitUntilReady()
+        }
+        catch (error) {
+          recordFailure('service-readiness-failed')
+          throw error
+        }
         if (active !== task || !task.isCurrent())
           return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
         // Document discovery can finish before PB renders its first menu card.
@@ -363,11 +374,31 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         const deadline = Date.now() + 5000
         while (true) {
           const reader = client.tools.value.find(tool => tool.name === 'browser_cart_get')
-          const menu = safeParse(looseObject({ ok: literal(true), page: literal('menu'), menuReady: boolean(), cart: looseObject({ tableName: string() }) }), reader ? await executeBrowserTool(client, reader, { includeCatalog: false, forAdmission: true }) : undefined)
+          let state: unknown
+          if (reader) {
+            reads++
+            try {
+              state = await executeBrowserTool(client, reader, { includeCatalog: false, forAdmission: true })
+            }
+            catch (error) {
+              recordFailure('read-failed')
+              throw error
+            }
+          }
+          const menu = safeParse(looseObject({ ok: literal(true), page: literal('menu'), menuReady: boolean(), cart: looseObject({ tableName: string() }) }), state)
           if (active !== task || !task.isCurrent())
             return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
-          if (!menu.success || menu.output.cart.tableName !== name || (!menu.output.menuReady && Date.now() >= deadline))
+          if (!menu.success || menu.output.cart.tableName !== name || (!menu.output.menuReady && Date.now() >= deadline)) {
+            if (!reader)
+              recordFailure('reader-missing')
+            else if (!menu.success)
+              recordFailure('menu-state-unavailable')
+            else if (menu.output.cart.tableName !== name)
+              recordFailure('table-mismatch')
+            else
+              recordFailure('menu-render-timeout')
             return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '菜單目前尚未載入完成，請稍候再試。' }
+          }
           if (menu.output.menuReady)
             break
           await new Promise(resolve => setTimeout(resolve, 100))

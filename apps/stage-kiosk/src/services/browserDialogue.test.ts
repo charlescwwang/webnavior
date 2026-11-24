@@ -826,19 +826,33 @@ it('executes a Jev-selected semantic confirmation using the sealed meal exactly 
 })
 
 // Report: this chat, Nov14; document ready was announced while the menu was blank.
-it('does not announce menu ready when the replacement document has no menu evidence', async () => {
+it.each([
+  { page: 'table', tableName: 'A2', reason: 'menu-state-unavailable' },
+  { page: 'menu', tableName: 'B3', reason: 'table-mismatch' },
+])('records $reason without announcing readiness or pressing Start again', async ({ page, tableName, reason }) => {
   const { client, begin, context } = setup()
   begin('開始點餐')
   let entered = false
   client.execute.mockImplementation(async (tool) => {
-    if (tool.name === 'browser_cart_get')
-      return entered ? { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A2'], selectedTable: 'A2', customerMessage: '請開始。' } : { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A2'], selectedTable: 'A2', customerMessage: '請開始。' }
+    if (tool.name === 'browser_cart_get') {
+      if (entered && page === 'menu')
+        return { ok: true, source: 'browser', page, menuReady: true, cart: { version: 'cart-ready', lines: [], tableName } }
+      return { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A2'], selectedTable: 'A2', customerMessage: '請開始。' }
+    }
     entered = true
     return { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: 'A2', customerMessage: '正在準備菜單。' }
   })
-  const result = await executeBrowserCartTool({ ...client, waitUntilReady: async () => {} }, { ...context, name: 'browser_start_ordering' }, { name: 'A2' })
-  expect(result).toMatchObject({ ok: false, effect: 'none' })
-  expect(result).not.toMatchObject({ customerMessage: expect.stringContaining('菜單準備好了') })
+  const log = vi.spyOn(console, 'info')
+  try {
+    const result = await executeBrowserCartTool({ ...client, waitUntilReady: async () => {} }, { ...context, name: 'browser_start_ordering' }, { name: 'A2' })
+    expect(result).toMatchObject({ ok: false, effect: 'none', customerMessage: '菜單目前尚未載入完成，請稍候再試。' })
+    expect(log).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(log.mock.calls[0]![1])).toEqual({ kind: 'menu-entry', reason, reads: 1, durationMs: expect.any(Number) })
+    expect(client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')).toHaveLength(1)
+  }
+  finally {
+    log.mockRestore()
+  }
 })
 
 // Cross-tool audit: refusing a write proposed for a price inquiry is not a new customer question.

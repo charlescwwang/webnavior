@@ -6,7 +6,7 @@ import { appendFile, mkdir, rename, stat } from 'node:fs/promises'
 import { freemem, totalmem } from 'node:os'
 import { join } from 'node:path'
 
-import { literal, maxValue, minValue, number, object, picklist, pipe, safeParse } from 'valibot'
+import { literal, maxValue, minValue, number, object, picklist, pipe, safeParse, variant } from 'valibot'
 
 type Role = 'host' | 'pb'
 interface DocumentOwner {
@@ -31,6 +31,10 @@ interface Request {
 
 const duration = pipe(number(), minValue(0), maxValue(3_600_000))
 const modelEvent = object({ kind: literal('model'), model: picklist(['runtime', 'face', 'pose', 'vad', 'avatar']), phase: picklist(['start', 'ready', 'failed', 'slow-inference']), durationMs: duration })
+const performanceEvent = variant('kind', [
+  modelEvent,
+  object({ kind: literal('menu-entry'), reason: picklist(['service-readiness-failed', 'read-failed', 'reader-missing', 'menu-state-unavailable', 'table-mismatch', 'menu-render-timeout']), reads: number(), durationMs: duration }),
+])
 const rendererSample = object({ readyState: picklist(['loading', 'interactive', 'complete']), timeOrigin: number(), longestTaskMs: duration, longTaskCount: number(), domContentLoadedMs: duration, loadMs: duration })
 
 /** Classifies only public resource kinds; never persist paths, queries or fragments. */
@@ -147,15 +151,15 @@ export class Diagnostics {
     const onUnresponsive = () => phase('renderer-unresponsive')
     const onResponsive = () => phase('renderer-responsive')
     const onConsole = (event: Electron.Event<Electron.WebContentsConsoleMessageEventParams>) => {
-      // Capture only our numeric performance envelope. Arbitrary console output
+      // Capture only our allowlisted performance envelope. Arbitrary console output
       // can contain customer fields, URLs and server responses and is discarded.
       const prefix = '[webnavior-performance] '
       if (role !== 'host' || !event.message.startsWith(prefix) || event.message.length > 512)
         return
       try {
-        const result = safeParse(modelEvent, JSON.parse(event.message.slice(prefix.length)))
+        const result = safeParse(performanceEvent, JSON.parse(event.message.slice(prefix.length)))
         if (result.success)
-          phase('model', result.output)
+          phase(result.output.kind, result.output)
       }
       catch { /* Non-JSON console messages are not diagnostic envelopes. */ }
     }

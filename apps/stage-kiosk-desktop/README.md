@@ -236,6 +236,11 @@ bodies, console text, customer fields and camera/audio content are excluded.
 Model records accept only a fixed numeric envelope: avatar, VAD, camera initialization
 and slow camera inference. The current browser audio does not launch native model/capture processes.
 
+After Start is acknowledged, a failed menu readiness check writes a local
+`menu-entry` event with the failure stage, elapsed milliseconds and read count.
+Compare its timestamp with PB navigation and request events to investigate slow
+loading, missing menu data or a table mismatch. The record omits table names.
+
 The first-response interval includes connection, network and server wait; it
 does not separately measure DNS/TLS. Worker requests without a frame identity
 are explicitly attributed to the private session. A pending renderer probe can
