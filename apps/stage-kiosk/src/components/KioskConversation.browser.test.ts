@@ -36,11 +36,26 @@ it('acknowledges speech only in the thought bubble and keeps the follow-up trans
   }), { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
   await expect.element(screen.getByText('已收到語音，正在辨識…', { exact: true })).toBeVisible()
   expect(screen.container.querySelector('.assistant-thought-bubble')?.textContent).toContain('正在辨識')
+  expect(screen.container.textContent).not.toContain('請直接對麥克風說話')
   expect(screen.container.querySelector('.conversation-progress')).toBeNull()
   messages.value = [{ role: 'user', id: 'utterance:2:user', content: '再加一份水餃' }]
   count.value = 0
   await expect.element(screen.getByText('再加一份水餃', { exact: true })).toBeVisible()
+  expect(screen.container.querySelector('.request-status')).toBeNull()
   await expect.element(screen.getByText('已收到語音，正在辨識…', { exact: true })).not.toBeInTheDocument()
+})
+
+it('shows a pending decision only in the avatar bubble during simulated ordering', async () => {
+  const message = '正在確認您的意思…'
+  const screen = render(defineComponent({
+    setup: () => () => h('div', [
+      h(KioskAssistantThoughtBubble, { progress: { phase: 'understanding', message } }),
+      h(KioskConversation, { ...props, decisionPending: true, activityStatus: message, fastPathSimulationStatus: '已收到模擬語句' }),
+    ]),
+  }), { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
+  await expect.element(screen.getByText(message, { exact: true })).toBeVisible()
+  expect(document.querySelector('.assistant-activity')).toBeNull()
+  expect(document.querySelector('.text-console')?.textContent).not.toContain(message)
 })
 
 it('keeps the active tool in the bubble while recognizing a follow-up', async () => {
@@ -206,7 +221,7 @@ it('shows request status in the conversation and groups a late reply before the 
     { role: 'assistant', id: 'utterance:2:reply:a', content: '目前有蛋花湯。', slices: [], tool_results: [] },
     { role: 'assistant', id: 'utterance:1:reply:a', content: '雞腿飯在這裡。', slices: [], tool_results: [] },
   ]
-  const screen = render(KioskConversation, { props: { ...props, messages, voiceConversationOnly: true, requestStatuses: { 1: 'completed', 2: 'processing' } }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-TW', messages: { 'zh-TW': { stage: { kiosk: { 'request-status': { completed: '已完成', processing: '處理中' } } } } } })] } })
+  const screen = render(KioskConversation, { props: { ...props, messages, voiceConversationOnly: false, requestStatuses: { 1: 'completed', 2: 'processing' } }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-TW', messages: { 'zh-TW': { stage: { kiosk: { 'request-status': { completed: '已完成', processing: '處理中' } } } } } })] } })
   await expect.element(screen.getByText('處理中', { exact: true })).toBeVisible()
   await screen.getByRole('button', { name: 'stage.kiosk-agent.previous-conversation' }).click()
   const rows = [...screen.container.querySelectorAll('[data-chat-message-key]')]

@@ -361,15 +361,15 @@ try {
   }
   if (process.env.PB_AUDIT_TEXT_MODE_CHECK === '1') {
     await setMode(false)
-    await host.locator('.voice-only-notice').waitFor({ timeout: 10000 })
+    await host.locator('[data-conversation-mode="voice"]').waitFor({ timeout: 10000 })
     assert(!context.pages().some(page => !page.isClosed() && page.url() === 'about:blank'), 'Voice mode must not open a text console.')
     await setMode(true)
-    await host.waitForFunction(() => document.querySelector('.kiosk-conversation') && !document.querySelector('.voice-only-notice'))
+    await host.locator('[data-conversation-mode="text"]').waitFor({ timeout: 10000 })
     for (let attempt = 0; attempt < 50 && !context.pages().some(page => !page.isClosed() && page.url() === 'about:blank'); attempt++)
       await new Promise(resolve => setTimeout(resolve, 100))
     assert(context.pages().some(page => !page.isClosed() && page.url() === 'about:blank'), 'Text mode must open its owned console.')
     await setMode(false)
-    await host.locator('.voice-only-notice').waitFor({ timeout: 10000 })
+    await host.locator('[data-conversation-mode="voice"]').waitFor({ timeout: 10000 })
     assert(!context.pages().some(page => !page.isClosed() && page.url() === 'about:blank'), 'Returning to voice must close the text console.')
     await setMode(true)
     report.textModePolicy = { voiceHidden: true, textEnabled: true, voiceAgainHidden: true }

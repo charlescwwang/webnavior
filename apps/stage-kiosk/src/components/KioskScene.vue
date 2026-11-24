@@ -3314,6 +3314,7 @@ onUnmounted(() => {
         :service-recovery-exhausted="automaticServiceRecovery.exhausted.value"
         class="conversation-region"
         :activity-status="conversationActivityStatus"
+        :decision-pending="decisionStatus?.pending"
         :activity-steps="conversationActivitySteps"
         :execution-duration-ms="adminPanelOpen && isKioskAdminSessionActive ? decisionStatus?.elapsedMs ?? (conversationDiagnosticsEnabled ? conversationExecutionDurationMs : undefined) : undefined"
         :fast-path-simulation-status="asrSimulationStatus"

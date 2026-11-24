@@ -20,6 +20,7 @@ import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { scenarioRegistry } from '../services/scenario-registry'
 
 const props = defineProps<{
+  decisionPending?: boolean
   activityStatus?: string
   activitySteps?: readonly { label: string, state: 'done' | 'error' | 'executing' | 'selected', toolName: string }[]
   assistantPresence: {
@@ -83,7 +84,10 @@ const historyMessages = computed<ChatHistoryItem[]>(() => groupConversationMessa
     return { ...message, content: toOrderingTraditionalChinese(message.content) }
   return message
 }))
-const inlineActivity = computed(() => !props.voiceConversationOnly && Boolean(props.recognizingCount || props.activityStatus || props.activitySteps?.length))
+// The avatar owns pending decision feedback in both voice and simulated ordering.
+const activityStatus = computed(() => props.decisionPending ? undefined : props.activityStatus)
+const consoleStatus = computed(() => props.decisionPending ? undefined : props.activityStatus ?? props.fastPathSimulationStatus)
+const inlineActivity = computed(() => !props.voiceConversationOnly && Boolean(props.recognizingCount || activityStatus.value || props.activitySteps?.length))
 const showHistory = shallowRef(false)
 // Keep unfinished requests visible even when an additional utterance arrives.
 // Older completed turns remain available without changing model/audit history.
@@ -162,13 +166,14 @@ function followLatestMessage() {
   lateTailFollow = setTimeout(() => chatHistory.value?.scrollToBottom(), 300)
 }
 
-watch([visibleMessages, () => props.requestStatuses, () => props.activityStatus, () => props.pendingTranscript], followLatestMessage, { flush: 'post', immediate: true })
+watch([visibleMessages, () => props.requestStatuses, activityStatus, () => props.pendingTranscript], followLatestMessage, { flush: 'post', immediate: true })
 onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
 </script>
 
 <template>
   <section
     class="kiosk-conversation"
+    :data-conversation-mode="props.voiceConversationOnly ? 'voice' : 'text'"
     :style="{ '--conversation-font-size': `${props.fontSize}px` }"
     aria-label="與虛擬服務員對話"
   >
@@ -207,7 +212,7 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
         auto-scroll="follow-latest"
         variant="mobile"
       >
-        <template #after-message="{ message }">
+        <template v-if="!props.voiceConversationOnly" #after-message="{ message }">
           <span v-if="requestStatus(message) && requestStatus(message) !== 'failed'" :class="['request-status', `is-${requestStatus(message)}`]" role="status">{{ t(`stage.kiosk.request-status.${requestStatus(message)}`) }}</span>
         </template>
       </ChatHistory>
@@ -222,9 +227,9 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
         <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
         <span>{{ toOrderingTraditionalChinese(props.pendingTranscript) }}</span>
       </div>
-      <div v-if="inlineActivity && props.activityStatus" class="assistant-activity" role="status" aria-live="polite">
+      <div v-if="inlineActivity && activityStatus" class="assistant-activity" role="status" aria-live="polite">
         <span class="activity-orb" aria-hidden="true" />
-        <span>{{ toOrderingTraditionalChinese(props.activityStatus) }}</span>
+        <span>{{ toOrderingTraditionalChinese(activityStatus) }}</span>
         <span class="activity-dots" aria-hidden="true"><i /><i /><i /></span>
       </div>
       <ol v-if="inlineActivity && props.activitySteps?.length" class="assistant-activity-steps" aria-label="本次處理進度">
@@ -244,14 +249,11 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
       </button>
     </div>
 
-    <p v-if="props.voiceConversationOnly" class="voice-only-notice" role="status">
-      請直接對麥克風說話；處理中也能繼續補充。
-    </p>
     <KioskTextConsole
-      v-else
+      v-if="!props.voiceConversationOnly"
       :dock-target="props.textConsoleTarget"
       :native-popup="Boolean(props.textConsoleTarget)"
-      :status="props.activityStatus ?? props.fastPathSimulationStatus"
+      :status="consoleStatus"
       :reply="consoleReply"
       :trace="props.fastPathSimulationTrace"
       :timing="props.fastPathSimulationTiming"
@@ -301,5 +303,4 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
 .conversation-execution-duration { display: flex; align-items: center; gap: .35rem; width: fit-content; margin: .1rem .2rem; color: #a9d9d2; font-size: .72rem; }.conversation-execution-duration strong { color: #e4fffa; font-variant-numeric: tabular-nums; }
 .conversation-retry { display: flex; width: fit-content; align-items: center; gap: .35rem; margin: .1rem .2rem; border: 1px solid rgb(120 225 209 / 42%); border-radius: .7rem; padding: .42rem .6rem; color: #d9fffa; background: rgb(17 81 79 / 42%); font-size: .75rem; font-weight: 800; }.conversation-retry:disabled { cursor: default; opacity: .45; }
 .service-status { margin: 0; padding: 0 .75rem .55rem; color: #9cd9d0; font-size: .75rem; }
-.voice-only-notice { margin: 0; border-top: 1px solid rgb(255 255 255 / 12%); padding: .8rem; color: #b9f5ec; background: rgb(1 17 20 / 48%); font-size: .82rem; font-weight: 700; text-align: center; }
 </style>
