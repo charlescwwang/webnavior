@@ -168,3 +168,19 @@ it('does not highlight or clear menu products after observing a payment page', a
   await presentation.cancel()
   expect(execute).not.toHaveBeenCalled()
 })
+
+it('drops queued speech cues and late recommendation receipts when a new turn starts', async () => {
+  const { presentation, publish, execute } = setup()
+  publish('called')
+  publish('resolved', { ok: true, source: 'browser', products })
+  publish('called', undefined, 'previous', 'browser_present', { productRefs: ['today'] })
+  const oldCue = presentation.speak('每日新品')
+  presentation.beginTurn()
+  publish('resolved', { ok: true, source: 'browser', presentation: { products, cue: 'shown' } }, 'previous', 'browser_present')
+  await oldCue
+  expect(execute).not.toHaveBeenCalled()
+  expect(presentation.current.value).toBeUndefined()
+  expect(presentation.shownRecommendations()).toEqual([])
+  await presentation.speak('每日新品')
+  expect(execute).toHaveBeenCalledOnce()
+})

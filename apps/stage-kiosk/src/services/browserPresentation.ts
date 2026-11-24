@@ -119,6 +119,9 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
   return {
     current,
     introducing,
+    // Revoke queued cues and pending receipts locally. Native cart operations
+    // keep their own authority, and already introduced dishes remain history.
+    beginTurn: clear,
     cancel,
     /** Names from the current document's verified reads; hints confer no ordering authority. */
     menuNames() {

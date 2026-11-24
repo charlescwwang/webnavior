@@ -27,7 +27,7 @@ export interface KioskVoiceCandidate {
  * A customer barge-in may supersede spoken output. ASR candidates remain
  * independent until the decision queue decides whether to interrupt work.
  */
-export function useKioskInteractionTurn() {
+export function useKioskInteractionTurn(onBegin?: () => void) {
   const phase = shallowRef<KioskInteractionPhase>('listening')
   let activeTurn: (KioskInteractionTurn & { controller: AbortController }) | undefined
   const voiceCandidates = new Map<number, KioskVoiceCandidate & { controller: AbortController }>()
@@ -36,6 +36,7 @@ export function useKioskInteractionTurn() {
 
   function begin(kind: KioskInteractionTurnKind, initialPhase: KioskInteractionPhase): KioskInteractionTurn {
     cancelActiveTurn()
+    onBegin?.()
 
     const controller = new AbortController()
     activeTurn = {

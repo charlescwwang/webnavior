@@ -252,7 +252,9 @@ let nextVoiceDiagnosticId = 0
 const voiceDiagnosticByUtterance = new Map<number, number>()
 const toolActivityManifest = shallowRef<Awaited<ReturnType<typeof loadWebnaviorKioskActivityManifest>>>()
 let receptionGeneration = 0
-const interactionTurn = useKioskInteractionTurn()
+const interactionRecording = useKioskInteractionRecording()
+const productPresentation = createBrowserPresentation(interactiveServiceClient, () => interactionRecording.visitorSessionId.value)
+const interactionTurn = useKioskInteractionTurn(() => productPresentation.beginTurn())
 const transcriptionCount = shallowRef(0)
 const speechPreparationCount = shallowRef(0)
 const audioStartupError = shallowRef<string>()
@@ -446,8 +448,6 @@ const interactionActivityStatus = computed(() => {
     return conversationWorkStatus.value ?? '已收到你的需求，正在處理…'
   return undefined
 })
-const interactionRecording = useKioskInteractionRecording()
-const productPresentation = createBrowserPresentation(interactiveServiceClient, () => interactionRecording.visitorSessionId.value)
 const interactiveServices = useKioskInteractiveServices()
 const activeCatalogLabels = computed(() => interactiveServices.value.find(service => service.id === scenarioRegistry.activeScenario.value?.id && service.serviceUrl === scenarioRegistry.activeScenario.value?.serviceUrl)?.catalogLabels)
 const browserDialogue = createBrowserDialogue({
@@ -1629,8 +1629,9 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       return
     }
 
+    // A delayed result cannot acquire a fresh turn after the customer moved on.
     if (selectedTurn && !interactionTurn.isCurrent(selectedTurn))
-      selectedTurn = undefined
+      return
     const request = currentAgentRequest()
     if (request && !selectedTurn) {
       // An unrelated request cannot steal or race the existing Agent turn.
