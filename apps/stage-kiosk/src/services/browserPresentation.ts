@@ -10,10 +10,8 @@ import { shallowRef, watch } from 'vue'
 
 /** Owns ephemeral, document-bound product evidence and segment-level speech cues. */
 export function createBrowserPresentation(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'onExecution' | 'execute' | 'tools' | 'availability' | 'getDocumentId'>, visitorOwner: () => string | undefined) {
-  const current = shallowRef<ProductPresentation>()
   const introducing = shallowRef(false)
   let epoch = 0
-  let expiry: ReturnType<typeof setTimeout> | undefined
   let products: ProductPresentation['products'] = []
   let sequence = 0
   let latestFacts = 0
@@ -22,13 +20,11 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
   let speechCues: Promise<void> = Promise.resolve()
   let preparedRecommendation: { owner: string, documentId: string, refs: string[] } | undefined
   // Only accepted native presentations count. Scope by visitor/document, not
-  // the ten-second speech cue; an informational re-read must not rotate a batch.
+  // the temporary speech cue; an informational re-read must not rotate a batch.
   let recommendations: { owner: string, documentId: string, refs: string[] } | undefined
   const pending = new Map<string, { epoch: number, sequence: number, visitor?: string, recommendation: boolean, introduction: boolean }>()
   function clear() {
     epoch++
-    clearTimeout(expiry)
-    current.value = undefined
     introducing.value = false
     preparedRecommendation = undefined
   }
@@ -90,13 +86,6 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
       const fresh = presentation.output.products
       products = [...products.filter(product => !fresh.some(next => next.ref === product.ref)), ...fresh]
     }
-    if (presentation.output.cue === 'prepared')
-      return
-    clearTimeout(expiry)
-    current.value = presentation.output.products.length ? presentation.output : undefined
-    expiry = setTimeout(() => {
-      current.value = undefined
-    }, 10000)
   })
   const stopAvailability = watch(client.availability, (value) => {
     if (value !== 'ready') {
@@ -117,7 +106,6 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
     }
   }
   return {
-    current,
     introducing,
     // Revoke queued cues and pending receipts locally. Native cart operations
     // keep their own authority, and already introduced dishes remain history.

@@ -146,10 +146,6 @@ kiosk:
     empty: Your cart is empty. Please tell me the dishes and quantities you want.
     ready: This entry does not currently provide assisted checkout, so this step requires the on-screen controls. No order or payment has been submitted.
   product-presentation:
-    title: Featured products
-    completed: Change verified
-    unavailable: Cannot locate these verified products in the current PB view
-    price: 'From {price}'
     capability-unavailable: This ordering service has no Jev candidate interface. Handed to the assistant.
   cart-handoff:
     reset-description: Ending this reception automatically clears unsubmitted cart items and drafts while keeping the shared login. The next reception starts only after the cart is confirmed empty.

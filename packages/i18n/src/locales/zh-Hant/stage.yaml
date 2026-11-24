@@ -146,10 +146,6 @@ kiosk:
     empty: 購物車目前沒有餐點，想點什麼？請告訴我餐點和份數。
     ready: 目前這個入口尚未提供代操作結帳，這一步需要依畫面提示完成；尚未送出訂單。
   product-presentation:
-    title: 正在介紹的餐點
-    completed: 已核對完成
-    unavailable: PB 畫面暫無法定位，以下為已查證商品
-    price: '{price} 元起'
     capability-unavailable: 目前點餐服務未提供 Jev 候選介面，已交給 AI 助手處理。
   cart-handoff:
     checking: 正在準備點餐

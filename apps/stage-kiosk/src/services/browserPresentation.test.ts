@@ -47,7 +47,6 @@ it('presents only validated browser evidence and uses refs for speech cues', asy
   const { presentation, execute, tool, publish } = setup()
   publish('called')
   publish('resolved', { ok: true, source: 'browser', products, presentation: { products, cue: 'shown' } })
-  expect(presentation.current.value).toEqual({ products, cue: 'shown' })
   await presentation.speak('每日新品現在是九十元。')
   expect(execute).toHaveBeenCalledWith(tool, { productRefs: ['today'], mode: 'information', preservePage: true })
   await presentation.speak('模型自行發明的餐點')
@@ -59,7 +58,7 @@ it('does not revive a late old-turn result after cancellation', async () => {
   publish('called')
   await presentation.cancel()
   publish('resolved', { ok: true, source: 'browser', products, presentation: { products, cue: 'shown' } })
-  expect(presentation.current.value).toBeUndefined()
+  expect(presentation.menuNames()).toEqual([])
 })
 
 it('discards product identities on service replacement and cannot speak them into another document', async () => {
@@ -78,7 +77,6 @@ it('keeps duplicate names out of speech targeting and rejects unverified present
   const { presentation, publish, execute } = setup()
   publish('called')
   publish('resolved', { ok: true, source: 'browser', products: [...products, { ...products[0], ref: 'another-category' }], presentation: { products: [{ name: '沒有識別' }], cue: 'shown' } })
-  expect(presentation.current.value).toBeUndefined()
   await presentation.speak('每日新品')
   expect(execute).not.toHaveBeenCalled()
 })
@@ -86,10 +84,10 @@ it('keeps duplicate names out of speech targeting and rejects unverified present
 it('does not let an older read erase a newer cue in the same utterance', () => {
   const { presentation, publish } = setup()
   publish('called', undefined, 'older-read')
-  publish('called', undefined, 'newer-cue', 'browser_present')
+  publish('called', undefined, 'newer-cue', 'browser_present', { productRefs: ['today'] })
   publish('resolved', { ok: true, source: 'browser', presentation: { products, cue: 'shown' } }, 'newer-cue', 'browser_present')
   publish('resolved', { ok: true, source: 'browser', presentation: { products: [], cue: 'cancelled' } }, 'older-read')
-  expect(presentation.current.value).toEqual({ products, cue: 'shown' })
+  expect(presentation.shownRecommendations()).toEqual(['today'])
 })
 
 // Report: this chat, Nov12 S10; one of three "other recommendations" repeated a previously presented dish.
@@ -105,24 +103,12 @@ it.each(['recommendation', 'other-recommendations'])('tracks the last successful
   expect(presentation.filterRecommendations(['today', 'other'])).toEqual(['today', 'other'])
 })
 
-// Report: this chat, 2026-11-14 — returning from search/recommendations left the old dish strip visible.
-it.each(['browser_search', 'browser_return_menu', 'browser_close_product'])('clears stale recommendation summaries after %s', (name) => {
-  const { publish, presentation } = setup()
-  publish('called', undefined, 'show', 'browser_present', { productRefs: ['p'], mode: 'recommendation' })
-  publish('resolved', { ok: true, source: 'browser', presentation: { cue: 'shown', products: [{ ref: 'p', name: '餐點', price: 100 }] } }, 'show', 'browser_present')
-  expect(presentation.current.value?.products).toHaveLength(1)
-  publish('called', undefined, 'clear', name)
-  publish('resolved', { ok: true, source: 'browser' }, 'clear', name)
-  expect(presentation.current.value).toBeUndefined()
-})
-
 // Report: this chat, 2026-11-14 — dish frames ran before any customer reply appeared.
 it('keeps recommendations invisible until the reply, then preserves native batch dwell in mention order', async () => {
   const { presentation, publish, execute, tool } = setup()
   const batch = [{ ref: 'soup', name: '魚丸湯' }, { ref: 'rice', name: '排骨飯' }]
   publish('called', undefined, 'prepare', 'browser_present', { productRefs: ['soup', 'rice'], mode: 'recommendation', deferVisual: true })
   publish('resolved', { ok: true, source: 'browser', presentation: { products: batch, cue: 'prepared' } }, 'prepare', 'browser_present')
-  expect(presentation.current.value).toBeUndefined()
   expect(execute).not.toHaveBeenCalled()
   await presentation.speak('先推薦排骨飯，再來魚丸湯。')
   expect(execute.mock.calls.map(call => call[1])).toEqual([{ productRefs: ['rice', 'soup'], mode: 'information', preservePage: true }])
@@ -179,7 +165,6 @@ it('drops queued speech cues and late recommendation receipts when a new turn st
   publish('resolved', { ok: true, source: 'browser', presentation: { products, cue: 'shown' } }, 'previous', 'browser_present')
   await oldCue
   expect(execute).not.toHaveBeenCalled()
-  expect(presentation.current.value).toBeUndefined()
   expect(presentation.shownRecommendations()).toEqual([])
   await presentation.speak('每日新品')
   expect(execute).toHaveBeenCalledOnce()

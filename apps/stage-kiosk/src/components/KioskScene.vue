@@ -3331,7 +3331,7 @@ onUnmounted(() => {
     </section>
 
     <div v-if="desktopHost && !props.voiceConversationOnly" v-show="!textConsoleFloating" id="kiosk-text-console-dock" :class="['native-text-console']" />
-    <ScenarioSurface :operating="pageOperating" :presentation="productPresentation.current.value" :listening="isAudioListening" :occluded="adminPanelOpen" :class="['menu-region']" @activity="!productPresentation.introducing.value && recordCustomerActivity('manual')" />
+    <ScenarioSurface :operating="pageOperating" :listening="isAudioListening" :occluded="adminPanelOpen" :class="['menu-region']" @activity="!productPresentation.introducing.value && recordCustomerActivity('manual')" />
     <KioskAgentControl
       v-if="agentOrderOwner"
       :releasing="manualControlPending"

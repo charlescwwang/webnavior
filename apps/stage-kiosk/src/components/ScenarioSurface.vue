@@ -1,11 +1,8 @@
 <script setup lang="ts">
-import type { ProductPresentation } from '@proj-airi/stage-shared/product-presentation'
-
 import { isPbSimulatorHost, readPbJourney } from '@proj-airi/stage-shared/pb-journey'
 import { computed, onUnmounted, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import BrowserProductPresentation from './browserProductPresentation.vue'
 import CustomerPhoneModal from './customerPhoneModal.vue'
 import KioskActivityGlow from './KioskActivityGlow.vue'
 import NativeServiceSurface from './NativeServiceSurface.vue'
@@ -16,7 +13,7 @@ import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { gatewayPage } from '../services/paymentChoice'
 import { scenarioRegistry } from '../services/scenario-registry'
 
-const props = defineProps<{ listening?: boolean, operating?: boolean, occluded?: boolean, presentation?: ProductPresentation }>()
+const props = defineProps<{ listening?: boolean, operating?: boolean, occluded?: boolean }>()
 const emit = defineEmits<{ activity: [] }>()
 const customerEntry = useKioskCustomerEntry(interactiveServiceClient)
 const scenarioFrame = useTemplateRef<HTMLIFrameElement>('scenarioFrame')
@@ -55,9 +52,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section :class="['scenario-surface', { 'has-presentation': props.presentation?.products.length }]" aria-label="互動服務畫面">
+  <section class="scenario-surface" aria-label="互動服務畫面">
     <KioskActivityGlow :active="Boolean(props.operating)" mode="operating" />
-    <BrowserProductPresentation v-if="props.presentation?.products.length" :presentation="props.presentation" />
     <CustomerPhoneModal v-if="customerEntry.pending.value" :listening="props.listening" :busy="customerEntry.busy.value" :error="customerEntry.error.value" @submit="customerEntry.submit" @skip="customerEntry.submit()" @activity="emit('activity')" />
     <NativeServiceSurface
       v-if="desktop && scenarioRegistry.activeScenario.value"
@@ -92,6 +88,5 @@ onUnmounted(() => {
 
 <style scoped>
 .scenario-surface { padding: 6px; position: relative; isolation: isolate; display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; border: 1px solid rgb(255 255 255 / 30%); border-radius: 1.5rem; background: #fff8ee; box-shadow: 0 1.25rem 4rem rgb(0 0 0 / 24%); }
-.has-presentation { grid-template-rows: auto minmax(0, 1fr); }
 iframe { min-height: 0; width: 100%; height: 100%; border: 0; }
 </style>
