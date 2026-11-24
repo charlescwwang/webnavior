@@ -58,7 +58,7 @@ function setup() {
 }
 
 // Report: this chat, Nov12; cart 加點 navigates, while 新增/＋ changes servings.
-it('uses the guest journey 加點 link without pressing quantity controls or clearing search', async () => {
+it.each([true, false])('uses the guest journey 加點 link without editing the cart or menu (search input: %s)', async (hasInput) => {
   history.replaceState({}, '', '/order/store/1kAMNok/internal_use/orders/create')
   document.body.innerHTML = '<main class="order-create"><button id="plus">新增</button><a href="/order/store/1kAMNok/internal_use/menu">加點</a></main>'
   const plus = vi.fn()
@@ -66,7 +66,9 @@ it('uses the guest journey 加點 link without pressing quantity controls or cle
   document.querySelector('a')!.addEventListener('click', (event) => {
     event.preventDefault()
     history.pushState({}, '', '/order/store/1kAMNok/internal_use/menu')
-    document.body.innerHTML = '<input placeholder="搜尋品項，例如：拿鐵、雞腿、套餐" value="雞腿">'
+    document.body.innerHTML = hasInput
+      ? '<input placeholder="搜尋品項，例如：拿鐵、雞腿、套餐" value="雞腿">'
+      : '<main><button><h4>雞腿便當</h4></button></main>'
   })
   const controller = new AbortController()
   const operation = createOperation({ documentId: 'guest', operationId: 'return', signal: controller.signal, follow: async (_target, _label, dispatch) => {
@@ -76,7 +78,10 @@ it('uses the guest journey 加點 link without pressing quantity controls or cle
   const controls = createControls(operation, controller.signal)
   await controls.navigate('/order/store/1kAMNok/internal_use/menu')
   expect(plus).not.toHaveBeenCalled()
-  expect(document.querySelector<HTMLInputElement>('input')!.value).toBe('雞腿')
+  if (hasInput)
+    expect(document.querySelector<HTMLInputElement>('input')!.value).toBe('雞腿')
+  else
+    expect(document.querySelector('main h4')?.textContent).toBe('雞腿便當')
   expect(operation.snapshot().steps).toMatchObject([{ action: 'navigate', effect: 'navigation', state: 'completed' }])
   await expect(controls.navigate('/order/store/other/internal_use/menu')).rejects.toThrow('approved journey')
 })
@@ -185,6 +190,27 @@ it.each([false, true])('clears only the native cart button after fresh preflight
     expect(operation.snapshot().steps[0]).toMatchObject({ effect: 'cart', state: 'completed', target: { ref: 'cart-clear' } })
   }
   expect(unrelated).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov24; cancelling could try to clear a nonexistent search.
+it.each([false, true])('leaves a verified full menu alone when the search input is present: %s', async (hasInput) => {
+  const { controls, operation } = setup()
+  if (hasInput)
+    document.body.insertAdjacentHTML('afterbegin', '<input placeholder="搜尋品項，例如：拿鐵、雞腿、套餐">')
+  await controls.search('', () => document.querySelector('main h4')?.textContent === '每日新品')
+  expect(operation.snapshot().steps).toEqual([])
+})
+
+it('clears a real search and waits for the full menu to render', async () => {
+  const { controls, operation } = setup()
+  document.body.insertAdjacentHTML('afterbegin', '<input placeholder="搜尋品項，例如：拿鐵、雞腿、套餐" value="雞腿">')
+  const input = document.querySelector('input')!
+  input.addEventListener('input', () => {
+    setTimeout(() => document.querySelector('main')!.insertAdjacentHTML('beforeend', '<button><h4>牛肉麵</h4></button>'), 25)
+  })
+  await controls.search('', () => document.querySelectorAll('main h4').length === 2)
+  expect(input.value).toBe('')
+  expect(operation.snapshot().steps).toMatchObject([{ action: 'search', state: 'completed' }])
 })
 
 // Report: this chat, Nov11; a new query could read the previous filter's cards.

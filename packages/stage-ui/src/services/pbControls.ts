@@ -7,6 +7,7 @@ import type { createOperation } from './pbOperation'
 import { resolveSelection } from './pbProduct'
 
 const searchSelector = 'input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]'
+const menuCardSelector = 'main [role="button"] h4, main button h4'
 const noteSelector = 'input[placeholder="商品有特殊需求，請在此備註"]'
 
 /** Unique visible nodes only: DOM order is never a product/option identity. */
@@ -190,6 +191,15 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
     await navigate(menuPath)
     await dismissAnnouncement()
     await close()
+    const fields = () => document.querySelectorAll<HTMLInputElement>(searchSelector)
+    const locate = () => unique(fields())
+    // Voice browsing can leave the full menu visible without using a search field.
+    // In that case the verified cards already satisfy an empty query.
+    if (!query) {
+      await ready(() => fields().length > 0 || rendered())
+      if (Array.from(fields()).every(input => !input.value) && rendered())
+        return
+    }
     let searchStarted = false
     const loading = new MutationObserver(() => {
       if (document.querySelector('.menu-search-meta')?.textContent?.includes('搜尋中'))
@@ -198,11 +208,11 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
     // The merchant updates cards asynchronously. Callers presenting catalog
     // facts must verify those actual cards, not just our synchronous input value.
     try {
-      await act('search', '搜尋餐點', 'draft', () => unique(document.querySelectorAll<HTMLInputElement>(searchSelector)), (target) => {
+      await act('search', '搜尋餐點', 'draft', locate, (target) => {
         loading.observe(document.body, { childList: true, subtree: true, characterData: true })
         fill(target as HTMLInputElement, query)
       }, () => {
-        if (unique(document.querySelectorAll<HTMLInputElement>(searchSelector))?.value !== query || !rendered())
+        if (locate()?.value !== query || !rendered())
           return false
         if (!query.trim())
           return true
@@ -214,7 +224,7 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
         if (!searchStarted)
           return false
         const count = unique(document.querySelectorAll<HTMLElement>('.menu-search-meta'))?.textContent?.trim().match(/^共找到\s*(\d+)\s*項$/)
-        const cards = Array.from(document.querySelectorAll<HTMLElement>('main [role="button"] h4, main button h4')).filter(heading => heading.getClientRects().length)
+        const cards = Array.from(document.querySelectorAll<HTMLElement>(menuCardSelector)).filter(heading => heading.getClientRects().length)
         return !!count && Number(count[1]) === cards.length
       }, { kind: 'field', ref: 'menu-search' })
     }
@@ -250,7 +260,8 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
     // A fresh HTTP cart snapshot can precede PB's asynchronous menu controls.
     // Wait for one real route target; the operation rechecks it before dispatch.
     await ready(() => Boolean(locate()))
-    await act('navigate', path === menuPath ? '返回菜單' : '查看購物車', 'navigation', locate, target => target.click(), () => location.pathname === path && (path === menuPath ? Boolean(document.querySelector(searchSelector)) : Boolean(document.querySelector('.order-create'))), { kind: 'route', ref: path })
+    const destination = path === menuPath ? `${searchSelector}, ${menuCardSelector}` : '.order-create'
+    await act('navigate', path === menuPath ? '返回菜單' : '查看購物車', 'navigation', locate, target => target.click(), () => location.pathname === path && Boolean(document.querySelector(destination)), { kind: 'route', ref: path })
     await dismissAnnouncement()
   }
   async function inspectCart(readPage: (page: unknown) => Promise<CartSnapshot>) {
