@@ -1,4 +1,4 @@
-Webnavior Kiosk 0.7.8-rc.7 — Windows 10/11 x64 可攜版
+Webnavior Kiosk 0.7.8-rc.8 — Windows 10/11 x64 可攜版
 
 本版搭配更新的 Kiosk 前端。送單時會讀取 PB 回傳的拒單原因；手機覆誦有誤時，請從 09 開始重新報號。
 沿用付款頁 Inertia 版本標頭，避免正常付款頁被誤判為連線失敗。

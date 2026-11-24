@@ -505,3 +505,7 @@ checkpoint and was never distributed. Physical Windows acceptance is pending.
 ## Windows 0.7.8-rc.7
 
 Use the full RC7 portable folder with the paired Kiosk frontend for PB checkout feedback. Exit the previous executable before starting the new one. The device profile and PB login stay in the existing Windows user profile.
+
+## Windows 0.7.8-rc.8
+
+RC8 adds spoken payment choices and switching for the same pending PB order. Card entry, login, scanning and payment authorization remain customer actions. Exit the running Kiosk and extract the complete Windows x64 portable ZIP into a new folder before launching it.
