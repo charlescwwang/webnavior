@@ -1,0 +1,55 @@
+{
+  "version": "0.7.8-rc.9",
+  "previousVersion": "0.7.8-rc.8",
+  "sourceCommit": "79126653fb27cdbd95117e5c536d72f6329591b3",
+  "tag": "v0.7.8-rc.9",
+  "package": {
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc9-20261124-r1/windows/Webnavior-Kiosk-v0.7.8-rc.9-Windows-x64-20261124-203827.zip",
+    "sha256": "d456b673432c58384dfbca59bf5585577e43b10cebd1db5cdff8a115a5be4862",
+    "bytes": 163769936,
+    "files": 81
+  },
+  "frontend": {
+    "release": "kiosk-rc9-20261124-r1",
+    "status": "activated-http-verified",
+    "apiRestart": false,
+    "changed": 97,
+    "apiPid": "1214145"
+  },
+  "components": {
+    "web": {
+      "version": "0.7.8-rc.9",
+      "deployment": "web-v2026.11.24.2"
+    },
+    "kiosk": {
+      "version": "0.7.8-rc.9",
+      "deployment": "kiosk-rc9-20261124-r1"
+    },
+    "windows": {
+      "version": "0.7.8-rc.9",
+      "sha256": "d456b673432c58384dfbca59bf5585577e43b10cebd1db5cdff8a115a5be4862"
+    }
+  },
+  "validation": {
+    "kioskHttpChecks": 9,
+    "webVersionVerified": true,
+    "publicApi": {
+      "db": "ok",
+      "redis": "ok"
+    },
+    "fullTypecheck": "passed",
+    "repositoryLint": "existing errors outside changed files",
+    "changedCodeLint": "passed",
+    "kioskTests": {
+      "passed": 1269,
+      "expectedFail": 1,
+      "skipped": 49
+    },
+    "cartTests": 97,
+    "conversationBrowserTests": 19,
+    "desktopTests": 43,
+    "electronDiagnostics": "passed"
+  },
+  "windowsPhysicalValidation": false,
+  "signed": false
+}
