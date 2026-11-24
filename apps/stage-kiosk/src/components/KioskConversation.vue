@@ -83,6 +83,7 @@ const historyMessages = computed<ChatHistoryItem[]>(() => groupConversationMessa
     return { ...message, content: toOrderingTraditionalChinese(message.content) }
   return message
 }))
+const inlineActivity = computed(() => !props.voiceConversationOnly && Boolean(props.recognizingCount || props.activityStatus || props.activitySteps?.length))
 const showHistory = shallowRef(false)
 // Keep unfinished requests visible even when an additional utterance arrives.
 // Older completed turns remain available without changing model/audit history.
@@ -181,7 +182,7 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
         {{ t(showHistory ? 'stage.kiosk-agent.current-conversation' : 'stage.kiosk-agent.previous-conversation') }}
       </Button>
       <KioskAssistantPresence
-        v-if="historyMessages.length === 0 && !props.pendingTranscript"
+        v-if="historyMessages.length === 0 && !props.pendingTranscript && (!props.voiceConversationOnly || (props.assistantPresence.mode === 'listening' && !props.recognizingCount))"
         :description="toOrderingTraditionalChinese(props.assistantPresence.description)"
         :mode="props.assistantPresence.mode"
         :title="toOrderingTraditionalChinese(props.assistantPresence.title)"
@@ -212,8 +213,8 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
       </ChatHistory>
     </div>
 
-    <div v-if="props.recognizingCount || props.pendingTranscript || props.activityStatus || props.activitySteps?.length || props.executionDurationMs !== undefined || props.retryAvailable" class="conversation-progress">
-      <div v-if="props.recognizingCount" class="pending-transcript" role="status" aria-live="polite">
+    <div v-if="inlineActivity || props.pendingTranscript || props.executionDurationMs !== undefined || props.retryAvailable" class="conversation-progress">
+      <div v-if="inlineActivity && props.recognizingCount" class="pending-transcript" role="status" aria-live="polite">
         <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
         <span>{{ t('stage.kiosk.voice-received') }}</span>
       </div>
@@ -221,12 +222,12 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
         <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
         <span>{{ toOrderingTraditionalChinese(props.pendingTranscript) }}</span>
       </div>
-      <div v-if="props.activityStatus" class="assistant-activity" role="status" aria-live="polite">
+      <div v-if="inlineActivity && props.activityStatus" class="assistant-activity" role="status" aria-live="polite">
         <span class="activity-orb" aria-hidden="true" />
         <span>{{ toOrderingTraditionalChinese(props.activityStatus) }}</span>
         <span class="activity-dots" aria-hidden="true"><i /><i /><i /></span>
       </div>
-      <ol v-if="props.activitySteps?.length" class="assistant-activity-steps" aria-label="本次處理進度">
+      <ol v-if="inlineActivity && props.activitySteps?.length" class="assistant-activity-steps" aria-label="本次處理進度">
         <li v-for="step in props.activitySteps" :key="step.toolName" :class="['assistant-activity-step', `is-${step.state}`]">
           <span class="activity-step-marker" aria-hidden="true" />
           <span>{{ toOrderingTraditionalChinese(step.label) }}</span>

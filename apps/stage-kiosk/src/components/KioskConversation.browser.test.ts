@@ -7,6 +7,7 @@ import { defineComponent, h, shallowRef } from 'vue'
 import { createI18n } from 'vue-i18n'
 
 import zhHant from '../../../../packages/i18n/src/locales/zh-Hant/stage.yaml'
+import KioskAssistantThoughtBubble from './KioskAssistantThoughtBubble.vue'
 import KioskConversation from './KioskConversation.vue'
 import KioskDecisionInspector from './KioskDecisionInspector.vue'
 import KioskVoiceDiagnostics from './KioskVoiceDiagnostics.vue'
@@ -24,17 +25,32 @@ const props = {
 }
 
 // Report: this chat Nov17 — received audio must be acknowledged before ASR or an earlier action finishes.
-it('shows a plain receipt while recognizing and the completed transcript while earlier work is pending', async () => {
+it('acknowledges speech only in the thought bubble and keeps the follow-up transcript in the conversation', async () => {
   const count = shallowRef(1)
   const messages = shallowRef<ChatHistoryItem[]>([])
   const screen = render(defineComponent({
-    setup: () => () => h(KioskConversation, { ...props, recognizingCount: count.value, messages: messages.value, sending: true, requestStatuses: { 2: 'queued' }, voiceConversationOnly: true }),
+    setup: () => () => h('div', [
+      h(KioskAssistantThoughtBubble, { recognizing: count.value > 0 }),
+      h(KioskConversation, { ...props, recognizingCount: count.value, activityStatus: '正在辨識語音…', messages: messages.value, sending: true, requestStatuses: { 2: 'queued' }, voiceConversationOnly: true }),
+    ]),
   }), { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
   await expect.element(screen.getByText('已收到語音，正在辨識…', { exact: true })).toBeVisible()
+  expect(screen.container.querySelector('.assistant-thought-bubble')?.textContent).toContain('正在辨識')
+  expect(screen.container.querySelector('.conversation-progress')).toBeNull()
   messages.value = [{ role: 'user', id: 'utterance:2:user', content: '再加一份水餃' }]
   count.value = 0
   await expect.element(screen.getByText('再加一份水餃', { exact: true })).toBeVisible()
-  expect(screen.getByText('已收到語音，正在辨識…', { exact: true }).query()).toBeNull()
+  await expect.element(screen.getByText('已收到語音，正在辨識…', { exact: true })).not.toBeInTheDocument()
+})
+
+it('keeps the active tool in the bubble while recognizing a follow-up', async () => {
+  const progress = shallowRef<{ phase: 'finding-menu', message: string } | undefined>({ phase: 'finding-menu', message: '正在查菜單' })
+  const screen = render(defineComponent({
+    setup: () => () => h(KioskAssistantThoughtBubble, { progress: progress.value, recognizing: true }),
+  }), { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
+  await expect.element(screen.getByRole('status')).toHaveTextContent('正在查菜單')
+  progress.value = undefined
+  await expect.element(screen.getByRole('status')).toHaveTextContent('已收到語音，正在辨識')
 })
 
 // Report: this chat, Nov17 — an unverified cart readback was repeatedly shown as a disconnected menu.
@@ -88,14 +104,20 @@ it('presents conversation text in Taiwan Traditional without rewriting source me
   expect(streaming.slices[0]).toEqual({ type: 'text', text: '正在查询菜单。' })
 })
 
-it('presents pending recognition and processing text in Traditional Chinese', async () => {
+it.each([true, false])('keeps individual notices but limits inline progress to text mode (voice=%s)', async (voiceConversationOnly) => {
   const screen = render(KioskConversation, {
-    props: { ...props, voiceConversationOnly: true, pendingTranscript: '请帮我推荐', activityStatus: '正在查询菜单', activitySteps: [{ label: '确认订单', state: 'executing', toolName: 'menu_get' }] },
+    props: { ...props, voiceConversationOnly, pendingTranscript: '请帮我推荐', activityStatus: '正在查询菜单', activitySteps: [{ label: '确认订单', state: 'executing', toolName: 'menu_get' }] },
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
   })
   await expect.element(screen.getByText('請幫我推薦', { exact: true })).toBeVisible()
-  await expect.element(screen.getByText('正在查詢菜單', { exact: true })).toBeVisible()
-  await expect.element(screen.getByText('確認訂單', { exact: true })).toBeVisible()
+  if (voiceConversationOnly) {
+    expect(screen.container.querySelector('.assistant-activity')).toBeNull()
+    expect(screen.container.querySelector('.assistant-activity-steps')).toBeNull()
+  }
+  else {
+    await expect.element(screen.container.querySelector<HTMLElement>('.assistant-activity')).toHaveTextContent('正在查詢菜單')
+    await expect.element(screen.getByText('確認訂單', { exact: true })).toBeVisible()
+  }
 })
 
 it('keeps only the simulated ASR input in text mode and forwards its transcript', async () => {

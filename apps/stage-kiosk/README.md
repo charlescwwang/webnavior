@@ -1625,6 +1625,9 @@ Complete-menu lookup may ask one bounded follow-up decision: finish with the
 grounded answer, perform one offered recommendation read, or hand off to Main
 Agent. It never loops or retries a cart/payment mutation. The decision inspector
 shows these stages and the role-labelled context actually sent to System One.
+In voice mode the avatar's thought bubble shows speech recognition and current
+work. The conversation keeps transcripts, replies and actionable notices;
+the text console retains its inline activity and tool steps.
 Fast Path processing feedback requires both a confident service intent and a
 confirmed recipient, or an explicit `serviceRequest: REQUEST` recovery check.
 Neither recipient confidence nor route confidence alone admits feedback. Customer

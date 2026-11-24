@@ -1,19 +1,30 @@
 <script setup lang="ts">
 import type { KioskConversationProgress } from '../composables/useKioskConversationProgress'
 
-const props = defineProps<{ progress?: Pick<KioskConversationProgress, 'phase' | 'message'> }>()
+import { toOrderingTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const props = defineProps<{
+  progress?: Pick<KioskConversationProgress, 'phase' | 'message'>
+  recognizing?: boolean
+  voiceActivity?: string
+}>()
+const { t } = useI18n()
+// A follow-up can be transcribing while the preceding order is still executing.
+const message = computed(() => props.progress?.message ?? (props.recognizing ? t('stage.kiosk.voice-received') : props.voiceActivity))
 </script>
 
 <template>
   <Transition name="thought-bubble" mode="out-in">
     <aside
-      v-if="props.progress"
-      :key="props.progress.phase"
+      v-if="message"
+      :key="props.progress?.phase ?? 'understanding'"
       class="assistant-thought-bubble"
       role="status"
       aria-live="polite"
     >
-      <span class="assistant-thought-bubble-text">{{ props.progress.message }}</span>
+      <span class="assistant-thought-bubble-text">{{ toOrderingTraditionalChinese(message) }}</span>
     </aside>
   </Transition>
 </template>

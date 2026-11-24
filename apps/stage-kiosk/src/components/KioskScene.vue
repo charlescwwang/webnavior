@@ -277,6 +277,7 @@ const arrayProcessingLabel = computed(() => arrayMicrophone.value ? `Spatial Mas
 
 // Decision progress is display-only, so an unverified utterance cannot own or
 // cancel an interaction turn. Agent progress takes precedence during handoff.
+const presentingVoiceReply = computed(() => props.voiceConversationOnly && (Boolean(streamingAssistantMessage.value) || interactionTurn.phase.value === 'speaking'))
 const visibleProgress = computed(() => conversationProgress.value ?? (decisionStatus.value?.pending
   ? { phase: 'understanding' as const, message: t(`stage.kiosk.service-recovery.${decisionStatus.value.messageKey}`) }
   : undefined) ?? (fastPathProgress.value
@@ -435,13 +436,7 @@ function updateVoiceDiagnostic(id: number, patch: Omit<Partial<KioskVoiceDiagnos
     return
   voiceDiagnosticEntries.value = voiceDiagnosticEntries.value.map(entry => entry.id === id ? { ...entry, ...patch, events: patch.status && patch.status !== entry.status ? [...(entry.events ?? []), { status: patch.status, at: Date.now() }] : entry.events } : entry)
 }
-const conversationActivityStatus = computed(() => {
-  if (utteranceQueueState.value.pending.some(utterance => utterance.source === 'simulation'))
-    return t('stage.kiosk.service-recovery.queued')
-  if (decisionStatus.value)
-    return t(`stage.kiosk.service-recovery.${decisionStatus.value.messageKey}`)
-  if (fastPathProgress.value)
-    return fastPathProgress.value.text
+const interactionActivityStatus = computed(() => {
   if (interactionTurn.phase.value === 'hearing-speech')
     return '正在聆聽…'
   if (interactionTurn.phase.value === 'transcribing')
@@ -453,6 +448,15 @@ const conversationActivityStatus = computed(() => {
   if (interactionTurn.phase.value === 'speaking')
     return '正在說明，可直接說話打斷。'
   return undefined
+})
+const conversationActivityStatus = computed(() => {
+  if (utteranceQueueState.value.pending.some(utterance => utterance.source === 'simulation'))
+    return t('stage.kiosk.service-recovery.queued')
+  if (decisionStatus.value)
+    return t(`stage.kiosk.service-recovery.${decisionStatus.value.messageKey}`)
+  if (fastPathProgress.value)
+    return fastPathProgress.value.text
+  return interactionActivityStatus.value
 })
 const interactionRecording = useKioskInteractionRecording()
 const productPresentation = createBrowserPresentation(interactiveServiceClient, () => interactionRecording.visitorSessionId.value)
@@ -3299,7 +3303,11 @@ onUnmounted(() => {
           <span>{{ customerSessionButtonLabel }}</span>
         </button>
       </section>
-      <KioskAssistantThoughtBubble :progress="visibleProgress" />
+      <KioskAssistantThoughtBubble
+        :progress="presentingVoiceReply ? undefined : visibleProgress"
+        :recognizing="props.voiceConversationOnly && transcriptionCount > 0"
+        :voice-activity="props.voiceConversationOnly && !presentingVoiceReply ? interactionActivityStatus : undefined"
+      />
       <KioskConversation
         :service-recovery-blocked="serviceRecoveryBlocked || interactiveServiceClient.availability.value === 'unavailable'"
         :service-recovering="serviceRecovering"
