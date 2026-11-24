@@ -13,6 +13,12 @@ export function finishedOrdering(text: string) {
   return /^(?:點好了|點完了|先這樣(?:好了?)?|先?這樣就好了?|就這樣(?:好了?)?)[。！!，,\s]*$/.test(text.trim())
 }
 
+/** Binds a checkout invitation to a verified cart snapshot. */
+export function presentCheckoutInvitation(dialogue: ReturnType<typeof createBrowserDialogue>, facts: { cart: { version: string, lines: unknown[] } }) {
+  const copy = orderingMessages['zh-Hant'].checkoutInvitation
+  return dialogue.presentService({ ...facts, products: [] }, { purpose: 'review-checkout', request: '', question: copy.question, choices: [{ id: 'yes', description: copy.accept }, { id: 'no', description: copy.decline }] })
+}
+
 /**
  * Offers checkout only after a completed turn's cart change is read back fresh.
  * A short yes opens cart review; it never submits an order or authorizes payment.
@@ -32,8 +38,7 @@ export async function offerCheckout(client: Pick<ReturnType<typeof createInterac
     const fresh = safeParse(looseObject({ ok: literal(true), source: literal('browser'), cart: looseObject({ version: string(), lines: array(unknown()) }) }), raw)
     if (!isCurrent() || !fresh.success || fresh.output.cart.version !== receipt.output.cart.version || !fresh.output.cart.lines.length || dialogue.hasPending())
       return
-    const copy = orderingMessages['zh-Hant'].checkoutInvitation
-    const question = dialogue.presentService({ ...fresh.output, products: [] }, { purpose: 'review-checkout', request: '', question: copy.question, choices: [{ id: 'yes', description: copy.accept }, { id: 'no', description: copy.decline }] })
+    const question = presentCheckoutInvitation(dialogue, fresh.output)
     return question.pendingCustomerChoice
   }
   catch {

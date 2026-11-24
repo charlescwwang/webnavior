@@ -389,6 +389,27 @@ try {
   // the vendor's versioned JSON protocol instead of downloading dev assets.
   assert(await app.evaluate(() => globalThis.__pbFixtureJsonPageReads >= 2))
   console.info('PASS: isolated PB catalog/cart reads use declared route data without a vendor main-world helper.')
+  // Report: this chat, Nov24; a full menu may have no search field to clear.
+  await app.evaluate(() => globalThis.__pbFixtureCartPresent = false)
+  const searchField = await nativePage.getByPlaceholder('搜尋品項，例如：拿鐵、雞腿、套餐').elementHandle()
+  assert.ok(searchField)
+  await searchField.evaluate((input) => {
+    const marker = document.createElement('span')
+    marker.id = 'fixture-search-location'
+    input.replaceWith(marker)
+  })
+  try {
+    const resetWithoutSearch = await invoke({ kind: 'execute', request: { ...execute, operationId: 'fixture-customer-reset-without-search', name: 'browser_customer_reset', input: {} } })
+    assert.equal(resetWithoutSearch.result.status, 'customer-reset', JSON.stringify(resetWithoutSearch.result))
+    assert.equal(resetWithoutSearch.result.cartCleared, true)
+    assert.equal(await app.evaluate(() => globalThis.__pbFixtureWrites), 0)
+  }
+  finally {
+    await searchField.evaluate(input => document.querySelector('#fixture-search-location').replaceWith(input))
+    await searchField.dispose()
+    await app.evaluate(() => globalThis.__pbFixtureCartPresent = true)
+  }
+  console.info('PASS: customer reset succeeds on an empty cart and full menu without a search field.')
   // Report: this chat, Nov14 full Host audit; an off-screen passive cue was
   // reported without effect/status and became an unknown-operation warning.
   await nativePage.evaluate(() => document.querySelector('main button').style.cssText = 'position:fixed;top:-10000px;left:0')
@@ -513,13 +534,13 @@ try {
     assert.equal(cleared.result.ok, true)
     assert.equal(cleared.result.products.length, 13)
     assert.equal(cleared.result.search, '')
-    assert.match(cleared.result.customerMessage, /已清除搜尋.*完整菜單/)
+    assert.match(cleared.result.customerMessage, /已回到完整菜單/)
     assert.doesNotMatch(cleared.result.customerMessage, /Fixture option/)
     await nativePage.evaluate(() => document.querySelector('input[placeholder]').value = 'abandoned-search')
     const returned = await invoke({ kind: 'execute', request: { ...execute, operationId: 'fixture-return-from-filtered-menu', name: 'browser_return_menu', input: {} } })
     assert.equal(returned.result.ok, true, JSON.stringify(returned.result))
     assert.equal(await nativePage.getByPlaceholder('搜尋品項，例如：拿鐵、雞腿、套餐').inputValue(), '')
-    assert.match(returned.result.customerMessage, /已清除搜尋/)
+    assert.match(returned.result.customerMessage, /已回到完整菜單/)
     assert.equal(await app.evaluate(() => globalThis.__pbFixtureWrites), 0)
 
     // Report: this chat, Nov11; a valid first card hid missing later subjects.

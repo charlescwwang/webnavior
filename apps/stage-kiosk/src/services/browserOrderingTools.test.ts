@@ -620,11 +620,79 @@ it('closes the unfinished selection and looks up soup only after switch consent'
   cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const accepted = await prepareBrowserQuestionAnswer(client)
   expect(await accepted!()).toMatchObject({ ok: true })
-  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_close_product' }), {})
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_return_menu' }), {})
   expect(execute.mock.calls.some(([tool, input]) => tool.name === 'browser_search' && input.query === '湯')).toBe(false)
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_present' }), { productRefs: [] })
   expect(facts.cart.lines[0].quantity).toBe(3)
   expect(dialogue.hasPending()).toBe(false)
+})
+
+it('returns to the full menu once when the customer confirms cancelling a draft', async () => {
+  const { call, client, dialogue, execute } = setup('先看全部餐點', true)
+  await call('ask_customer_question', { questionType: 'cancel-and-search', query: '' })
+  cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const accepted = await prepareBrowserQuestionAnswer(client)
+  expect(await accepted!()).toMatchObject({
+    cart: { lines: [expect.objectContaining({ quantity: 3 })] },
+    customerMessage: '已取消這次選餐。',
+  })
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_return_menu')).toHaveLength(1)
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_search')).toBe(false)
+  expect(dialogue.hasPending()).toBe(false)
+})
+
+it('offers checkout after cancelling an unfinished dish and handles assent as cart review', async () => {
+  const { call, client, dialogue, execute, facts } = setup('這個先不要了', true)
+  const response = await call('cancel_item_selection', {})
+  expect(response).toMatchObject({
+    customerMessage: '已取消這次選餐。要現在結帳嗎？',
+    pendingCustomerChoice: { question: '要現在結帳嗎？' },
+  })
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_review')).toBe(false)
+  cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const accepted = await prepareBrowserQuestionAnswer(client)
+  expect(await accepted!()).toMatchObject({ pendingCustomerChoice: { question: '餐點、份數和金額正確嗎？' } })
+  expect(facts.cart.lines[0].quantity).toBe(3)
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_order_submit')).toBe(false)
+})
+
+it('suggests a different dish after a spoken refusal with an empty cart', async () => {
+  const { client, dialogue, execute, facts } = setup('先不要了', true)
+  facts.cart.lines.splice(0)
+  dialogue.presentQuantity(facts, 'chicken', '雞腿飯')
+  facts.products.push({ ...facts.products[0], ref: 'soup', name: '魚丸湯' })
+  const cancelled = await prepareBrowserQuestionAnswer(client)
+  const response = await cancelled!()
+  expect(response).toMatchObject({ cart: { lines: [] }, pendingCustomerChoice: { question: expect.stringContaining('魚丸湯') } })
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add')).toBe(false)
+  cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const accepted = await prepareBrowserQuestionAnswer(client)
+  expect(await accepted!()).toMatchObject({ status: 'verified' })
+  expect(facts.cart.lines).toMatchObject([{ productRef: 'soup', quantity: 1 }])
+})
+
+it('offers a dish after a customer declines the checkout invitation', async () => {
+  const { client, dialogue, execute, facts } = setup('先不要')
+  facts.products.push({ ...facts.products[0], ref: 'soup', name: '魚丸湯' })
+  dialogue.presentService(facts, { purpose: 'review-checkout', request: '', question: '要現在結帳嗎？', choices: [{ id: 'no', description: '繼續點餐' }] })
+  const declined = await prepareBrowserQuestionAnswer(client)
+  expect(await declined!()).toMatchObject({ pendingCustomerChoice: { question: expect.stringContaining('魚丸湯') } })
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_review')).toBe(false)
+})
+
+it('offers a different dish when the customer declines a recommendation', async () => {
+  const { call, client, dialogue, execute, facts } = setup('推薦一下')
+  facts.cart.lines.splice(0)
+  facts.products.push({ ...facts.products[0], ref: 'soup', name: '魚丸湯' })
+  await call('point_to_menu_items', { names: ['雞腿飯'], purpose: 'recommendation' })
+  cleanup.push(beginBrowserCartTask('先不要了', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const declined = await prepareBrowserQuestionAnswer(client)
+  expect(await declined!()).toMatchObject({ pendingCustomerChoice: { question: expect.stringContaining('魚丸湯') } })
+  cleanup.push(beginBrowserCartTask('先不用了', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const declinedAgain = await prepareBrowserQuestionAnswer(client)
+  expect(await declinedAgain!()).toMatchObject({ customerMessage: '已取消這次選餐。' })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add')).toBe(false)
 })
 
 // Report: current redesign review; a later read failure must retain the first verified addition.
@@ -735,6 +803,22 @@ it('dispatches fixed menu navigation with Host-owned empty arguments', async () 
   const { call, execute } = setup('那我不要了')
   expect(await call('return_to_menu', { parameters: '{}' })).toMatchObject({ ok: true })
   expect(execute).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'browser_return_menu' }), {})
+})
+
+// Report: this chat, Nov24; the customer needs a next step after a dead end.
+it('suggests a real menu item when a verified cart is empty', async () => {
+  const { call, facts, dialogue, execute } = setup('看購物車')
+  facts.cart.lines.splice(0)
+  expect(await call('open_cart', {})).toMatchObject({ cart: { lines: [] }, customerMessage: '購物車目前沒有餐點。可以先看看雞腿飯。' })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(execute.mock.calls.map(([tool]) => tool.name).every(name => ['browser_cart_review', 'browser_cart_get'].includes(name))).toBe(true)
+})
+
+it('keeps the empty-cart acknowledgement when no menu item fits the current price limit', async () => {
+  const { call, facts, dialogue } = setup('看購物車')
+  facts.cart.lines.splice(0)
+  dialogue.recommendations.update({ maxUnitPrice: 50 })
+  expect(await call('open_cart', {})).toMatchObject({ cart: { lines: [] }, customerMessage: '購物車目前沒有餐點。' })
 })
 
 // Report: this chat, Nov14 — one recommended dish needs a bound next-step question.
@@ -931,7 +1015,7 @@ it.each(['好', '不要'])('binds checkout guidance after adding, and handles %s
   const result = await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: 1 }] })
   const question = await offerCheckout(client, dialogue, result, () => true)
   expect(execute.mock.calls.at(-1)?.[1]).toEqual({ includeCatalog: false })
-  expect(question).toMatchObject({ question: '還想加點可以直接說餐名。點好了，要結帳嗎？' })
+  expect(question).toMatchObject({ question: '要現在結帳嗎？' })
   expect(facts.cart.lines[0].quantity).toBe(4)
   cleanup.push(beginBrowserCartTask(reply, { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const respond = await prepareBrowserQuestionAnswer(client)
@@ -1177,7 +1261,7 @@ it('retains cart review after a direct Jev answer to the checkout invitation', a
   const { call, client, dialogue, facts, checkout } = setup('雞腿飯一份')
   Object.assign(facts, { page: 'menu', checkout })
   const result = await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: 1 }] })
-  expect(await offerCheckout(client, dialogue, result, () => true)).toMatchObject({ question: '還想加點可以直接說餐名。點好了，要結帳嗎？' })
+  expect(await offerCheckout(client, dialogue, result, () => true)).toMatchObject({ question: '要現在結帳嗎？' })
   cleanup.push(beginBrowserCartTask('好', { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const respond = await prepareBrowserQuestionAnswer(client)
   const receipt = await respond!()

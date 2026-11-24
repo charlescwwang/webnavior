@@ -371,7 +371,7 @@ function setup(labels: { name: string, aliases: string[], category: string }[] =
     if (tool.name === context.name || tool.name === 'browser_state_get')
       return facts
     if (tool.name === 'browser_return_menu')
-      return { ok: true, source: 'browser', page: 'menu', cart: facts.cart }
+      return { ok: true, source: 'browser', status: 'verified', effect: 'none', page: 'menu', cart: facts.cart }
     if (tool.name === present.name)
       return { ok: true, source: 'browser', presentation: { cue: 'shown', products: facts.products.filter(product => Array.isArray(input.productRefs) && input.productRefs.includes(product.ref)).map(({ ref, name, price }) => ({ ref, name, price })) } }
     return { ok: true, source: 'browser', status: 'verified', cart: { version: 'after-add' } }
@@ -581,7 +581,7 @@ it('cancels or supersedes a pending question without a cart write', async () => 
   const { dialogue, facts, answer } = setup()
   dialogue.presentProducts(facts, '餐', '餐一份')
   answer.mockResolvedValueOnce({ kind: 'ANSWER', choiceId: 'cancel', provider: 'system-one' })
-  expect(await dialogue.answer(facts, '不要', async () => facts, () => true)).toMatchObject({ kind: 'receipt', result: { effect: 'none', customerMessage: expect.stringContaining('取消') } })
+  expect(await dialogue.answer(facts, '不要', async () => facts, () => true)).toMatchObject({ kind: 'cancel-selection' })
   expect(await dialogue.answer(facts, '對', async () => facts, () => true)).toBeUndefined()
   dialogue.presentProducts(facts, '餐', '餐一份')
   answer.mockResolvedValueOnce({ kind: 'NEW_REQUEST', provider: 'main' })
@@ -786,21 +786,32 @@ it('waits for the native menu before replacing the entry acknowledgement with or
 })
 
 // Report: this chat, 2026-11-14 — finite cancellation closed PB but left the Host's quantity question alive.
-it('retires the pending question and abandoned search when the finite close tool is selected', async () => {
+it('returns to the menu and guides the customer when they cancel an unfinished selection without a search', async () => {
   const { client, dialogue, facts, begin, context } = setup()
   dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
   begin('不要了')
   const close = { ...context, name: 'browser_close_product' }
   const search = { ...context, name: 'browser_search' }
-  const native = client.execute.getMockImplementation()!
-  client.execute.mockImplementation((tool, input) => [close.name, search.name].includes(tool.name)
-    ? Promise.resolve({ ok: true, source: 'browser', effect: 'none', customerMessage: '已回到完整菜單。' })
-    : native(tool, input))
-  const bound = { tools: readonly(shallowRef([...client.tools.value, close, search])), execute: client.execute }
-  expect(await executeBrowserCartTool(bound, close, {})).toMatchObject({ ok: true })
-  expect(dialogue.hasPending()).toBe(false)
-  expect(client.execute.mock.calls.find(([tool]) => tool.name === search.name)?.[1]).toEqual({ query: '' })
-  expect(client.execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_remove')).toBe(false)
+  const menu = { ...context, name: 'browser_return_menu' }
+  const bound = { tools: readonly(shallowRef([...client.tools.value, close, search, menu])), execute: client.execute }
+  expect(await executeBrowserCartTool(bound, close, {})).toMatchObject({ ok: true, cart: facts.cart, customerMessage: '已取消這次選餐。要來一份甲餐嗎？' })
+  expect(client.execute).toHaveBeenCalledWith(menu, {})
+  expect(client.execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_present' }), expect.objectContaining({ productRefs: ['p-0'] }))
+  expect(client.execute.mock.calls.some(([tool]) => tool.name === search.name)).toBe(false)
+})
+
+it('restores the menu when the bound answer resolver interprets a refusal as cancelling the selection', async () => {
+  const { client, dialogue, facts, begin, context, answer, onRequestComplete } = setup()
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  answer.mockResolvedValueOnce({ kind: 'ANSWER', choiceId: 'cancel', provider: 'main' })
+  begin('這一份先作罷')
+  const menu = { ...context, name: 'browser_return_menu' }
+  const bound = { tools: readonly(shallowRef([...client.tools.value, menu])), execute: client.execute }
+  expect(await executeBrowserCartTool(bound, context, { includeCatalog: true })).toMatchObject({ ok: true, page: 'menu', cart: facts.cart })
+  expect(client.execute).toHaveBeenCalledWith(menu, {})
+  expect(client.execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_present' }), expect.objectContaining({ productRefs: ['p-0'] }))
+  expect(onRequestComplete).toHaveBeenCalledOnce()
+  expect(dialogue.hasPending()).toBe(true)
 })
 
 // Report: this chat, 2026-11-14 — returning to menu should end the navigation demand, including ASR punctuation.
@@ -1140,6 +1151,17 @@ it('retires a repeatedly unresolved submission question without returning a subm
   expect(result).toMatchObject({ kind: 'receipt', result: { code: 'QUESTION_RETRY_LIMIT', effect: 'none', customerMessage: expect.stringContaining('我要結帳') } })
   expect(dialogue.hasPending()).toBe(false)
   expect(dialogue.hasSubmissionQuestion()).toBe(false)
+})
+
+it.each(['cart-review', 'submit-order'] as const)('gives a way to resume after declining %s', async (purpose) => {
+  const { dialogue, facts, answer } = setup()
+  answer.mockResolvedValue({ kind: 'ANSWER', choiceId: 'no', provider: 'main' })
+  dialogue.presentService(facts, { purpose, request: '結帳', question: '要繼續嗎？', choices: [{ id: 'no', description: '暫停' }] })
+  expect(await dialogue.answer(facts, '先不要', async () => facts, () => true)).toMatchObject({
+    kind: 'receipt',
+    result: { effect: 'none', customerMessage: expect.stringContaining('我要結帳') },
+  })
+  expect(dialogue.hasPending()).toBe(false)
 })
 
 it('does not release a newer question when an older unresolved answer finishes late', async () => {

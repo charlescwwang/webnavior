@@ -189,6 +189,20 @@ export function createBrowserDialogue(io: {
     return questions.pending(binding)
   }
 
+  function selectionRefs(pending: NonNullable<ReturnType<typeof questions.pending>>) {
+    if (pending.kind === 'product')
+      return pending.visible.map(product => product.productRef)
+    if (pending.kind === 'quantity')
+      return [pending.product.productRef]
+    if (pending.kind === 'addition')
+      return [pending.proposal.productRef]
+    if (pending.kind === 'slot')
+      return orders.projection(pending.binding)?.map(draft => draft.productRef) ?? [pending.slot.productRef]
+    if (pending.kind === 'order')
+      return pending.proposals.map(proposal => proposal.productRef)
+    return pending.binding.products.filter(product => product.name === pending.name).map(product => product.productRef)
+  }
+
   // Complete only a literal purchase already requested before this choice.
   // Prices/options come from the new observation; an information question or
   // attached preference cannot be turned into a purchase by a short answer.
@@ -212,6 +226,14 @@ export function createBrowserDialogue(io: {
   // Literal answers resolve against the actual issued question, never model
   // prose. Require the whole reply so attached new demands retain Main handling.
   function literalChoice(pending: NonNullable<ReturnType<typeof questions.pending>>, transcript: string) {
+    if (pending.kind === 'service' && ['purchase-recommendation', 'review-checkout'].includes(pending.purpose)
+      && /^(?:不要了|先不要了|先不用了|再看看)[。！!，,\s]*$/.test(transcript.trim())) {
+      return 'no'
+    }
+    if (pending.kind === 'service' && pending.purpose === 'review-checkout'
+      && /^先不結帳[。！!，,\s]*$/.test(transcript.trim())) {
+      return 'no'
+    }
     // Completion acknowledges data entry only. The next step re-reads fields;
     // these phrases never authorize submission or alter the form themselves.
     if (pending.kind === 'service' && pending.purpose === 'invoice-details'
@@ -332,6 +354,12 @@ export function createBrowserDialogue(io: {
       checkoutProgress = undefined
       checkoutObservation = undefined
       releaseQuestion()
+    },
+    /** Current offered or unfinished items, used to avoid repeating them after cancellation. */
+    selectionRefs(raw: unknown) {
+      const binding = snapshot(raw)
+      const pending = binding && questions.pending(binding)
+      return pending ? selectionRefs(pending) : []
     },
     hasPending: () => tables.hasPending() || questions.hasPending() || Boolean(checkoutProgress && !checkoutProgress.suspended && checkoutProgress.owner === io.owner() && checkoutProgress.documentId === io.documentId()),
     /** Recovers only the unchanged, accepted selection of this exact utterance. */
@@ -736,7 +764,7 @@ export function createBrowserDialogue(io: {
         if (selected.purpose === 'cart-review' && selected.choiceId === 'yes')
           return { kind: 'checkout' as const, action: 'invoice-options' as const }
         if (selected.purpose === 'cart-review' && selected.choiceId === 'no')
-          return { kind: 'receipt' as const, result: { ok: true, source: 'browser', effect: 'none', customerMessage: '請告訴我要修改哪道餐點或份數。' } }
+          return { kind: 'receipt' as const, result: { ok: true, source: 'browser', effect: 'none', customerMessage: orderingMessages['zh-Hant'].nextStep.cartReviewDeclined } }
         if (selected.purpose === 'invoice-method')
           return { kind: 'checkout' as const, action: 'invoice' as const, method: selected.choiceId }
         if (checkoutEntryPurposes.has(selected.purpose)) {
@@ -753,7 +781,7 @@ export function createBrowserDialogue(io: {
         }
         if (selected.purpose === 'submit-order' && selected.choiceId === 'no') {
           checkoutProgress = undefined
-          return { kind: 'receipt' as const, result: { ok: true, source: 'browser', effect: 'none', customerMessage: '先不送出，餐點與填寫資料都保留。您可以告訴我要修改什麼。' } }
+          return { kind: 'receipt' as const, result: { ok: true, source: 'browser', effect: 'none', customerMessage: orderingMessages['zh-Hant'].nextStep.submissionDeclined } }
         }
         if (selected.purpose === 'purchase-recommendation' && selected.choiceId === 'yes' && selected.name) {
           const product = fresh.products.filter(product => product.name === selected.name)
@@ -769,6 +797,12 @@ export function createBrowserDialogue(io: {
         if (selected.purpose === 'price-range' && selected.choiceId === 'yes')
           recommendations.update({ clearPrice: true })
         const restored = questions.pending(fresh)
+        if (selected.choiceId === 'no' && !restored) {
+          if (selected.purpose === 'purchase-recommendation')
+            return { kind: 'cancel-selection' as const, excludedRefs: selectionRefs(pending) }
+          if (selected.purpose === 'review-checkout')
+            return { kind: 'continue-browsing' as const }
+        }
         if (selected.choiceId === 'no')
           return { kind: 'receipt' as const, result: restored ? receipt(restored.question) : { ok: true, source: 'browser', effect: 'none', customerMessage: menuNextStep(observed) } }
         return { kind: 'receipt' as const, result: { ok: true, source: 'browser', dataOnly: true, needsAssistant: true, answeredQuestion } }
@@ -785,9 +819,9 @@ export function createBrowserDialogue(io: {
         return { kind: 'order' as const, proposals: selected.proposals, binding: fresh }
       }
       if (selected.kind === 'cancelled') {
+        const excludedRefs = selectionRefs(pending)
         orders.reset()
-        const next = menuNextStep(observed)
-        return { kind: 'receipt' as const, result: { ok: true, source: 'browser', status: 'clarification', code: 'QUESTION_RELEASED', effect: 'none', customerMessage: `已取消這次選餐，購物車保持不變。${next}` } }
+        return { kind: 'cancel-selection' as const, excludedRefs }
       }
       if (selected.kind === 'product')
         return { kind: 'product' as const, product: selected.product, request: pending.kind === 'product' ? pending.request : '', requestTarget: pending.kind === 'product' ? pending.query : undefined, requestedQuantity: undefined, orderSelection: pending.kind === 'product' ? pending.orderSelection : undefined, completePurchase: !!literal && pending.kind === 'product' ? completePurchase(observed, pending.request, selected.product.productRef) : undefined, binding: fresh }

@@ -19,11 +19,13 @@ type State = Pick<RecommendationCriteria, 'category' | 'maxUnitPrice' | 'priceSc
 export function createRecommendationSession(owner: () => string | undefined) {
   let currentOwner: string | undefined
   let state: State = {}
+  const dismissedProductRefs = new Set<string>()
   function snapshot() {
     const next = owner()
     if (next !== currentOwner) {
       currentOwner = next
       state = {}
+      dismissedProductRefs.clear()
     }
     return { ...state, excludedTerms: state.excludedTerms ? [...state.excludedTerms] : undefined }
   }
@@ -60,5 +62,19 @@ export function createRecommendationSession(owner: () => string | undefined) {
       && !criteria.excludedTerms?.some(term => product.name.includes(term))
       && (criteria.maxUnitPrice === undefined || product.configurations.some(configuration => configuration.unitPrice <= criteria.maxUnitPrice!)))
   }
-  return { snapshot, update, filter }
+  return {
+    snapshot,
+    update,
+    filter,
+    // Declining a suggestion only affects automatic follow-ups in this
+    // reception. It does not create a dietary restriction or block a new order.
+    dismissProducts(refs: readonly string[]) {
+      snapshot()
+      refs.forEach(ref => dismissedProductRefs.add(ref))
+    },
+    dismissedProducts() {
+      snapshot()
+      return [...dismissedProductRefs]
+    },
+  }
 }

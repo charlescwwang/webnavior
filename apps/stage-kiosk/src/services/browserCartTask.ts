@@ -33,6 +33,7 @@ import { array, boolean, literal, looseObject, minLength, number, object, option
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { browserWriteToolNameSchema, cartLineLabelSchema, cartSnapshotSchema } from '../../../server/src/services/domain/browser-ordering/contracts'
+import { presentCheckoutInvitation } from './checkoutInvitation'
 import { paymentChoiceFromSpeech, paymentOptionsReply } from './paymentChoice'
 
 interface TaskQuestions {
@@ -551,9 +552,9 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       // A completed navigation still needs a readable vendor receipt before
       // any cart contents can reach Main or speech.
       const rejected = checkBrowserState(task, result)
-      if (rejected)
-        return rejected
-      if (tool.name === 'browser_cart_review' && task.dialogue && typeof result === 'object' && result && 'ok' in result && result.ok === true && 'cart' in result) {
+      if (rejected || tool.name === 'browser_return_menu')
+        return rejected ?? result
+      if (task.dialogue && typeof result === 'object' && result && 'ok' in result && result.ok === true && 'cart' in result) {
         const raw = await executeBrowserTool(client, context, { includeCatalog: false })
         if (active !== task || !task.isCurrent())
           return { ok: false, source: 'host', effect: 'none' }
@@ -577,6 +578,9 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
           return { ...result, ...question, customerMessage: `${receipt.customerMessage}${question.customerMessage}` }
         }
       }
+      const cartReview = safeParse(looseObject({ ok: literal(true), cart: cartSnapshotSchema }), result)
+      if (cartReview.success && !cartReview.output.cart.lines.length)
+        return { ...cartReview.output, customerMessage: await emptyCartMessage(client) }
       return result
     }
     if (task && tool.name === 'browser_observe' && input.purpose === 'information') {
@@ -663,9 +667,19 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         return executeBrowserConfirmedAddition(client)
       }
       if (answer?.kind === 'receipt') {
-        if ('code' in answer.result && ['QUESTION_RELEASED', 'QUESTION_RETRY_LIMIT'].includes(String(answer.result.code)))
+        if ('code' in answer.result && answer.result.code === 'QUESTION_RETRY_LIMIT')
           task.onRequestComplete?.()
         return answer.result
+      }
+      if (answer?.kind === 'cancel-selection') {
+        const cancelled = await cancelBrowserItemSelection(client, { excludedRefs: answer.excludedRefs })
+        if (safeParse(looseObject({ ok: literal(true), status: literal('verified') }), cancelled).success)
+          task.onRequestComplete?.()
+        return cancelled
+      }
+      if (answer?.kind === 'continue-browsing') {
+        return await offerBrowserAlternative(client, facts)
+          ?? { ok: true, source: 'browser', effect: 'none', customerMessage: orderingMessages['zh-Hant'].nextStep.emptyCart }
       }
       if (answer?.kind === 'checkout') {
         if (answer.action === 'submit') {
@@ -735,9 +749,9 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         return { ...asBrowserFacts(facts), selectedProduct: answer.product, originalRequest: answer.request, ...(requestedQuantity === undefined ? {} : { requestedQuantity }), explanation: '顧客已選定這項商品。requestedQuantity 是顧客已回答的份數，存在時原樣採用，未提供時不可預設一份。保留原需求與已收集欄位，使用 browser_order_draft 完成餐點設定；evidence 可引用 originalRequest 或這次已驗證的回答。必要資料齊全後直接加入購物車，不再詢問是否加入；缺少資料時只詢問缺少的欄位。' }
       }
       if (answer?.kind === 'switch-query') {
-        const closed = await cancelBrowserItemSelection(client)
+        const closed = await cancelBrowserItemSelection(client, { followUp: false })
         const search = client.tools.value.find(tool => tool.name === 'browser_search')
-        if (!search || !closed || typeof closed !== 'object' || !('ok' in closed) || closed.ok !== true)
+        if (!answer.query.trim() || !search || !closed || typeof closed !== 'object' || !('ok' in closed) || closed.ok !== true)
           return closed
         return executeBrowserCartTool(client, search, { query: answer.query })
       }
@@ -1061,6 +1075,56 @@ export function filterBrowserRecommendations<T extends { name: string, configura
   return task.dialogue.recommendations.filter(labelCatalog(products, task.catalogLabels?.()))
 }
 
+function suggestedMenuProduct(products: InferOutput<typeof orderingAnswerFactsSchema>['products'], excludedRefs: readonly string[] = []) {
+  const dismissed = active?.dialogue?.recommendations.dismissedProducts() ?? []
+  const excluded = new Set([...excludedRefs, ...dismissed])
+  const candidates = filterBrowserRecommendations(products).filter(product => !excluded.has(product.ref))
+  const refs = active?.presentation?.filterRecommendations(candidates.map(product => product.ref))
+  return candidates.find(product => product.configurations.length === 1 && (refs === undefined || refs.includes(product.ref))
+    && products.filter(candidate => pbProductName(candidate.name) === pbProductName(product.name)).length === 1)
+}
+
+async function offerBrowserAlternative(client: BrowserClient, observed?: unknown) {
+  const task = active
+  const present = client.tools.value.find(tool => tool.name === 'browser_present')
+  if (!task?.dialogue || !task.isCurrent() || !present || task.dialogue.hasPending())
+    return
+  try {
+    const raw = observed ?? await readBrowserOrderingFacts(client)
+    const facts = safeParse(looseObject({ ...orderingAnswerFactsSchema.entries, page: literal('menu'), cart: pbCartStateSchema }), raw)
+    if (active !== task || !task.isCurrent() || !facts.success)
+      return
+    const cartRefs = facts.output.cart.lines.flatMap(line => line.productRef ? [line.productRef] : [])
+    const product = suggestedMenuProduct(facts.output.products, cartRefs)
+    if (!product)
+      return
+    const result = await executeBrowserCartTool(client, present, { productRefs: [product.ref], mode: 'recommendation' })
+    const offered = safeParse(looseObject({ ok: literal(true), customerMessage: string(), pendingCustomerChoice: looseObject({ question: string() }) }), result)
+    if (active === task && task.isCurrent() && offered.success)
+      return offered.output
+  }
+  catch {
+    // A follow-up recommendation is optional once the original operation has settled.
+  }
+}
+
+async function emptyCartMessage(client: BrowserClient, observed?: unknown) {
+  const task = active
+  const copy = orderingMessages['zh-Hant'].nextStep
+  if (!task?.dialogue || task.dialogue.hasPending())
+    return copy.cartIsEmpty
+  // This optional suggestion is based on the current catalog. A read failure
+  // must not replace the verified empty-cart reply or create a purchase question.
+  const raw = observed ?? await readBrowserOrderingFacts(client).catch(() => undefined)
+  if (active !== task || !task.isCurrent())
+    return copy.cartIsEmpty
+  const facts = safeParse(looseObject({ ...orderingAnswerFactsSchema.entries, cart: cartSnapshotSchema }), raw)
+  if (!facts.success || facts.output.cart.lines.length)
+    return copy.cartIsEmpty
+  const product = suggestedMenuProduct(facts.output.products)
+  return product ? `${copy.cartIsEmpty}${copy.suggestDish.replace('{dish}', pbProductName(product.name))}` : copy.cartIsEmpty
+}
+
 /** Builds one finite follow-up from current website facts; no model-authored question text. */
 export async function askBrowserCustomerQuestion(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, input: { questionType: string, name?: string, quantity?: number, query?: string }) {
   const task = active
@@ -1118,24 +1182,57 @@ export async function askBrowserCustomerQuestion(client: Pick<ReturnType<typeof 
   return task.dialogue.presentService(raw, { purpose: input.questionType, name: input.name, quantity: input.quantity, query: input.query, request: task.transcript, question, choices })
 }
 
-/** Cancels only the current unadded selection and closes its native window. */
-export async function cancelBrowserItemSelection(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>) {
+/** Returns an unfinished selection to the full menu with a verified cart receipt. */
+export async function cancelBrowserItemSelection(client: BrowserClient, options: { followUp?: false, excludedRefs?: readonly string[] } = {}) {
   const task = active
-  const close = client.tools.value.find(tool => tool.name === 'browser_close_product')
-  if (!task || !task.isCurrent() || !close)
+  const menu = client.tools.value.find(tool => tool.name === 'browser_return_menu')
+  if (!task || !task.isCurrent() || !menu)
     throw new Error('目前無法取消選餐。')
-  let result = await executeBrowserTool(client, close, {})
-  const search = client.tools.value.find(tool => tool.name === 'browser_search')
-  if (result && typeof result === 'object' && 'ok' in result && result.ok === true && search)
-    result = await executeBrowserTool(client, search, { query: '' })
-  const receipt = parse(looseObject({ ok: boolean() }), result)
-  if (active === task && task.isCurrent() && receipt.ok) {
-    task.dialogue?.reset()
-    task.selected = undefined
-    task.confirmed = undefined
-    task.confirmedOrder = undefined
+  let excludedRefs = options.excludedRefs
+  if (options.followUp !== false && excludedRefs === undefined && task.dialogue && client.tools.value.some(tool => tool.name === 'browser_present')) {
+    // Capture the old selection before the native menu return closes it.
+    try {
+      const observed = await readBrowserOrderingFacts(client)
+      const facts = parse(looseObject({ ...orderingAnswerFactsSchema.entries, productDialog: optional(array(looseObject({ name: string() }))) }), observed)
+      const names = new Set(facts.productDialog?.map(dialog => dialog.name))
+      excludedRefs = [...task.dialogue.selectionRefs(observed), ...facts.products.filter(product => names.has(product.name)).map(product => product.ref)]
+    }
+    catch {
+      // Missing evidence only suppresses the optional alternative.
+    }
   }
-  return result
+  if (active !== task || !task.isCurrent())
+    return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
+  const result = await executeBrowserTool(client, menu, {})
+  if (active !== task || !task.isCurrent())
+    return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
+  const receipt = safeParse(looseObject({ ok: literal(true), page: literal('menu'), cart: cartSnapshotSchema }), result)
+  if (!receipt.success)
+    return result
+  task.dialogue?.reset()
+  task.selected = undefined
+  task.confirmed = undefined
+  task.confirmedOrder = undefined
+  const copy = orderingMessages['zh-Hant'].nextStep
+  const cancelled = { ...receipt.output, customerMessage: copy.selectionCancelled }
+  if (options.followUp === false || !task.dialogue)
+    return cancelled
+  task.dialogue.recommendations.dismissProducts(excludedRefs ?? [])
+  if (receipt.output.cart.lines.length && client.tools.value.some(tool => tool.name === 'browser_cart_review')) {
+    try {
+      const invitation = presentCheckoutInvitation(task.dialogue, receipt.output)
+      return { ...cancelled, pendingCustomerChoice: invitation.pendingCustomerChoice, customerMessage: `${copy.selectionCancelled}${invitation.customerMessage}` }
+    }
+    catch {
+      return cancelled
+    }
+  }
+  if (!receipt.output.cart.lines.length && excludedRefs?.length) {
+    const offered = await offerBrowserAlternative(client)
+    if (offered)
+      return { ...offered, ...cancelled, pendingCustomerChoice: offered.pendingCustomerChoice, customerMessage: `${copy.selectionCancelled}${offered.customerMessage}` }
+  }
+  return cancelled
 }
 
 /** Refreshes one task's model context without consuming answers or changing the page. */
@@ -1513,7 +1610,7 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
     return denied
   const facts = parse(looseObject({ ...orderingAnswerFactsSchema.entries, cart: cartSnapshotSchema }), raw)
   if (!facts.cart.lines.length)
-    return { ok: true, source: 'browser', effect: 'none', customerMessage: '購物車目前沒有餐點。想點哪一道？' }
+    return { ok: true, source: 'browser', effect: 'none', customerMessage: await emptyCartMessage(client, facts) }
   const pendingStep = task.dialogue.checkoutStep(raw)
   // A checked native radio only describes the website's form default. Until
   // this visitor enters a later checkout step, continuing must ask the actual

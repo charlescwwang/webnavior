@@ -840,12 +840,16 @@ export function createPbService() {
         await controls.close()
         await controls.navigate(journey.menuPath)
         const catalog = await readCatalog(undefined, false)
-        await controls.search('', () => catalog.every(product => observe().products.some(visible => visible.name === product.name)))
+        await controls.search('', () => {
+          const visible = observe().products.map(product => product.name)
+          return catalog.every(product => visible.includes(product.name))
+        })
         presentation.cancel()
         const after = await readCart()
         if (JSON.stringify(before) !== JSON.stringify(after))
           return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '已返回菜單，但購物車內容有變動，請先重新核對。' }
-        const receipt = { ok: true, source: 'browser', status: 'verified', effect: 'none', page: 'menu', cart: cartOperations.publish(after), customerMessage: '已清除搜尋，回到完整菜單。想點哪道餐點？也可以請我推薦。' }
+        const copy = orderingMessages['zh-Hant'].nextStep
+        const receipt = { ok: true, source: 'browser', status: 'verified', effect: 'none', page: 'menu', cart: cartOperations.publish(after), customerMessage: `${copy.menuRestored}${after.lines.length ? copy.withCart : ''}` }
         parse(pbEditorStateSchema, receipt)
         return receipt
       }
@@ -1036,9 +1040,9 @@ export function createPbService() {
           await controls.close()
           await controls.search('')
         }
-        const search = document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')
         const after = await readCart()
-        if (drafts.some(dialog => dialog.getClientRects().length > 0) || (!atTable && search?.value !== '') || after.lines.length || after.subtotal !== 0)
+        const search = document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')
+        if (drafts.some(dialog => dialog.getClientRects().length > 0) || (!atTable && search?.value) || after.lines.length || after.subtotal !== 0)
           throw new Error('換客期間的商品視窗或購物車尚未確認，請工作人員查看。')
         // Keep the previous warning through the final verification so a failed
         // reset can still be audited when the operator retries Restart.
@@ -1166,7 +1170,7 @@ export function createPbService() {
         if (purpose === 'choose_product' && snapshot.products.length)
           customerMessage = `請問您要${snapshot.products.map(product => pbProductName(product.name)).join('、')}，哪一項？`
         if (name === 'browser_search' && typeof input.query === 'string' && !input.query.trim())
-          customerMessage = '已清除搜尋，回到目前完整菜單。您可以看看其他餐點，或告訴我想找什麼。'
+          customerMessage = orderingMessages['zh-Hant'].nextStep.menuRestored
       }
       if (name === 'browser_search' && snapshot.products.length === 0) {
         // Missing results are information, not an issued customer question.
