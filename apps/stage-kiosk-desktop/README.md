@@ -514,3 +514,7 @@ Use the full RC7 portable folder with the paired Kiosk frontend for PB checkout 
 ## Windows 0.7.8-rc.8
 
 RC8 adds spoken payment choices and switching for the same pending PB order. Card entry, login, scanning and payment authorization remain customer actions. Exit the running Kiosk and extract the complete Windows x64 portable ZIP into a new folder before launching it.
+
+## Windows 0.7.8-rc.9
+
+Use the RC9 portable folder with the paired Kiosk frontend for visible cart verification, return to the menu after removing the last item, and local menu-entry diagnostics. Speech recognition and progress now appear in the avatar's thought bubble. Exit the previous executable before launching RC9.
