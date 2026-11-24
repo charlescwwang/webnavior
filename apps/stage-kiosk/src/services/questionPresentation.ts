@@ -10,7 +10,7 @@ import { nativeOrderingToolName } from '@proj-airi/stage-shared/ordering-tools'
 import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { describePbMeal, pbBasicServing, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { serviceOperationSchema } from '@proj-airi/stage-shared/service-operation'
-import { safeParse } from 'valibot'
+import { literal, looseObject, safeParse, string } from 'valibot'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 
@@ -27,6 +27,9 @@ export function browserRecoveryReply(input: { operationAttempted: boolean, effec
     // guidance without replacing it with an instruction to edit/retry the cart.
     return { role: 'assistant' as const, recovery: true as const, content: submission.output.customerMessage }
   }
+  const rechecked = safeParse(looseObject({ source: literal('browser'), status: literal('unknown'), reason: literal('cart-rechecked'), customerMessage: string() }), input.receipt)
+  if (!input.orderUnconfirmed && rechecked.success)
+    return { role: 'assistant' as const, recovery: true as const, content: rechecked.output.customerMessage }
   if (!input.orderUnconfirmed && input.effect && input.effect !== 'unknown') {
     if (input.verifiedMessage && input.effect !== 'partial')
       return { role: 'assistant' as const, recovery: true as const, content: input.verifiedMessage }

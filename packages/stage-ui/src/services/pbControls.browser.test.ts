@@ -81,6 +81,45 @@ it('uses the guest journey 加點 link without pressing quantity controls or cle
   await expect(controls.navigate('/order/store/other/internal_use/menu')).rejects.toThrow('approved journey')
 })
 
+it('presses the merchant cart, checks the rendered servings and returns to menu', async () => {
+  const { controls, operation } = setup()
+  const menu = location.pathname
+  const cart = menu.replace(/menu$/, 'orders/create')
+  document.body.innerHTML = '<button>去結算</button>'
+  document.querySelector('button')!.onclick = () => {
+    history.pushState({ page: { url: cart } }, '', cart)
+    document.body.innerHTML = `<main class="order-create"><div class="produce-item"><h3>蝦捲 <span>$40</span></h3><div class="product-attr"><div><div class="ml-4"></div></div><div class="ml-4"></div></div><input type="number" value="2"></div><a href="${menu}">繼續點餐</a></main>`
+    document.querySelector('a')!.onclick = (event) => {
+      event.preventDefault()
+      history.pushState({}, '', menu)
+      document.body.innerHTML = '<input placeholder="搜尋品項，例如：拿鐵、雞腿、套餐">'
+    }
+  }
+  const snapshot = { context: { date: 'today', time: 'noon', manualRevision: 0 }, subtotal: 80, lines: [{ name: '蝦捲', productRef: 'shrimp', ref: 'row', configuration: '', quantity: 2, unitPrice: 40, options: [] }] }
+  const result = await controls.inspectCart(async (page) => {
+    expect(location.pathname).toBe(cart)
+    expect(page).toMatchObject({ url: cart })
+    return snapshot
+  })
+  expect(result).toEqual(snapshot)
+  expect(location.pathname).toBe(menu)
+  expect(operation.snapshot().steps.map(step => step.label)).toEqual(['查看購物車', '返回菜單'])
+})
+
+it('inspects a customer-opened empty cart in place', async () => {
+  const cart = '/order/store/1kgJeql/pick_up/orders/create'
+  history.replaceState({ page: { url: cart } }, '', cart)
+  document.body.innerHTML = '<main class="order-create">購物車是空的</main>'
+  const controller = new AbortController()
+  const follow = vi.fn()
+  const operation = createOperation({ documentId: 'cart', operationId: 'read', signal: controller.signal, follow })
+  const controls = createControls(operation, controller.signal)
+  const snapshot = { lines: [], subtotal: 0, context: { date: 'today', time: 'noon', manualRevision: 0 } }
+  expect(await controls.inspectCart(async () => snapshot)).toEqual(snapshot)
+  expect(follow).not.toHaveBeenCalled()
+  expect(location.pathname).toBe(cart)
+})
+
 // Report: this chat, Nov15; the first clear after cold PB entry can precede its rendered controls.
 it('waits for the checkout link and cart clear button to render before one verified clear', async () => {
   const { controls, operation } = setup()
@@ -336,6 +375,32 @@ it('returns from the empty cart through its actual order button once', async () 
   expect(location.pathname.endsWith('/menu')).toBe(true)
   expect(operation.snapshot().steps).toHaveLength(1)
   expect(operation.snapshot().steps[0]).toMatchObject({ action: 'navigate', state: 'completed' })
+})
+
+it('waits for PB to replace the old continue link after the last removal', async () => {
+  const { controls, operation } = setup()
+  const menu = location.pathname
+  history.replaceState({}, '', menu.replace(/menu$/, 'orders/create'))
+  document.body.innerHTML = `<main class="order-create"><div class="produce-item">便當</div><a href="${menu}">加點</a></main>`
+  const staleClick = vi.fn((event: Event) => event.preventDefault())
+  document.querySelector('a')!.addEventListener('click', staleClick)
+  const finish = vi.fn(() => {
+    history.pushState({}, '', menu)
+    document.body.innerHTML = '<input placeholder="搜尋品項，例如：拿鐵、雞腿、套餐">'
+  })
+  const timer = setTimeout(() => {
+    document.querySelector('main')!.innerHTML = '<h2>購物車是空的</h2><button>立即點餐</button>'
+    document.querySelector('button')!.onclick = finish
+  }, 100)
+  try {
+    await controls.navigate(menu, { fromEmptyCart: true })
+    expect(staleClick).not.toHaveBeenCalled()
+    expect(finish).toHaveBeenCalledOnce()
+    expect(operation.snapshot().steps).toMatchObject([{ action: 'navigate', state: 'completed' }])
+  }
+  finally {
+    clearTimeout(timer)
+  }
 })
 
 it('does not accept a merchant write when takeover occurs during its last asynchronous check', async () => {

@@ -7,6 +7,12 @@ import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
 import { browserRecoveryReply, createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
 
+it('answers from the cart recheck when a quantity change is still unsettled', () => {
+  const customerMessage = '目前購物車：蝦捲 1 份。'
+  const result = browserRecoveryReply({ operationAttempted: true, receipt: { source: 'browser', status: 'unknown', reason: 'cart-rechecked', customerMessage } })
+  expect(result.content).toBe(customerMessage)
+})
+
 // Report: this chat Nov17 — invoice/notification errors repeatedly told the customer to open the cart.
 it('preserves an actionable known rejection without appending generic cart recovery', () => {
   const result = browserRecoveryReply({ operationAttempted: false, verifiedMessage: '請先填寫通知手機。' })

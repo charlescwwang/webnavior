@@ -1266,6 +1266,10 @@ binding does not infer ownership of PB's cart.
 
 Each write requires the latest cart version, current product/line reference and
 whole-cart readback. Replacement verifies the new item before removing the original.
+If a single cart edit loses its receipt, the on-screen hand opens the merchant cart and checks the displayed servings
+against the cart page data. It returns to the menu if the customer started there. An exact match confirms the edit. If the same order still
+shows different quantities, its observed contents can be reported while further
+writes stay blocked. This check does not repeat the click.
 Unknown writes persist a store-scoped pause marker in the dedicated profile and
 remain paused across reloads; this prototype has no automatic or model-controlled
 unlock. Fresh reads do not prove an unknown operation never happened.

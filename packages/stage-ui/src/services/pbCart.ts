@@ -69,6 +69,8 @@ export interface PreparedItem extends Omit<CartLine, 'ref' | 'quantity'> {
 
 /** IO belongs to the PB browser adapter; reconciliation and retry policy live here. */
 export interface CartGateway {
+  /** Open the merchant cart and verify its displayed rows after an uncertain click. */
+  inspect: () => Promise<CartSnapshot>
   read: () => Promise<CartSnapshot>
   /** Clear all unsubmitted rows through the native control, bound to this fresh snapshot. */
   clear: (before: CartSnapshot, onDispatch: () => void) => Promise<CartSnapshot | void>
@@ -278,94 +280,117 @@ export function createCartOperations(gateway: CartGateway) {
         const onDispatch = () => {
           dispatched = true
         }
-        let committedCart: CartSnapshot | undefined
-        if (prepared) {
-          committedCart = await prepared.commit(onDispatch)
-        }
-        else if (group.length > 1) {
-          // Equivalent rows are fungible only within this admitted group. Remove
-          // redundant rows and keep the requested total on the surviving row.
-          // Remove the redundant rows before setting the final count, so that
-          // the new count cannot create an indistinguishable name/price/quantity
-          // pair for a subsequent native deletion.
-          //
-          // Verify every intermediate full snapshot, so a touch/context change
-          // stops the sequence rather than silently rebasing the remaining IO.
-          let stage = before
-          let rows = stage.lines.filter(line => refs.includes(line.ref))
-          while (rows.length > (operation === 'quantity' ? 1 : 0)) {
-            if (fingerprint(await gateway.read()) !== fingerprint(stage))
-              throw new Error('合計調整期間購物車已變更。')
-            const row = rows.at(-1)!
-            const next = await gateway.remove(row.ref, onDispatch, refs) ?? await gateway.read()
-            if (!verifyCartRowEdit(stage, next, row.ref, 0, refs))
-              throw new Error('合計調整的中途結果尚未確認。')
-            stage = next
-            committedCart = next
-            rows = stage.lines.filter(line => refs.includes(line.ref))
+        let after: CartSnapshot
+        try {
+          let committedCart: CartSnapshot | undefined
+          if (prepared) {
+            committedCart = await prepared.commit(onDispatch)
           }
-          if (operation === 'quantity') {
-            target = rows[0]
-            if (fingerprint(await gateway.read()) !== fingerprint(stage))
-              throw new Error('合計調整期間購物車已變更。')
-            committedCart = await gateway.setQuantity(target.ref, quantity, onDispatch) ?? await gateway.read()
-            if (!verifyCartRowEdit(stage, committedCart, target.ref, quantity))
-              throw new Error('合計調整的最後份數尚未確認。')
-          }
-        }
-        else if (operation === 'quantity') {
-          committedCart = await gateway.setQuantity(target!.ref, quantity, onDispatch) ?? undefined
-        }
-        else {
-          committedCart = await gateway.remove(target!.ref, onDispatch) ?? undefined
-        }
-
-        // Native controls return the full observation that verified their last click.
-        let after = committedCart ?? await gateway.read()
-        // The first add legitimately creates an order identity. This exception
-        // applies only to an empty, identity-free cart; pickup/manual generation
-        // and the entire requested effect are still verified below.
-        const expectedContext = prepared && !before.lines.length && !before.context.orderRef
-          ? { ...before.context, orderRef: after.context.orderRef }
-          : before.context
-        if (after.context.orderRef !== expectedContext.orderRef || after.context.date !== expectedContext.date || after.context.time !== expectedContext.time || after.context.tableName !== expectedContext.tableName || after.context.manualRevision !== expectedContext.manualRevision)
-          throw new Error('購物車取餐情境或人工操作已變更。')
-        if (prepared) {
-          if (!verifyAddition(before, after, prepared, quantity))
-            throw new Error('PB 加購後的內容與預期不一致。')
-          if (operation === 'replace') {
-            const added = after
-            verifiedAddition = added
-            // Source rows are equivalent only within this admitted group. Keep
-            // earlier rows intact where possible, removing servings from the end;
-            // this preserves per-serving extras/notes and avoids a >99 anchor.
-            let remaining = sourceQuantity - retainQuantity
-            let stage = added
-            while (remaining) {
-              const line = stage.lines.filter(line => refs.includes(line.ref)).at(-1)!
+          else if (group.length > 1) {
+            // Equivalent rows are fungible only within this admitted group. Remove
+            // redundant rows and keep the requested total on the surviving row.
+            // Remove the redundant rows before setting the final count, so that
+            // the new count cannot create an indistinguishable name/price/quantity
+            // pair for a subsequent native deletion.
+            //
+            // Verify every intermediate full snapshot, so a touch/context change
+            // stops the sequence rather than silently rebasing the remaining IO.
+            let stage = before
+            let rows = stage.lines.filter(line => refs.includes(line.ref))
+            while (rows.length > (operation === 'quantity' ? 1 : 0)) {
               if (fingerprint(await gateway.read()) !== fingerprint(stage))
-                throw new Error('替換中途購物車已變更。')
-              const removed = Math.min(remaining, line.quantity)
-              const kept = line.quantity - removed
-              const edited = kept
-                ? await gateway.setQuantity(line.ref, kept, onDispatch, refs)
-                : await gateway.remove(line.ref, onDispatch, refs)
-              after = edited ?? await gateway.read()
-              if (!verifyCartRowEdit(stage, after, line.ref, kept, refs))
-                throw new Error('新餐已加入，但原餐調整結果尚未確認。')
-              stage = after
-              remaining -= removed
+                throw new Error('合計調整期間購物車已變更。')
+              const row = rows.at(-1)!
+              const next = await gateway.remove(row.ref, onDispatch, refs) ?? await gateway.read()
+              if (!verifyCartRowEdit(stage, next, row.ref, 0, refs))
+                throw new Error('合計調整的中途結果尚未確認。')
+              stage = next
+              committedCart = next
+              rows = stage.lines.filter(line => refs.includes(line.ref))
+            }
+            if (operation === 'quantity') {
+              target = rows[0]
+              if (fingerprint(await gateway.read()) !== fingerprint(stage))
+                throw new Error('合計調整期間購物車已變更。')
+              committedCart = await gateway.setQuantity(target.ref, quantity, onDispatch) ?? await gateway.read()
+              if (!verifyCartRowEdit(stage, committedCart, target.ref, quantity))
+                throw new Error('合計調整的最後份數尚未確認。')
             }
           }
+          else if (operation === 'quantity') {
+            committedCart = await gateway.setQuantity(target!.ref, quantity, onDispatch) ?? undefined
+          }
+          else {
+            committedCart = await gateway.remove(target!.ref, onDispatch) ?? undefined
+          }
+
+          // Native controls return the full observation that verified their last click.
+          after = committedCart ?? await gateway.read()
+          // The first add legitimately creates an order identity. This exception
+          // applies only to an empty, identity-free cart; pickup/manual generation
+          // and the entire requested effect are still verified below.
+          const expectedContext = prepared && !before.lines.length && !before.context.orderRef
+            ? { ...before.context, orderRef: after.context.orderRef }
+            : before.context
+          if (after.context.orderRef !== expectedContext.orderRef || after.context.date !== expectedContext.date || after.context.time !== expectedContext.time || after.context.tableName !== expectedContext.tableName || after.context.manualRevision !== expectedContext.manualRevision)
+            throw new Error('購物車取餐情境或人工操作已變更。')
+          if (prepared) {
+            if (!verifyAddition(before, after, prepared, quantity))
+              throw new Error('PB 加購後的內容與預期不一致。')
+            if (operation === 'replace') {
+              const added = after
+              verifiedAddition = added
+              // Source rows are equivalent only within this admitted group. Keep
+              // earlier rows intact where possible, removing servings from the end;
+              // this preserves per-serving extras/notes and avoids a >99 anchor.
+              let remaining = sourceQuantity - retainQuantity
+              let stage = added
+              while (remaining) {
+                const line = stage.lines.filter(line => refs.includes(line.ref)).at(-1)!
+                if (fingerprint(await gateway.read()) !== fingerprint(stage))
+                  throw new Error('替換中途購物車已變更。')
+                const removed = Math.min(remaining, line.quantity)
+                const kept = line.quantity - removed
+                const edited = kept
+                  ? await gateway.setQuantity(line.ref, kept, onDispatch, refs)
+                  : await gateway.remove(line.ref, onDispatch, refs)
+                after = edited ?? await gateway.read()
+                if (!verifyCartRowEdit(stage, after, line.ref, kept, refs))
+                  throw new Error('新餐已加入，但原餐調整結果尚未確認。')
+                stage = after
+                remaining -= removed
+              }
+            }
+          }
+          else {
+            const expected = before.lines.flatMap(line => !refs.includes(line.ref)
+              ? [line]
+              : operation === 'quantity' && line.ref === target!.ref ? [{ ...line, quantity }] : [])
+            const originalQuantity = group.reduce((sum, line) => sum + line.quantity, 0)
+            const subtotal = (Math.round(before.subtotal * 100) + Math.round(target!.unitPrice * 100) * ((operation === 'remove' ? 0 : quantity) - originalQuantity)) / 100
+            if (fingerprint(after) !== fingerprint({ context: before.context, lines: expected, subtotal }))
+              throw new Error('PB 修改後的內容與預期不一致。')
+          }
         }
-        else {
-          const expected = before.lines.flatMap(line => !refs.includes(line.ref)
-            ? [line]
-            : operation === 'quantity' && line.ref === target!.ref ? [{ ...line, quantity }] : [])
-          const originalQuantity = group.reduce((sum, line) => sum + line.quantity, 0)
-          const subtotal = (Math.round(before.subtotal * 100) + Math.round(target!.unitPrice * 100) * ((operation === 'remove' ? 0 : quantity) - originalQuantity)) / 100
-          if (fingerprint(after) !== fingerprint({ context: before.context, lines: expected, subtotal }))
-            throw new Error('PB 修改後的內容與預期不一致。')
+        catch (error) {
+          if (!dispatched || !pendingVerification)
+            throw error
+          // After a lost receipt, the same full-cart proof can finish the
+          // original action. Only its readback is retried.
+          const fresh = await gateway.inspect().catch(() => undefined)
+          if (!fresh)
+            throw error
+          if (!pendingVerification(fresh)) {
+            const context = before.context
+            if (fresh.context.orderRef !== context.orderRef || fresh.context.tableName !== context.tableName
+              || fresh.context.date !== context.date || fresh.context.time !== context.time || fresh.context.manualRevision !== context.manualRevision) {
+              throw error
+            }
+            uncertain = true
+            const customerMessage = fresh.lines.length ? `目前購物車：${describeCartLines(fresh.lines)}。` : '購物車目前是空的。'
+            return { ok: false, status: 'unknown', effect: 'unknown', reason: 'cart-rechecked', customerMessage, error: errorMessageFrom(error) }
+          }
+          after = fresh
         }
         pendingVerification = undefined
         const cart = publish(after)

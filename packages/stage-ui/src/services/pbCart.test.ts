@@ -7,6 +7,7 @@ import { createCartOperations, readCartPage, verifyCartRowEdit } from './pbCart'
 function setup() {
   let cart: CartSnapshot = { context: { orderRef: 'order', date: 'today', time: 'noon', manualRevision: 0 }, lines: [{ ref: 'old', productRef: 'p-old', name: '原餐', quantity: 1, unitPrice: 17, configuration: 'original' }], subtotal: 17 }
   const gateway: CartGateway = {
+    inspect: vi.fn(async () => gateway.read()),
     canEdit: vi.fn(() => true),
     read: vi.fn(async () => structuredClone(cart)),
     clear: vi.fn(async (_before, onDispatch) => {
@@ -397,6 +398,7 @@ describe('pb cart operations', () => {
   it('compares decimal prices in currency minor units', async () => {
     let current: CartSnapshot = { context: { orderRef: 'decimal', date: 'today', time: 'noon', manualRevision: 0 }, lines: [{ ref: 'decimal', productRef: 'today', name: '每日商品', quantity: 2, unitPrice: 0.1, configuration: '' }], subtotal: 0.2 }
     const gateway: CartGateway = {
+      inspect: async () => structuredClone(current),
       canEdit: () => true,
       clear: async () => { throw new Error('unused') },
       read: async () => current,
@@ -486,7 +488,7 @@ describe('pb cart operations', () => {
     const { operations, gateway } = setup()
     gateway.setQuantity = vi.fn(async (_ref, _quantity, onDispatch) => onDispatch())
     const cart = await operations.observe()
-    expect(await operations.execute({ action: 'quantity', version: cart.version, lineRef: 'old', quantity: 2, note: '' })).toMatchObject({ status: 'unknown' })
+    expect(await operations.execute({ action: 'quantity', version: cart.version, lineRef: 'old', quantity: 2, note: '' })).toMatchObject({ status: 'unknown', reason: 'cart-rechecked', customerMessage: expect.stringContaining('原餐') })
     expect(operations.canRecover()).toBe(false)
   })
 
@@ -550,6 +552,7 @@ describe('pb empty order lifecycle', () => {
   it.each(['created-order', 'changed-pickup', 'changed-manual', 'changed-table'])('verifies first add while protecting context: %s', async (transition) => {
     let cart: CartSnapshot = { lines: [], subtotal: 0, context: { ...pickup, manualRevision: 0, tableName: 'A1 桌' } }
     const operations = createCartOperations({
+      inspect: async () => structuredClone(cart),
       canEdit: () => true,
       clear: async () => { throw new Error('unused') },
       read: async () => structuredClone(cart),
@@ -567,30 +570,37 @@ describe('pb empty order lifecycle', () => {
 })
 
 // Report: this chat, Nov17 — the cart was locked permanently after a successful native add lost its readback.
-it('reconciles only the exact expected cart after a failed readback without replaying the add', async () => {
+it.each([1, 2])('rechecks a lost add receipt without replaying it (%i unavailable reads)', async (failures) => {
   const { gateway, operations } = setup()
   const originalPrepare = gateway.prepare
   const originalRead = gateway.read
-  let rejectRead = false
+  let unavailableReads = 0
   let commits = 0
   gateway.prepare = async (input) => {
     const prepared = await originalPrepare(input)
     return { ...prepared, commit: async (onDispatch) => {
       await prepared.commit(onDispatch)
       commits++
-      rejectRead = true
+      unavailableReads = failures
       return gateway.read()
     } }
   }
   gateway.read = async () => {
-    if (rejectRead) {
-      rejectRead = false
+    if (unavailableReads > 0) {
+      unavailableReads--
       throw new Error('Invalid type: Expected string but received null')
     }
     return originalRead()
   }
   const before = await operations.observe()
-  expect(await operations.execute({ action: 'add', version: before.version, productRef: 'p-new', quantity: 1, unitPrice: 23, note: '', selection: { version: 'config', variantRef: '', choices: [] } })).toMatchObject({ status: 'unknown' })
+  const result = await operations.execute({ action: 'add', version: before.version, productRef: 'p-new', quantity: 1, unitPrice: 23, note: '', selection: { version: 'config', variantRef: '', choices: [] } })
+  expect(commits).toBe(1)
+  if (failures === 1) {
+    expect(result).toMatchObject({ ok: true, status: 'verified', effectMessage: '已加入當日新品 1 份。', cart: { subtotal: 40 } })
+    expect(operations.canRecover()).toBe(true)
+    return
+  }
+  expect(result.status).toBe('unknown')
   expect(operations.canRecover()).toBe(false)
   const after = await gateway.read()
   expect(operations.verifyPending({ ...after, subtotal: after.subtotal + 23 })).toBe(false)

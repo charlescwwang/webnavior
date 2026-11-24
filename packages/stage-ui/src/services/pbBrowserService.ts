@@ -351,7 +351,10 @@ export function createPbService() {
   }
 
   async function readCart() {
-    const props = await pageProps('orders/create')
+    return cartFromPageProps(await pageProps('orders/create'))
+  }
+
+  async function cartFromPageProps(props: Record<string, unknown>) {
     const persistedPickup = safeParse(looseObject({ pick_up_date: string(), pick_up_time: string() }), props.order)
     const pickup = !persistedPickup.success
       ? parse(looseObject({ defaultPickUpDate: string(), defaultPickUpTime: string() }), await pageProps(`menu${location.search}`))
@@ -431,6 +434,22 @@ export function createPbService() {
   }
 
   const cartOperations = createCartOperations({
+    inspect: async () => {
+      if (!currentControls)
+        throw new Error('缺少目前畫面操作。')
+      return currentControls.inspectCart(async (value) => {
+        assertScope()
+        const page = parse(looseObject({ component: literal('Order/Create'), url: string(), props: looseObject({
+          storeHash: literal(journey.store),
+          flowType: literal(journey.flow),
+          auth: optional(looseObject({ user: optional(unknown()) })),
+          buyer: optional(looseObject({ type: string() })),
+        }) }), value)
+        if (new URL(page.url, location.origin).href !== location.href || (!page.props.auth?.user && (journey.buyer !== 'guest' || page.props.buyer?.type !== 'cookie')))
+          throw new Error('購物車畫面與目前點餐資料不符。')
+        return cartFromPageProps(page.props)
+      })
+    },
     read: readCart,
     clear: async (before, onDispatch) => {
       if (!currentControls)
@@ -959,7 +978,7 @@ export function createPbService() {
             // Editing on checkout must not detour through the menu: PB rebuilds
             // invoice/contact drafts when checkout is entered again. The cart
             // coordinator already verified the edited row and fresh server cart.
-            await controls.navigate(returnToCart ? journey.cartPath : journey.menuPath)
+            await controls.navigate(returnToCart ? journey.cartPath : journey.menuPath, { fromEmptyCart: result.cart.lines.length === 0 })
             await controls.ready(() => {
               if (returnToCart)
                 return Boolean(document.querySelector('.order-create'))

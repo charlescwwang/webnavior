@@ -1,7 +1,7 @@
 import type { ProductConfiguration, ProductSelection } from '@proj-airi/stage-shared/product-configuration'
 import type { ServiceAction, ServiceStep } from '@proj-airi/stage-shared/service-operation'
 
-import type { CartLine } from './pbCart'
+import type { CartLine, CartSnapshot } from './pbCart'
 import type { createOperation } from './pbOperation'
 
 import { resolveSelection } from './pbProduct'
@@ -126,6 +126,7 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
   const match = location.pathname.match(/^(\/order\/store\/[^/]+\/(?:pick_up|internal_use)\/)(?:menu(?:\/select-table)?|orders\/create)$/)
   if (!match)
     throw new Error('PB control journey is unavailable.')
+  const startingPath = location.pathname
   const menuPath = `${match[1]}menu`
   const cartPath = `${match[1]}orders/create`
   async function ready(check: () => boolean, accepted = false, timeoutMs = 5000) {
@@ -221,7 +222,7 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
       loading.disconnect()
     }
   }
-  async function navigate(path: string) {
+  async function navigate(path: string, options?: { fromEmptyCart?: boolean }) {
     if (path !== menuPath && path !== cartPath)
       throw new Error('PB control navigation is outside the approved journey.')
     await dismissAnnouncement()
@@ -237,7 +238,9 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
         if (!cart)
           return false
         if (element instanceof HTMLAnchorElement)
-          return new URL(element.href).origin === location.origin && new URL(element.href).pathname === menuPath && ['繼續點餐', '加點'].includes(element.textContent?.trim() ?? '')
+          // After the last removal PB briefly retains its old nonempty-cart link.
+          // Wait for the empty-state button before the hand starts moving.
+          return !options?.fromEmptyCart && new URL(element.href).origin === location.origin && new URL(element.href).pathname === menuPath && ['繼續點餐', '加點'].includes(element.textContent?.trim() ?? '')
         // Removing the last line replaces the continue link with PB's empty
         // cart button. Use that actual control, never the unrelated account links.
         return element instanceof HTMLButtonElement && element.textContent?.trim() === '立即點餐' && !cart.querySelector('.produce-item') && cart.textContent?.includes('購物車是空的') === true
@@ -250,6 +253,72 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
     await act('navigate', path === menuPath ? '返回菜單' : '查看購物車', 'navigation', locate, target => target.click(), () => location.pathname === path && (path === menuPath ? Boolean(document.querySelector(searchSelector)) : Boolean(document.querySelector('.order-create'))), { kind: 'route', ref: path })
     await dismissAnnouncement()
   }
+  async function inspectCart(readPage: (page: unknown) => Promise<CartSnapshot>) {
+    let inspected = false
+    let visitedPage: unknown
+    const onNavigate = (event: Event) => {
+      if (event instanceof CustomEvent)
+        visitedPage = event.detail?.page
+    }
+    document.addEventListener('inertia:navigate', onNavigate)
+    try {
+      signal.throwIfAborted()
+      await navigate(cartPath)
+      // A checkout visit supplies fresh merchant row identities. For an already
+      // open cart, the current history entry belongs to that same visible page.
+      const cart = await readPage(visitedPage ?? history.state?.page ?? history.state)
+      await ready(() => {
+        signal.throwIfAborted()
+        if (location.pathname !== cartPath)
+          throw new Error('已離開購物車。')
+        const root = unique(document.querySelectorAll<HTMLElement>('.order-create'))
+        if (!root)
+          return false
+        const rows = Array.from(root.querySelectorAll<HTMLElement>('.produce-item')).filter(row => row.getClientRects().length)
+        if (rows.length !== cart.lines.length)
+          return false
+        if (!rows.length)
+          return root.textContent?.includes('購物車是空的') === true
+        // Match the visible multiset, including options, notes and quantities.
+        // Two identical rows each need a distinct DOM element.
+        return cart.lines.every((line) => {
+          const index = rows.findIndex((row) => {
+            const price = row.querySelector('h3 span')?.textContent?.match(/\$([\d,.]+)/)?.[1]
+            const details = detailsKey(line)
+            const matchesDetails = row.querySelector('.product-attr')
+              ? details !== undefined && renderedDetails(row) === details
+              : line.options?.length === 0 && !line.note
+            return matchesDetails && price !== undefined && sameVisibleBase({
+              name: row.querySelector('h3')?.childNodes[0]?.textContent?.trim() ?? '',
+              quantity: Number(row.querySelector<HTMLInputElement>('input[type="number"]')?.value),
+              unitPrice: Number(price.replaceAll(',', '')),
+            }, line)
+          })
+          if (index < 0)
+            return false
+          rows.splice(index, 1)
+          return true
+        })
+      })
+      inspected = true
+      return cart
+    }
+    finally {
+      document.removeEventListener('inertia:navigate', onNavigate)
+      if (!signal.aborted && startingPath === menuPath && location.pathname === cartPath) {
+        try {
+          await navigate(menuPath)
+        }
+        catch (error) {
+          // A failed return gesture cannot invalidate the cart already inspected.
+          // The normal verified-receipt path also checks the final display.
+          if (!inspected || signal.aborted)
+            throw error
+        }
+      }
+    }
+  }
+
   async function open(name: string, productRef?: string) {
     await navigate(menuPath)
     await dismissAnnouncement()
@@ -494,5 +563,5 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
       }
     }, { deferredDispatch: true, target: { kind: 'field', ref: 'cart-clear' } })
   }
-  return { act, ready, canEdit, search, open, close, dismissAnnouncement, navigate, prepare, add, edit, clearCart, note: setNote }
+  return { act, ready, canEdit, search, open, close, dismissAnnouncement, navigate, inspectCart, prepare, add, edit, clearCart, note: setNote }
 }
