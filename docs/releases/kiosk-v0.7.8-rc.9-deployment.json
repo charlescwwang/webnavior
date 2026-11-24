@@ -1,26 +1,27 @@
 {
   "version": "0.7.8-rc.9",
   "previousVersion": "0.7.8-rc.8",
-  "sourceCommit": "79126653fb27cdbd95117e5c536d72f6329591b3",
+  "sourceCommit": "24d0f7d2661335cadf7fbecbf5b663816359ca52",
   "tag": "v0.7.8-rc.9",
   "package": {
-    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc9-20261124-r1/windows/Webnavior-Kiosk-v0.7.8-rc.9-Windows-x64-20261124-203827.zip",
-    "sha256": "d456b673432c58384dfbca59bf5585577e43b10cebd1db5cdff8a115a5be4862",
-    "bytes": 163769936,
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc9-20261124-r7/windows/Webnavior-Kiosk-v0.7.8-rc.9-Windows-x64-20261124-212830.zip",
+    "sha256": "e5d772dfc924ed538c72cf010c9d62b11d842ec6cd16eee0cb7ca3960001f783",
+    "bytes": 163769923,
     "files": 81
   },
   "frontend": {
-    "release": "kiosk-rc9-20261124-r5",
+    "release": "kiosk-rc9-20261124-r7",
     "status": "activated-http-verified",
     "apiRestart": false,
-    "changed": 96,
+    "changed": 97,
     "apiPid": "1214145",
-    "sourceCommit": "ca79c2dc6e48ed87abd7e5b8d233504e42a750cd",
+    "sourceCommit": "24d0f7d2661335cadf7fbecbf5b663816359ca52",
     "kioskUnitTests": {
-      "passed": 1269,
+      "passed": 1273,
       "expectedFail": 1,
       "skipped": 49
     },
+    "pbPresentationBrowserTests": 14,
     "httpChecks": 9
   },
   "components": {
@@ -30,11 +31,11 @@
     },
     "kiosk": {
       "version": "0.7.8-rc.9",
-      "deployment": "kiosk-rc9-20261124-r5"
+      "deployment": "kiosk-rc9-20261124-r7"
     },
     "windows": {
       "version": "0.7.8-rc.9",
-      "sha256": "d456b673432c58384dfbca59bf5585577e43b10cebd1db5cdff8a115a5be4862"
+      "sha256": "e5d772dfc924ed538c72cf010c9d62b11d842ec6cd16eee0cb7ca3960001f783"
     }
   },
   "validation": {
@@ -95,6 +96,29 @@
       "apiPid": "1214145",
       "sourceCommit": "27e8c52c27e2b95201b9540cc006e18891a3f6c9",
       "conversationAndSettingsBrowserTests": 23,
+      "httpChecks": 9
+    },
+    {
+      "release": "kiosk-rc9-20261124-r5",
+      "status": "activated-http-verified",
+      "apiRestart": false,
+      "changed": 96,
+      "apiPid": "1214145",
+      "sourceCommit": "ca79c2dc6e48ed87abd7e5b8d233504e42a750cd",
+      "kioskUnitTests": {
+        "passed": 1269,
+        "expectedFail": 1,
+        "skipped": 49
+      },
+      "httpChecks": 9
+    },
+    {
+      "release": "kiosk-rc9-20261124-r6",
+      "status": "activated-http-verified",
+      "apiRestart": false,
+      "changed": 96,
+      "apiPid": "1214145",
+      "sourceCommit": "75ec22e59d47783b719d199358acfefd5a20e7ae",
       "httpChecks": 9
     }
   ]
