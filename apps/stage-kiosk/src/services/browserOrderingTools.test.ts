@@ -1917,3 +1917,10 @@ it('replays dumpling assent plus soup as two verified adds without repeating the
   expect(result).toMatchObject({ status: 'verified', cart: { subtotal: 104, lines: [{ name: dumplings, quantity: 1 }, { name: '蛋花湯', quantity: 1 }] } })
   expect(execute.mock.calls.map(([tool]) => tool.name)).toEqual(['browser_state_get', 'browser_cart_add', 'browser_cart_add'])
 })
+
+it('lets Main retain an off-menu customization when it mistakenly asks for an option', async () => {
+  const { call, execute } = setup('我要雞腿飯不要雞腿')
+  const result = await call('ask_customer_question', { questionType: 'option', name: '雞腿飯', query: '不要雞腿' })
+  expect(result).toMatchObject({ code: 'INVALID_TOOL_ARGUMENTS', dataOnly: true, effect: 'none', explanation: expect.stringContaining('note') })
+  expect(execute.mock.calls.every(([tool]) => tool.name === 'browser_cart_get')).toBe(true)
+})

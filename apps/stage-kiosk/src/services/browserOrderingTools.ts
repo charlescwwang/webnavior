@@ -333,6 +333,9 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
           if (products.length !== 1)
             return clientError('請先確認要點哪道餐點。')
           question.name = products[0].name
+          if (question.questionType === 'option' && products[0].configurations.length === 1 && !products[0].configurations[0].groups.length) {
+            return { ...clientError(orderingMessages['zh-Hant'].toolInputRejected), code: 'INVALID_TOOL_ARGUMENTS', dataOnly: true, explanation: '這道餐沒有網站選項。顧客明確要求的去料或做法以原意填入該餐 note；缺份數時只問 quantity，承接原需求。資料齊全才用 add_items_to_cart，不承諾店家一定能配合。若只是詢問選項，依餐點資料回答。' }
+          }
           if (question.questionType === 'quantity')
             return executeBrowserQuantityQuestion(client, { productRef: products[0].ref })
         }
