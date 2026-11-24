@@ -1924,3 +1924,18 @@ it('lets Main retain an off-menu customization when it mistakenly asks for an op
   expect(result).toMatchObject({ code: 'INVALID_TOOL_ARGUMENTS', dataOnly: true, effect: 'none', explanation: expect.stringContaining('note') })
   expect(execute.mock.calls.every(([tool]) => tool.name === 'browser_cart_get')).toBe(true)
 })
+
+it('clarifies the shared chicken alias in a soup and rice order', async () => {
+  const names = ['炸雞腿便當', '港式油雞腿便當']
+  const { facts, call, execute } = setup('蛋花湯加雞腿飯', false, names.map(name => ({ name, category: '', aliases: ['雞腿飯'] })))
+  const soup = facts.products[0]
+  Object.assign(soup, { ref: 'soup', name: '蛋花湯' })
+  for (const name of names)
+    facts.products.push({ ...soup, name, ref: name })
+  const result = await call('ask_customer_question', { questionType: 'item', query: '雞腿飯' })
+  expect(result.presentationRefs).toEqual(names)
+  expect(result.pendingCustomerChoice.question).toContain(names.join('、'))
+  expect(result.pendingCustomerChoice.question).not.toContain('蛋花湯')
+  expect(result.effect).toBe('none')
+  expect(execute.mock.calls.every(([tool]) => ['browser_cart_get', 'browser_present'].includes(tool.name))).toBe(true)
+})

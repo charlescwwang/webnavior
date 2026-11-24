@@ -764,13 +764,17 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       if (denied)
         return denied
       const catalog = parse(looseObject({ products: array(looseObject({ ref: string(), name: string() })) }), facts)
-      const named = catalog.products.filter(product => task.text.includes(product.name.replaceAll(/\s/g, '')))
-      if (named.length === 1) {
-        // A generic choose-product call cannot discard the exact current
-        // subject and replace a price/options question with another menu list.
-        return { ok: true, source: 'browser', dataOnly: true, products: named, explanation: '原句已唯一指明此商品，不需要再詢問品名。依完整原句及本商品最新規格處理；規格／加購查價用 browser_quote_selection，缺必要選項才詢問該選項。這次只是讀取，尚未加入購物車。' }
+      const query = typeof input.query === 'string' ? input.query.trim() : ''
+      const candidates = query
+        ? labelCatalog(catalog.products, task.catalogLabels?.()).filter(product => product.name.includes(query) || product.aliases.includes(query))
+        : catalog.products
+      const named = candidates.filter(product => task.text.includes(product.name.replaceAll(/\s/g, '')))
+      // A broad question can be redundant. For a targeted question, another
+      // exact dish in the same order cannot resolve the requested alias.
+      if (named.length === 1 && (!query || candidates.length === 1)) {
+        return { ok: true, source: 'browser', effect: 'none', dataOnly: true, products: named, explanation: '原句已唯一指明此商品，不需要再詢問品名。依完整原句及本商品最新規格處理；規格／加購查價用 browser_quote_selection，缺必要選項才詢問該選項。這次只是讀取，尚未加入購物車。' }
       }
-      return presentQuestion(facts, typeof input.query === 'string' ? input.query : '')
+      return presentQuestion(facts, query)
     }
     return executeBrowserTool(client, tool, input)
   }

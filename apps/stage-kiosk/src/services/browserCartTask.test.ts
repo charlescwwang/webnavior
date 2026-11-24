@@ -240,7 +240,7 @@ it('returns exact named product configurations instead of asking a redundant bro
   const products = [{ ref: 'today', name: '每日新品', price: 10, configurations: [{ version: 'fresh', variantRef: '', name: '', unitPrice: 10, groups: [] }] }]
   const client = { tools: readonly(shallowRef([context, observe])), execute: vi.fn(async () => ({ ok: true, source: 'browser', page: 'menu', cart: { version: 'current', lines: [] }, products })) }
   const result = await executeBrowserCartTool(client, observe, { includeDescriptions: true, purpose: 'choose_product' })
-  expect(result).toMatchObject({ dataOnly: true, products })
+  expect(result).toMatchObject({ dataOnly: true, effect: 'none', products })
   expect(result).not.toHaveProperty('pendingCustomerChoice')
   expect(dialogue.hasPending()).toBe(false)
 })
