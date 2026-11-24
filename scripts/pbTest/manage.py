@@ -363,19 +363,22 @@ http {{
             return False
 
     def status(self):
+        print('【跨機器共用】')
         print('跨機器共用入口：' + SHARED_ORIGIN + '/kiosk/')
         print('共用後端：' + ('就緒' if self.ready('http://127.0.0.1:5169/readyz') else '尚未就緒'))
         print('共用 Electron：' + ('已開啟' if self.record('shared-electron') else '尚未開啟'))
         running = bool(self.record('api') and self.record('web') and self.ready(ORIGIN + '/readyz'))
+        print('\n【本機隔離】')
         print('本機隔離系統：' + ('運作中' if running else '尚未就緒／已停止'))
+        print('本機隔離 Electron：' + ('已開啟' if self.record('electron') else '尚未開啟'))
         print('本機隔離後台：' + ORIGIN + '/admin')
         print('管理帳號：admin@webnavior.local（測試模式，免密碼）')
         print('首次設備登記：在 Electron 選擇「建立測試設備」。')
-        print('本機隔離 Electron：' + ('已開啟' if self.record('electron') else '尚未開啟'))
-        print('Ubuntu 啟動設定：' + ('已完成' if self.sandbox_ready() else '需要完成一次系統管理員驗證'))
         print('現場管理 PIN：請選擇「顯示測試 PIN」。')
         print('模型需在測試後台設定；不會自動複製正式模型金鑰。')
         print('停止保留資料，不會清除測試紀錄或 PB 登入。')
+        print('\n【Ubuntu 工具】')
+        print('Ubuntu 啟動設定：' + ('已完成' if self.sandbox_ready() else '需要完成一次系統管理員驗證'))
 
 
 def main():
