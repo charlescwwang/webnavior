@@ -10,6 +10,7 @@ import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
 import KioskMediaDeviceSettings from './KioskMediaDeviceSettings.vue'
 
 import { useFeedbackInvitationEnabled } from '../composables/useFeedbackInvitationSettings'
+import { defaultThoughtBubbleFontSize, useThoughtBubbleFontSize } from '../composables/useKioskConversationFontSize'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 
 const props = defineProps<{
@@ -39,6 +40,7 @@ const presenceDiagnosticsEnabled = defineModel<boolean>('presenceDiagnosticsEnab
 const voiceTestEnabled = defineModel<boolean>('voiceTestEnabled', { default: false })
 const paused = defineModel<boolean>('paused', { required: true })
 const cameraPreviewEnabled = defineModel<boolean>('cameraPreviewEnabled', { required: true })
+const thoughtBubbleFontSize = useThoughtBubbleFontSize()
 const conversationFontSize = defineModel<number>('conversationFontSize', { required: true })
 </script>
 
@@ -138,6 +140,16 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
           as="div"
           description="只影響這台 Kiosk 瀏覽器上的顧客對話文字。"
           label="對話文字大小"
+          :format-value="value => `${value}px`"
+        />
+        <FieldRange
+          v-model="thoughtBubbleFontSize"
+          :default-value="defaultThoughtBubbleFontSize"
+          :max="40"
+          :min="16"
+          :step="1"
+          as="div"
+          :label="t('deviceSettings.thoughtBubbleFontSize')"
           :format-value="value => `${value}px`"
         />
       </section>

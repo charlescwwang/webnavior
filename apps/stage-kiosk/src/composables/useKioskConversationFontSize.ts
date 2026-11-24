@@ -10,3 +10,10 @@ export function useKioskConversationFontSize() {
 
   return fontSize
 }
+
+export const defaultThoughtBubbleFontSize = 24
+
+/** Stores the avatar bubble size independently of conversation text on this browser. */
+export function useThoughtBubbleFontSize() {
+  return useLocalStorage('kiosk/thought-bubble/font-size', defaultThoughtBubbleFontSize)
+}

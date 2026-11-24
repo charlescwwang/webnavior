@@ -5,11 +5,14 @@ import { toOrderingTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-tr
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { useThoughtBubbleFontSize } from '../composables/useKioskConversationFontSize'
+
 const props = defineProps<{
   progress?: Pick<KioskConversationProgress, 'phase' | 'message'>
   recognizing?: boolean
   voiceActivity?: string
 }>()
+const fontSize = useThoughtBubbleFontSize()
 const { t } = useI18n()
 // A follow-up can be transcribing while the preceding order is still executing.
 const message = computed(() => props.progress?.message ?? (props.recognizing ? t('stage.kiosk.voice-received') : props.voiceActivity))
@@ -21,6 +24,7 @@ const message = computed(() => props.progress?.message ?? (props.recognizing ? t
       v-if="message"
       :key="props.progress?.phase ?? 'understanding'"
       class="assistant-thought-bubble"
+      :style="{ fontSize: `${fontSize}px` }"
       role="status"
       aria-live="polite"
     >
@@ -37,7 +41,7 @@ const message = computed(() => props.progress?.message ?? (props.recognizing ? t
   top: clamp(.65rem, 5%, 1.5rem);
   left: clamp(8.5rem, 20%, 14rem);
   display: flex;
-  width: clamp(12.75rem, 29vw, 19rem);
+  width: min(14em, 60%);
   min-height: 3.45rem;
   align-items: center;
   border: 1px solid rgb(235 255 250 / 72%);
@@ -46,7 +50,6 @@ const message = computed(() => props.progress?.message ?? (props.recognizing ? t
   color: #173236;
   background: rgb(244 255 251 / 92%);
   box-shadow: 0 .7rem 1.7rem rgb(0 0 0 / 24%);
-  font-size: clamp(.82rem, 1.35vw, 1rem);
   font-weight: 800;
   line-height: 1.45;
   pointer-events: none;
@@ -76,7 +79,7 @@ const message = computed(() => props.progress?.message ?? (props.recognizing ? t
   height: .38rem;
 }
 
-.assistant-thought-bubble-text { display: block; }
+.assistant-thought-bubble-text { display: block; min-width: 0; overflow-wrap: anywhere; }
 
 .thought-bubble-enter-active,
 .thought-bubble-leave-active { transition: opacity .22s ease, transform .22s ease; }
@@ -93,7 +96,7 @@ const message = computed(() => props.progress?.message ?? (props.recognizing ? t
   .assistant-thought-bubble {
     top: .6rem;
     left: 24%;
-    width: min(16rem, 68%);
+    width: min(14em, 68%);
     min-height: 3rem;
     padding: .65rem .85rem;
   }
