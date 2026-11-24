@@ -1,5 +1,14 @@
 # Codex Handoff
 
+## 2026-11-24 Windows RC8 與管理前端已發布
+
+- 管理端 `web-v2026.11.24.2` 統一點餐網站設定入口，餐點別名依網站收合。Windows `0.7.8-rc.8` 配對 `kiosk-rc8-20261124-r1`，支援待付款訂單的付款方式選擇與切換。正式 API 已套用兩項付款提示／辨識用語變更，公開 db、redis 健康。
+- [發布紀錄](releases/kiosk-v0.7.8-rc.8-deployment.json) 包含版本、Windows ZIP 位置、校驗碼與驗證結果。可攜包已更新最新版本指標，Windows 實機安裝與驗收待完成。
+
+## 2026-11-23 Windows RC7 與正式前端已發布
+
+- [發布紀錄](releases/kiosk-v0.7.8-rc.7-deployment.json) 包含 Windows x64 可攜包位置與 SHA256。四個前端入口共九項 HTTP 位元組核對通過；本機與公開服務 db、redis 健康。Windows 機台仍待安裝及實機驗收。
+
 ## 2026-11-23 正式 PB 送單回應與重複讀取交接
 
 - 正式 PB 非營業實測已確認。使用者在獨立 Chrome 視窗手動送單一次，台北時間 20:11:11 發出送單 POST，PB 回 302。重新導向 GET 回 200，頁面為 `Order/Create`，`props.errors.diningTime` 帶回「目前非營業時間，暫時無法點餐。」；隨後畫面顯示同一文字。送單前的結帳 GET 沒有該錯誤。

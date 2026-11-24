@@ -1,0 +1,54 @@
+{
+  "version": "0.7.8-rc.8",
+  "sourceCommit": "a2bbc3fc6020a5cda840278850aba3c8b5fe8153",
+  "tag": "kiosk-v0.7.8-rc.8",
+  "adminRelease": "web-v2026.11.24.2",
+  "package": {
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc8-20261124-r1/windows/Webnavior-Kiosk-v0.7.8-rc.8-Windows-x64-20261124-165152.zip",
+    "sha256": "f1f04ed26669482f5d41988b567660ea97dbb08f4fa789427520a5339937785b",
+    "bytes": 163769251,
+    "files": 81
+  },
+  "frontend": {
+    "release": "kiosk-rc8-20261124-r1",
+    "status": "activated-http-verified",
+    "apiRestart": false,
+    "changed": 98,
+    "apiPid": "1214145"
+  },
+  "httpChecks": 9,
+  "api": {
+    "previousPid": "4486",
+    "files": [
+      {
+        "path": "apps/server/src/services/domain/kiosk-audio/index.ts",
+        "before": "de815128a56f1902d1def50bf7eab5a8e660de8b038e94e869c3bd0afc8331c5",
+        "after": "a8cff2008bf970b78932b8955aee614365bd15e2530a6a583832a6f14c6eb9d8"
+      },
+      {
+        "path": "apps/server/src/services/domain/browser-ordering/skills/checkout/SKILL.md",
+        "before": "8a3479b2619891fda3e17ee3b0f791ed9f8dfb94421fa394994adfbc64e53bfe",
+        "after": "ddf5e282c8a3c22bbb21f0f39f3c830c8f4dbd94196e56140da2a720f1d9e168"
+      }
+    ],
+    "status": "deployed",
+    "apiPid": "1214145",
+    "health": {
+      "status": "ready",
+      "checks": {
+        "db": "ok",
+        "redis": "ok"
+      }
+    }
+  },
+  "validation": {
+    "windowsManifestFiles": 81,
+    "electronFixture": "passed",
+    "publicApi": "ready",
+    "fullTypecheck": "passed",
+    "repositoryLint": "failed on existing unrelated files",
+    "changedCodeLint": "passed"
+  },
+  "windowsPhysicalValidation": false,
+  "signed": false
+}

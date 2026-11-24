@@ -1,0 +1,25 @@
+{
+  "release": "kiosk-rc7-20261123-r1",
+  "version": "0.7.8-rc.7",
+  "sourceCommit": "63586177c3476e92f7615a66b9510faec4da6d7b",
+  "frontend": {
+    "release": "kiosk-rc7-20261123-r1",
+    "status": "activated-http-verified",
+    "apiRestart": false,
+    "changed": 98,
+    "apiPid": "4486"
+  },
+  "httpChecks": 9,
+  "health": {
+    "local": "db/redis ready",
+    "public": "db/redis ready"
+  },
+  "package": {
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc7-20261123-r1/windows/Webnavior-Kiosk-v0.7.8-rc.7-Windows-x64-20261123-215201.zip",
+    "sha256": "b28d8d1f29c5e4e0d71488abc794c822953eac3563740e4906b2e86c378cf9df",
+    "bytes": 163766337,
+    "files": 81
+  },
+  "windowsPhysicalValidation": false,
+  "signed": false
+}
