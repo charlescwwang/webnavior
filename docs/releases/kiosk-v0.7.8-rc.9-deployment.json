@@ -10,11 +10,14 @@
     "files": 81
   },
   "frontend": {
-    "release": "kiosk-rc9-20261124-r1",
+    "release": "kiosk-rc9-20261124-r2",
     "status": "activated-http-verified",
     "apiRestart": false,
     "changed": 97,
-    "apiPid": "1214145"
+    "apiPid": "1214145",
+    "sourceCommit": "5ba80f8a1e467455c7ef6c15bcea78e3e03f1cdb",
+    "conversationBrowserTests": 20,
+    "httpChecks": 9
   },
   "components": {
     "web": {
@@ -23,7 +26,7 @@
     },
     "kiosk": {
       "version": "0.7.8-rc.9",
-      "deployment": "kiosk-rc9-20261124-r1"
+      "deployment": "kiosk-rc9-20261124-r2"
     },
     "windows": {
       "version": "0.7.8-rc.9",
@@ -51,5 +54,14 @@
     "electronDiagnostics": "passed"
   },
   "windowsPhysicalValidation": false,
-  "signed": false
+  "signed": false,
+  "frontendHistory": [
+    {
+      "release": "kiosk-rc9-20261124-r1",
+      "status": "activated-http-verified",
+      "apiRestart": false,
+      "changed": 97,
+      "apiPid": "1214145"
+    }
+  ]
 }
