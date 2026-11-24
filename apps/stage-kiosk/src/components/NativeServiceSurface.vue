@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { KioskDesktopBridge } from '@proj-airi/stage-shared/kiosk-desktop'
+import type { DesktopSurfaceNavigation, KioskDesktopBridge } from '@proj-airi/stage-shared/kiosk-desktop'
 
 import { useDocumentVisibility, useElementBounding, useMutationObserver } from '@vueuse/core'
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
@@ -13,7 +13,7 @@ const props = defineProps<{
   title: string
   occluded: boolean
 }>()
-const emit = defineEmits<{ activity: [], ready: [{ serviceId: string, documentKey: string, url: string }], navigating: [], manualPayment: [], unavailable: [] }>()
+const emit = defineEmits<{ activity: [], ready: [{ serviceId: string, documentKey: string, url: string }], navigating: [], manualPayment: [DesktopSurfaceNavigation], unavailable: [] }>()
 const { t } = useI18n()
 const element = useTemplateRef<HTMLDivElement>('surface')
 const { x, y, width, height } = useElementBounding(element)
@@ -47,8 +47,8 @@ const stopNavigation = props.bridge.onNavigation((navigation) => {
   loading.value = false
   failed.value = navigation.state === 'failed'
   if (navigation.state === 'manual-payment') {
-    connectedKey = undefined
-    emit('manualPayment')
+    connectedKey = JSON.stringify([props.serviceId, props.documentKey, props.url])
+    emit('manualPayment', navigation)
     return
   }
   if (failed.value) {

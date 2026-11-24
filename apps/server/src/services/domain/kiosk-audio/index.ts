@@ -27,6 +27,9 @@ export interface KioskAudioGateway {
   transcribe: (input: { audio: File, modelName: string, vocabulary?: readonly string[] }) => Promise<string>
 }
 
+// Reserve room for checkout vocabulary even when a site's menu fills the prompt budget.
+const paymentTerms = ['LINE Pay', '信用卡', '刷卡', '自行輸入卡號', 'Apple Pay', '綠界 Pay']
+
 /**
  * Dispatches kiosk audio through the server's Webnavior audio configuration.
  *
@@ -47,7 +50,7 @@ export function createKioskAudioGateway(options: KioskAudioGatewayOptions): Kios
     // Bound context independently of upload size and retain ASR numbers/negation.
     const vocabulary: string[] = []
     let characters = 0
-    for (const raw of input.vocabulary ?? []) {
+    for (const raw of [...paymentTerms, ...(input.vocabulary ?? [])]) {
       const term = raw.trim()
       if (!term || term.length > 100 || /[\u0000-\u001F]/.test(term) || vocabulary.includes(term))
         continue
@@ -56,8 +59,7 @@ export function createKioskAudioGateway(options: KioskAudioGatewayOptions): Kios
       vocabulary.push(term)
       characters += JSON.stringify(term).length + 1
     }
-    if (vocabulary.length)
-      body.set('prompt', `以下是菜單名稱與別名，僅供聽音辨識參考；只轉錄實際聽到的內容，不補寫餐點，保留顆數、份數、否定與更正：${JSON.stringify(vocabulary)}`)
+    body.set('prompt', `以下是付款用語、菜單名稱與別名，僅供聽音辨識參考；只轉錄實際聽到的內容，不補寫餐點或付款方式，保留顆數、份數、否定與更正：${JSON.stringify(vocabulary)}`)
     const response = await forward(config, 'audio/transcriptions', { body, method: 'POST' })
     if (!response.ok) {
       const requestUrl = new URL(endpoint(config.baseURL, 'audio/transcriptions'))

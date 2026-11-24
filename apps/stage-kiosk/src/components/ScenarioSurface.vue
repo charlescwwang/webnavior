@@ -13,6 +13,7 @@ import NativeServiceSurface from './NativeServiceSurface.vue'
 import { useKioskCustomerEntry } from '../composables/useKioskCustomerEntry'
 import { connectDesktop } from '../services/desktopServiceConnection'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
+import { gatewayPage } from '../services/paymentChoice'
 import { scenarioRegistry } from '../services/scenario-registry'
 
 const props = defineProps<{ listening?: boolean, operating?: boolean, occluded?: boolean, presentation?: ProductPresentation }>()
@@ -34,17 +35,20 @@ function attachNative(binding: { serviceId: string, documentKey: string, url: st
   const scenario = scenarioRegistry.activeScenario.value
   if (!desktop || scenario?.id !== binding.serviceId || scenario.serviceUrl !== binding.url || binding.documentKey !== `${scenario.id}:${scenarioRegistry.iframeRevision.value}`)
     return
+  gatewayPage.value = undefined
   interactiveServiceClient.activateTransport(binding.url, () => connectDesktop(desktop, binding))
 }
 
 // Reloads and URL edits can replace the document without changing its service
 // ID. Revoke the old tool handles before the new iframe starts loading.
 watch([scenarioRegistry.activeScenarioId, scenarioRegistry.iframeRevision], () => {
+  gatewayPage.value = undefined
   scenarioRegistry.attachActiveFrame(null)
   interactiveServiceClient.activate(undefined)
 }, { immediate: true, flush: 'sync' })
 
 onUnmounted(() => {
+  gatewayPage.value = undefined
   scenarioRegistry.attachActiveFrame(null)
   interactiveServiceClient.activate(undefined)
 })
@@ -65,9 +69,9 @@ onUnmounted(() => {
       :occluded="Boolean(props.occluded || customerEntry.pending.value)"
       @activity="emit('activity')"
       @ready="attachNative"
-      @navigating="interactiveServiceClient.beginNavigation()"
-      @manual-payment="interactiveServiceClient.beginManualPayment()"
-      @unavailable="interactiveServiceClient.activate(undefined)"
+      @navigating="gatewayPage = undefined; interactiveServiceClient.beginNavigation()"
+      @manual-payment="gatewayPage = $event; interactiveServiceClient.beginManualPayment()"
+      @unavailable="gatewayPage = undefined; interactiveServiceClient.activate(undefined)"
     />
     <div v-else-if="browserPbUnsupported" role="status" :class="['flex flex-col items-center justify-center gap-4 p-6 text-center']">
       <p>{{ t('stage.kiosk.browser-pb-backup') }}</p>

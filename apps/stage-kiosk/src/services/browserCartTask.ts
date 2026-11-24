@@ -9,6 +9,7 @@ import type { BrowserEffect, BrowserPlan, EffectDecision } from '../../../server
 import type { createBrowserDialogue, OrderEvidence, SelectedBrowserAnswer } from './browserDialogue'
 import type { createBrowserPresentation } from './browserPresentation'
 import type { AdditionProposal, QuestionSnapshot } from './browserQuestionWindow'
+import type { chooseGateway } from './paymentChoice'
 import type { RecommendationCriteria } from './recommendationSession'
 
 import { errorMessageFrom } from '@moeru/std'
@@ -19,7 +20,7 @@ import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { explicitServingQuantities, normalizeSlotNumbers } from '@proj-airi/stage-shared/ordering-slots'
 import { customerReplySchema, servicePolicyReplySchema } from '@proj-airi/stage-shared/ordering-tools'
 import { pbBrowserStateSchema, pbCartStateSchema, pbCatalogStateSchema, pbEditorStateSchema, pbTableStateSchema } from '@proj-airi/stage-shared/pb-browser-state'
-import { pbCheckoutSchema, pbInvoiceMethodSchema, pbOrderStateSchema, pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { pbCheckoutSchema, pbGatewayReceiptSchema, pbInvoiceMethodSchema, pbOrderStateSchema, pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { menuEntryReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
 import { describePbMeal, pbBasicServing, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { productConfigurationSchema } from '@proj-airi/stage-shared/product-configuration'
@@ -32,10 +33,13 @@ import { array, boolean, literal, looseObject, minLength, number, object, option
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { browserWriteToolNameSchema, cartLineLabelSchema, cartSnapshotSchema } from '../../../server/src/services/domain/browser-ordering/contracts'
+import { paymentChoiceFromSpeech, paymentOptionsReply } from './paymentChoice'
 
 interface TaskQuestions {
   /** Bound by the fresh result-page context; never reused as payment authority. */
+  orderPaymentMethods?: string[]
   orderReference?: string
+  selectGateway?: typeof chooseGateway
   /** Set only by the Host after Jev selects a currently issued action. */
   intentSource?: 'jev'
 
@@ -1105,6 +1109,7 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
   if (order.success) {
     if (task.orderReference && task.orderReference !== order.output.order.reference)
       throw new Error('Order context belongs to a different order.')
+    task.orderPaymentMethods = order.output.order.paymentMethods
     task.orderReference = order.output.order.reference
     const state = { phase: 'viewing_order' as const, readOnly: true }
     return parse(browserConversationSchema, { taskId, sourceUtterance: task.transcript, ...state, page: order.output.page, order: order.output.order, observedAt: order.output.observedAt, catalog: { complete: false, products: [] }, allowedToolNames: browserToolNames(state, toolNames) })
@@ -1201,6 +1206,34 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
  */
 export async function prepareBrowserQuestionAnswer(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, input?: Record<string, unknown>) {
   const task = active
+  const payment = client.tools.value.find(tool => tool.name === 'browser_payment_open')
+  if (task?.isCurrent() && client.tools.value.some(tool => tool.name === 'browser_state_get')) {
+    const guidance = paymentOptionsReply(task.transcript, task.orderPaymentMethods, Boolean(task.orderReference))
+    if (guidance)
+      return async () => ({ ok: true, source: 'host', effect: 'none', customerMessage: guidance })
+  }
+  if (payment && task?.orderReference && task.isCurrent()) {
+    // Match the whole customer turn. A list of alternatives, a negation or a
+    // question about support must never select a gateway.
+    const choice = paymentChoiceFromSpeech(task.transcript)
+    if (choice) {
+      const method = choice === 'line' ? 'LinePay' : 'Credit'
+      const reference = task.orderReference
+      return async () => {
+        if (active !== task || !task.isCurrent() || task.answerResolved)
+          return { ok: false, effect: 'none', customerMessage: '請確認目前的付款畫面。' }
+        task.answerResolved = true
+        const result = await executeBrowserTool(client, payment, { reference, method })
+        if (choice !== 'credit' && choice !== 'line'
+          && task.selectGateway) {
+          const opened = safeParse(pbGatewayReceiptSchema, result)
+          if (opened.success && opened.output.reference === reference && opened.output.method === method)
+            return task.selectGateway(choice, reference, () => active === task && task.isCurrent())
+        }
+        return result
+      }
+    }
+  }
   const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')
   if (!task?.dialogue?.hasPending() || task.answerResolved || !task.isCurrent() || !read)
     return
@@ -1605,7 +1638,7 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
     let customerMessage: string = messages[state.paymentStatus]
     if (state.paymentStatus === 'pending') {
       const paymentMethods = state.paymentMethods.filter(method => /^(?:line\s*pay|信用卡|credit(?:\s*card)?)$/i.test(method.trim()))
-      customerMessage = `訂單已建立，尚未付款。${paymentMethods.length ? `請在畫面點選${paymentMethods.join('或')}，再自行完成付款授權。` : orderingMessages['zh-Hant'].checkout.paymentUnavailable}`
+      customerMessage = `訂單已建立，尚未付款。${paymentMethods.length ? `請選擇${paymentMethods.join('或')}，再自行完成付款授權。` : orderingMessages['zh-Hant'].checkout.paymentUnavailable}`
     }
     return { ok: true, source: 'host', status: 'conversation', effect: 'none', order: state, customerMessage }
   }

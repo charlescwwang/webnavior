@@ -11,7 +11,25 @@ export function createPaymentNavigation(entry: string) {
   const referenceAt = (url: URL) => journey && url.origin === journey.origin && url.pathname.startsWith(journey.basePath)
     ? url.pathname.slice(journey.basePath.length).match(/^orders\/([\w-]{1,200})\/choosePayment$/)?.[1]
     : undefined
+  function providerAt(value: string) {
+    if (!orderReference || !providerEntered)
+      return
+    const url = new URL(value)
+    if (method === 'linepay' && url.origin === 'https://web-pay.line.me' && url.pathname === '/web/payment/wait')
+      return 'line' as const
+    if (method === 'ecpay' && value === 'https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5')
+      return 'ecpay' as const
+  }
   return {
+    providerAt,
+    returnUrl(value: string, reference: string) {
+      if (journey && reference === orderReference && providerAt(value))
+        return new URL(`${journey.basePath}orders/${reference}/choosePayment`, origin).href
+    },
+    gatewayOrder(value: string) {
+      if (providerAt(value))
+        return orderReference
+    },
     isManualPage(value: string) {
       const url = new URL(value)
       const merchantCallback = url.origin === origin && !isPbJourneyPage(entry, value) && !isPbOrderResultUrl(entry, value)

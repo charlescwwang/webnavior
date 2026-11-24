@@ -8,6 +8,11 @@ import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages
 
 const receiptSchema = looseObject({ ok: literal(true), source: literal('browser'), status: literal('verified'), cart: looseObject({ version: string(), lines: array(unknown()) }) })
 
+/** A complete end-of-order utterance can start cart review, never authorize submission. */
+export function finishedOrdering(text: string) {
+  return /^(?:點好了|點完了|先這樣(?:好了?)?|先?這樣就好了?|就這樣(?:好了?)?)[。！!，,\s]*$/.test(text.trim())
+}
+
 /**
  * Offers checkout only after a completed turn's cart change is read back fresh.
  * A short yes opens cart review; it never submits an order or authorizes payment.

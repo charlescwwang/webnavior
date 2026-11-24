@@ -55,7 +55,7 @@ describe('createKioskAudioGateway', () => {
     await expect(response.arrayBuffer()).resolves.toEqual(new Uint8Array([0x49, 0x44, 0x33]).buffer)
   })
 
-  it('sends bounded menu vocabulary as an ASR prompt and preserves the original transcript', async () => {
+  it.each([true, false])('sends payment vocabulary and preserves the transcript with menu context %s', async (withMenu) => {
     const store = new Map<string, string>()
     const configKV = createConfigKVService({ get: vi.fn(async key => store.get(key) ?? null), set: vi.fn(async (key, value) => {
       store.set(key, value)
@@ -66,15 +66,19 @@ describe('createKioskAudioGateway', () => {
       expect(body.get('model')).toBe('kitchen-asr-v0.4')
       expect(body.get('file')).toBeInstanceOf(File)
       const prompt = String(body.get('prompt'))
-      expect(prompt).toContain('周氏水餃')
-      expect(prompt).toContain('排骨飯')
-      expect(prompt.match(/周氏水餃/g)).toHaveLength(1)
+      for (const term of ['LINE Pay', '信用卡', '刷卡', '自行輸入卡號', 'Apple Pay', '綠界 Pay'])
+        expect(prompt).toContain(JSON.stringify(term))
+      expect(prompt.match(/Apple Pay/g)).toHaveLength(1)
+      if (withMenu) {
+        expect(prompt).toContain('排骨飯')
+        expect(prompt.match(/周氏水餃/g)).toHaveLength(1)
+      }
       expect(prompt.length).toBeLessThanOrEqual(2000)
       expect(prompt).not.toContain('不存在的超長詞'.repeat(30))
-      return Response.json({ text: '不要排骨飯，十顆水餃兩份' })
+      return Response.json({ text: '不要 Apple Pay，改用信用卡，十顆水餃兩份' })
     })
     const gateway = createKioskAudioGateway({ configKV, envelopeCrypto: createEnvelopeCrypto({ masterKey: Buffer.alloc(32) }), fetchImpl })
-    expect(await gateway.transcribe({ audio: new File(['audio'], 'order.wav'), modelName: 'restaurant-asr', vocabulary: ['周氏水餃', '排骨飯', '周氏水餃', '不存在的超長詞'.repeat(30), ...Array.from({ length: 200 }, (_, index) => `第${index}種餐點`)] })).toBe('不要排骨飯，十顆水餃兩份')
+    expect(await gateway.transcribe({ audio: new File(['audio'], 'order.wav'), modelName: 'restaurant-asr', vocabulary: withMenu ? ['周氏水餃', '排骨飯', 'Apple Pay', '周氏水餃', '不存在的超長詞'.repeat(30), ...Array.from({ length: 200 }, (_, index) => `第${index}種餐點`)] : undefined })).toBe('不要 Apple Pay，改用信用卡，十顆水餃兩份')
     expect(fetchImpl).toHaveBeenCalledOnce()
   })
 

@@ -5,6 +5,15 @@ import { array, boolean, finite, literal, looseObject, minLength, minValue, null
 import { isPbOrderResultUrl, readPbJourney } from './pbJourney'
 import { serviceOperationSchema } from './serviceOperation'
 
+/** Acknowledges the native link dispatch only, including when its document has already retired. */
+export const pbGatewayReceiptSchema = object({
+  ok: literal(true),
+  source: literal('browser'),
+  status: literal('gateway-requested'),
+  reference: string(),
+  method: picklist(['LinePay', 'Credit']),
+})
+
 /** Values name actual PB invoice controls, not merchant-provided ingredient facts. */
 export const pbInvoiceMethodSchema = picklist(['none', 'carrier', 'citizen', 'tax', 'donation'])
 export type PbInvoiceMethod = InferOutput<typeof pbInvoiceMethodSchema>
@@ -102,7 +111,31 @@ export function readPbSubmissionResult(expected: PbSubmissionExpectation, curren
     return unknown('unverified-order-status')
   const order = { hash: page.props.order.hash, ...(page.props.order.number === undefined ? {} : { number: page.props.order.number }), status: page.props.order.status, total: page.props.order.totalmoney }
   const conflict = order.total !== expected.total
-  return { ...base, status: 'accepted', effect: 'applied', consistency: conflict ? 'conflict' : 'unavailable', reason: conflict ? 'amount-mismatch' : 'details-unverified', order, customerMessage: conflict ? '訂單已送出，但金額與剛才確認的內容不同，請先核對畫面上的訂單。' : `訂單已送出${order.number ? `，取餐編號 ${order.number}` : ''}。請查看畫面上的訂單與後續步驟。` }
+  let next = '請先核對畫面上的付款狀態。'
+  if (!conflict) {
+    // Payment facts are optional on an acceptance receipt. Reuse the same
+    // snapshot; missing provider data cannot undo an already accepted order.
+    let state: PbOrderState | undefined
+    try {
+      state = readPbOrderState(expected.origin + expected.cartPath, currentUrl, rawPage)
+    }
+    catch { /* Keep the status check when payment details are unavailable. */ }
+    if (state?.paymentStatus === 'pending') {
+      const methods = state.paymentMethods.filter(name => /^(?:line\s*pay|信用卡|credit(?:\s*card)?)$/i.test(name.trim()))
+      next = '目前尚未付款。'
+      if (methods.length > 1)
+        next += `您要用 ${methods.join(' 還是')}？可以直接說付款方式，或點選畫面上的選項。`
+      else if (methods.length === 1)
+        next += `您可以直接說「我要用 ${methods[0]}」，或點選畫面上的付款方式。`
+      else
+        next += '目前找不到可用的付款入口，請洽現場人員。'
+    }
+    else if (state?.paymentStatus === 'paid') {
+      next = '已完成付款，請等候餐點。'
+    }
+  }
+  const customerMessage = conflict ? '訂單已送出，但金額與剛才確認的內容不同，請先核對畫面上的訂單。' : `訂單已送出${order.number ? `，取餐編號 ${order.number}` : ''}。${next}`
+  return { ...base, status: 'accepted', effect: 'applied', consistency: conflict ? 'conflict' : 'unavailable', reason: conflict ? 'amount-mismatch' : 'details-unverified', order, customerMessage }
 }
 
 /** Verified result-page facts, independent of a submission receipt or permission to pay. */

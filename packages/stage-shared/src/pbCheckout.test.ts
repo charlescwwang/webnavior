@@ -17,6 +17,21 @@ describe('pb merchant submission outcomes', () => {
   it('accepts matching merchant identity independently of pickup number and payment', () => {
     expect(readPbSubmissionResult(expected, url, page())).toMatchObject({ status: 'accepted', effect: 'applied', consistency: 'unavailable', reason: 'details-unverified', order: { hash: 'HASH', number: '4006', status: 20, total: 64 } })
   })
+  it('prompts for the next spoken choice using only this unpaid order’s payment links', () => {
+    const raw = page({ payment: null })
+    const snapshot = { ...raw, props: { ...raw.props, payMethods: [
+      { title: 'LINE Pay', url: '/order/linepay/redirect/HASH/LinePay' },
+      { title: '信用卡', url: '/order/ecpay/redirect/HASH/Credit' },
+    ] } }
+    const receipt = readPbSubmissionResult(expected, url, snapshot)
+    expect(receipt.customerMessage).toContain('尚未付款')
+    expect(receipt.customerMessage).toContain('您要用 LINE Pay 還是信用卡')
+    expect(receipt.customerMessage).toContain('直接說')
+    snapshot.props.payMethods[1]!.url = '/order/ecpay/redirect/OTHER/Credit'
+    expect(readPbSubmissionResult(expected, url, snapshot).customerMessage).not.toContain('信用卡')
+    expect(readPbSubmissionResult({ ...expected, total: 5 }, url, snapshot).customerMessage).toContain('先核對')
+    expect(readPbSubmissionResult({ ...expected, total: 5 }, url, snapshot).customerMessage).not.toContain('直接說')
+  })
   it('preserves established-order fact when its amount conflicts', () => {
     expect(readPbSubmissionResult(expected, url, page({ totalmoney: 1 }))).toMatchObject({ status: 'accepted', consistency: 'conflict', reason: 'amount-mismatch', order: { total: 1 } })
   })

@@ -2,7 +2,7 @@ import type { ServiceConnection, ServiceTool, ToolExecution } from '@proj-airi/s
 
 import { errorMessageFrom } from '@moeru/std'
 import { discoveryResultSchema, executionResultSchema, inspectionResultSchema } from '@proj-airi/stage-shared/interactive-service'
-import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { pbGatewayReceiptSchema, pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { menuEntryReceiptSchema, readPbJourney, readPbStateJourney, tableSelectionReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
 import { browserPresentationInputSchema } from '@proj-airi/stage-shared/product-presentation'
 import { parse, safeParse } from 'valibot'
@@ -90,7 +90,7 @@ export function createInteractiveServiceClient() {
             failedBinding = undefined
           }
           binding = { connectionId, documentId: response.documentId, toolsRevision: response.toolsRevision }
-          tools.value = response.tools.filter(tool => !editorRetired.value || ['browser_state_get', 'browser_reception_reset'].includes(tool.name)).map(tool => ({ ...tool, origin }))
+          tools.value = response.tools.filter(tool => !editorRetired.value || ['browser_state_get', 'browser_reception_reset', 'browser_payment_open'].includes(tool.name)).map(tool => ({ ...tool, origin }))
           availability.value = 'ready'
           return
         }
@@ -152,13 +152,16 @@ export function createInteractiveServiceClient() {
         const journey = issuedUrl ? readPbJourney(issuedUrl) : undefined
         const entry = safeParse(menuEntryReceiptSchema, response.result)
         const submission = safeParse(pbSubmissionResultSchema, response.result)
+        const gateway = safeParse(pbGatewayReceiptSchema, response.result)
+        const opened = tool.name === 'browser_payment_open' && issuedUrl && readPbStateJourney(issuedUrl) && issuedUrl === activeUrl
+          && gateway.success && gateway.output.reference === serializedInput.reference && gateway.output.method === serializedInput.method
         const returned = journey?.tablePath && tool.name === 'browser_return_table' && issuedUrl === activeUrl
           && safeParse(tableSelectionReceiptSchema, response.result).success
         const submitted = journey && tool.name === 'browser_order_submit' && submission.success && submission.output.dispatch === 'dispatched' && submission.output.status !== 'rejected' && issuedUrl === activeUrl
         // Only PB's bounded entry/submission acknowledgement may settle across
         // rediscovery. It cannot complete another write, restore old handles or
         // authorize any action in the replacement document.
-        if (!returned && !submitted && (tool.name !== 'browser_start_ordering' || !issuedUrl || issuedUrl !== activeUrl
+        if (!opened && !returned && !submitted && (tool.name !== 'browser_start_ordering' || !issuedUrl || issuedUrl !== activeUrl
           || journey?.tablePath !== new URL(issuedUrl).pathname
           || !entry.success || entry.output.selectedTable !== serializedInput.name)) {
           throw new Error('工具回應不屬於目前頁面。')

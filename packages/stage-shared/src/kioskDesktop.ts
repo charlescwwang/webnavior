@@ -1,7 +1,7 @@
 import type { InferOutput } from 'valibot'
 
 import { defineEventa, defineInvokeEventa } from '@moeru/eventa'
-import { boolean, finite, integer, literal, maxLength, minLength, minValue, number, object, pick, picklist, pipe, strictObject, string, variant } from 'valibot'
+import { boolean, finite, integer, literal, maxLength, minLength, minValue, number, object, optional, pick, picklist, pipe, strictObject, string, variant } from 'valibot'
 
 import { discoveryRequestSchema, executionRequestSchema, inspectionRequestSchema } from './interactiveService'
 
@@ -33,10 +33,14 @@ export type SurfaceBounds = InferOutput<typeof surfaceBoundsSchema>
 export const desktopSurfaceActivitySchema = pick(desktopSurfaceRequestSchema, ['serviceId', 'documentKey'])
 /** Activity identifies its service document without carrying typed keys or personal input. */
 export type DesktopSurfaceActivity = InferOutput<typeof desktopSurfaceActivitySchema>
+export const gatewayChoiceSchema = picklist(['apple', 'wallet', 'card'])
+export type GatewayChoice = InferOutput<typeof gatewayChoiceSchema>
 export const desktopSurfaceNavigationSchema = object({
   ...desktopSurfaceActivitySchema.entries,
   revision: pipe(number(), integer(), minValue(1)),
   state: picklist(['loading', 'ready', 'manual-payment', 'failed']),
+  gatewayOrder: optional(string()),
+  paymentProvider: optional(picklist(['line', 'ecpay'])),
 })
 /** Full-document navigation only; no merchant URL, scan value or credentials are broadcast. */
 export type DesktopSurfaceNavigation = InferOutput<typeof desktopSurfaceNavigationSchema>
@@ -65,6 +69,8 @@ export const desktopServiceRequestSchema = strictObject({
   serviceId: pipe(string(), minLength(1), maxLength(120)),
   documentKey: pipe(string(), minLength(1), maxLength(200)),
   command: variant('kind', [
+    strictObject({ kind: literal('return-payment'), revision: pipe(number(), integer(), minValue(1)), reference: pipe(string(), minLength(1), maxLength(200)) }),
+    strictObject({ kind: literal('choose-gateway'), revision: pipe(number(), integer(), minValue(1)), reference: string(), choice: gatewayChoiceSchema }),
     strictObject({ kind: literal('discover'), request: discoveryRequestSchema }),
     strictObject({ kind: literal('execute'), request: executionRequestSchema }),
     strictObject({ kind: literal('inspect'), request: inspectionRequestSchema }),

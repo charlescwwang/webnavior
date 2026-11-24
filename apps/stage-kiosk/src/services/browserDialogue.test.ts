@@ -94,18 +94,18 @@ it.each(['A3', 'A 三桌', '我的桌號是A3', '我要坐A3', 'A3，還要乙�
 })
 
 // Report: this chat, Nov17 — cart review treated 「這樣就好」 as a request to edit a dish.
-it('accepts a completed-cart answer only for cart review and still asks for invoice selection', async () => {
+it.each(['這樣就好', '先這樣好了', '這樣就好了'])('accepts %s for cart review and still requires separate submission consent', async (text) => {
   const { dialogue, facts, answer } = setup()
   dialogue.presentService(facts, { purpose: 'review-checkout', request: '', question: '要結帳嗎？', choices: [{ id: 'yes', description: '核對購物車' }] })
-  expect(dialogue.canAnswerLocally(facts, '這樣就好')).toBe(true)
-  expect(await dialogue.answer(facts, '這樣就好', async () => facts, () => true)).toMatchObject({ kind: 'review-cart' })
+  expect(dialogue.canAnswerLocally(facts, text)).toBe(true)
+  expect(await dialogue.answer(facts, text, async () => facts, () => true)).toMatchObject({ kind: 'review-cart' })
   dialogue.presentService(facts, { purpose: 'cart-review', request: '結帳', question: '餐點正確嗎？', choices: [{ id: 'yes', description: '繼續選擇發票' }, { id: 'no', description: '修改餐點' }] })
-  expect(dialogue.canAnswerLocally(facts, '這樣就好')).toBe(true)
-  expect(await dialogue.answer(facts, '這樣就好', async () => facts, () => true)).toMatchObject({ kind: 'checkout', action: 'invoice-options' })
+  expect(dialogue.canAnswerLocally(facts, text)).toBe(true)
+  expect(await dialogue.answer(facts, text, async () => facts, () => true)).toMatchObject({ kind: 'checkout', action: 'invoice-options' })
   expect(answer).not.toHaveBeenCalled()
   dialogue.presentService(facts, { purpose: 'submit-order', query: 'ticket', request: '送單', question: '確認送出嗎？', choices: [{ id: 'yes', description: '送出' }, { id: 'no', description: '保留' }] })
-  expect(dialogue.canAnswerLocally(facts, '這樣就好')).toBe(false)
-  expect(await dialogue.answer(facts, '這樣就好', async () => facts, () => true)).toMatchObject({ kind: 'receipt', result: { effect: 'none', customerMessage: '確認送出嗎？' } })
+  expect(dialogue.canAnswerLocally(facts, text)).toBe(false)
+  expect(await dialogue.answer(facts, text, async () => facts, () => true)).toMatchObject({ kind: 'receipt', result: { effect: 'none', customerMessage: '確認送出嗎？' } })
 })
 
 // Report: this chat, Nov15 — complete item/count answers must not ask to add again.
@@ -952,6 +952,77 @@ it('provides fresh order facts to Main and keeps payment replies read-only', asy
   await expect(executeBrowserReply(client, 'checkout-guidance')).rejects.toThrow('different order')
 })
 
+// Report: this chat — spoken method at PB payment selection did not open the gateway.
+it.each([
+  ['我要用信用卡付款', 'Credit'],
+  ['刷卡', 'Credit'],
+  ['我想用 LINE Pay', 'LinePay'],
+  ['可以用信用卡嗎？', undefined],
+  ['不用 LINE Pay', undefined],
+  ['信用卡或 LINE Pay', undefined],
+])('opens only an explicit payment selection for %s', async (text, method) => {
+  const { client, begin } = setup()
+  begin(text!)
+  const tool = client.tools.value.find(tool => tool.name === 'browser_state_get')!
+  const resultClient = { ...client, tools: readonly(shallowRef([tool, { ...tool, name: 'browser_payment_open' }])) }
+  const order = { reference: 'TEST-1', status: 20, total: 64, paymentStatus: 'pending', paymentMethods: ['信用卡', 'LINE Pay'], invoice: {} }
+  client.execute.mockResolvedValue({ ok: true, source: 'browser', page: 'payment', observedAt: 123, order })
+  await readBrowserConversation(resultClient, 'payment-turn', modelTools)
+  const answer = await prepareBrowserQuestionAnswer(resultClient)
+  if (method) {
+    expect(answer).toBeDefined()
+    await answer!()
+    await answer!()
+  }
+  else if (text === '可以用信用卡嗎？') {
+    expect(await answer!()).toMatchObject({ effect: 'none', customerMessage: expect.stringContaining('信用卡') })
+  }
+  else {
+    expect(answer).toBeUndefined()
+  }
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_payment_open').map(([, input]) => input)).toEqual(method ? [{ reference: 'TEST-1', method }] : [])
+})
+
+it.each(['有沒有其他支付方式？', '有沒有一卡通？', '我要換付款方式'])('answers %s from the current order without opening a gateway', async (text) => {
+  const { client, begin } = setup()
+  begin(text)
+  const reader = client.tools.value.find(tool => tool.name === 'browser_state_get')!
+  const peer = { ...client, tools: readonly(shallowRef([reader, { ...reader, name: 'browser_payment_open' }])) }
+  client.execute.mockResolvedValue({ ok: true, source: 'browser', page: 'payment', observedAt: 1, order: { reference: 'TEST', status: 20, total: 60, paymentStatus: 'pending', paymentMethods: ['LINE Pay'], invoice: {} } })
+  await readBrowserConversation(peer, 'methods', modelTools)
+  const answer = await prepareBrowserQuestionAnswer(peer)
+  const reply = await answer!()
+  expect(reply).toMatchObject({ effect: 'none', customerMessage: expect.stringContaining('LINE Pay') })
+  expect(reply).not.toMatchObject({ customerMessage: expect.stringContaining('信用卡') })
+  expect(client.execute).toHaveBeenCalledOnce()
+})
+
+it.each(['matched', 'rejected', 'replaced'] as const)('carries one Apple Pay choice across only a matching gateway receipt: %s', async (variant) => {
+  const { client } = setup()
+  const selectGateway = vi.fn(async () => ({ ok: true, source: 'browser', customerMessage: 'scan' }))
+  release.push(beginBrowserCartTask('我要用 Apple Pay', {
+    isCurrent: () => true,
+    selectGateway,
+    decide: async () => {
+      throw new Error('unexpected cart proposal')
+    },
+  }))
+  const reader = client.tools.value.find(tool => tool.name === 'browser_state_get')!
+  const tools = readonly(shallowRef([reader, { ...reader, name: 'browser_payment_open' }]))
+  const page = { ok: true, source: 'browser', page: 'payment', observedAt: 1, order: { reference: 'TEST', status: 20, total: 60, paymentStatus: 'pending', paymentMethods: ['信用卡'], invoice: {} } }
+  const execute = vi.fn(async (tool: ServiceTool) => tool.name === reader.name ? page : { ok: variant !== 'rejected', source: 'browser', status: 'gateway-requested', reference: variant === 'replaced' ? 'OTHER' : 'TEST', method: 'Credit' })
+  const peer = { tools, execute }
+  await readBrowserConversation(peer, 'payment', modelTools)
+  const answer = await prepareBrowserQuestionAnswer(peer)
+  await answer!()
+  await answer!()
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_payment_open')).toHaveLength(1)
+  if (variant === 'matched')
+    expect(selectGateway).toHaveBeenCalledExactlyOnceWith('apple', 'TEST', expect.any(Function))
+  else
+    expect(selectGateway).not.toHaveBeenCalled()
+})
+
 // Report: this chat, Nov20 — local reception IDs do not identify the operator.
 it('reads the visible order without inferring customer ownership or granting write tools', async () => {
   const { client } = setup()
@@ -1039,13 +1110,20 @@ it('releases the old invoice question when the customer naturally asks about oth
   expect(facts.cart.lines).toEqual([])
 })
 
+it('rechecks invoice entry when the customer says the barcode was scanned', async () => {
+  const { dialogue, facts, answer } = setup()
+  answer.mockResolvedValue({ kind: 'UNCERTAIN', provider: 'main' })
+  dialogue.presentService(facts, { purpose: 'invoice-details', request: '結帳', question: '請掃描載具。', choices: [{ id: 'yes', description: '重新檢查' }] })
+  expect(await dialogue.answer(facts, '掃好了', async () => facts, () => true, 10)).toMatchObject({ kind: 'checkout', action: 'continue' })
+})
+
 it('retires a repeatedly unresolved submission question without returning a submit action', async () => {
   const { dialogue, facts, answer } = setup()
   answer.mockResolvedValue({ kind: 'UNCERTAIN', provider: 'unavailable' })
   dialogue.presentService(facts, { purpose: 'submit-order', query: 'ticket', request: '送單', question: '確認送出嗎？', choices: [{ id: 'yes', description: '送出' }, { id: 'no', description: '保留' }] })
   await dialogue.answer(facts, '聽不懂', async () => facts, () => true, 10)
   const result = await dialogue.answer(facts, '還是不懂', async () => facts, () => true, 11)
-  expect(result).toMatchObject({ kind: 'receipt', result: { code: 'QUESTION_RETRY_LIMIT', effect: 'none' } })
+  expect(result).toMatchObject({ kind: 'receipt', result: { code: 'QUESTION_RETRY_LIMIT', effect: 'none', customerMessage: expect.stringContaining('我要結帳') } })
   expect(dialogue.hasPending()).toBe(false)
   expect(dialogue.hasSubmissionQuestion()).toBe(false)
 })

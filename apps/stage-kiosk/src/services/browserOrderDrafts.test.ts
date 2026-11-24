@@ -168,7 +168,7 @@ it('cancels an unanswered slot locally without changing the cart and accepts a n
   const { dialogue, facts, line, respond, answer } = setup()
   dialogue.collectOrder(facts, { lines: [line('p-2', '我要便當', null)] }, '我要便當')
   expect(dialogue.canAnswerLocally(facts, '先不要了')).toBe(true)
-  expect(await respond('先不要了')).toMatchObject({ result: { customerMessage: '已取消這次選餐，購物車保持不變。' } })
+  expect(await respond('先不要了')).toMatchObject({ result: { customerMessage: '已取消這次選餐，購物車保持不變。想點其他餐點，可以直接說餐名。' } })
   expect(facts.cart).toEqual({ version: 'cart', lines: [] })
   expect(dialogue.hasPending()).toBe(false)
   expect(answer).not.toHaveBeenCalled()

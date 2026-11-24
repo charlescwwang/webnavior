@@ -18,12 +18,18 @@ import { array, looseObject, number, parse, safeParse, string } from 'valibot'
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { createBrowserOrderDrafts, orderFactsSchema, orderSlotCount } from './browserOrderDrafts'
 import { createBrowserQuestionWindow } from './browserQuestionWindow'
+import { finishedOrdering } from './checkoutInvitation'
 import { createRecommendationSession } from './recommendationSession'
 import { createTableSelection } from './tableSelection'
 
 const factsSchema = orderFactsSchema
 const phoneMessages = orderingMessages['zh-Hant'].checkout.notificationPhone
 const checkoutEntryPurposes = new Set(['invoice-details', 'notification-details', 'checkout-details'])
+
+function menuNextStep(raw: unknown) {
+  const messages = orderingMessages['zh-Hant'].nextStep
+  return parse(factsSchema, raw).cart.lines.length ? messages.withCart : messages.emptyCart
+}
 
 // Only an entire numeric reply belongs to a donation slot. Preserve leading
 // zeroes and reject attached requests rather than extracting arbitrary digits.
@@ -208,12 +214,16 @@ export function createBrowserDialogue(io: {
   function literalChoice(pending: NonNullable<ReturnType<typeof questions.pending>>, transcript: string) {
     // Completion acknowledges data entry only. The next step re-reads fields;
     // these phrases never authorize submission or alter the form themselves.
+    if (pending.kind === 'service' && pending.purpose === 'invoice-details'
+      && /^(?:掃好了|掃完了|掃描好了|掃描完了)[。！!，,\s]*$/.test(transcript.trim())) {
+      return 'yes'
+    }
     if (pending.kind === 'service' && checkoutEntryPurposes.has(pending.purpose)
       && /^(?:ok|okay|好|好的|好了|填好了|資料填好了)[。！!，,\s]*$/i.test(transcript.trim())) {
       return 'yes'
     }
     if (pending.kind === 'service' && ['review-checkout', 'cart-review'].includes(pending.purpose)
-      && /^(?:這樣就好|就這樣|餐點正確|餐點沒問題)[。！!，,\s]*$/.test(transcript.trim())) {
+      && (finishedOrdering(transcript) || /^(?:餐點正確|餐點沒問題)[。！!，,\s]*$/.test(transcript.trim()))) {
       return 'yes'
     }
     if (pending.kind === 'service' && ['cart-review', 'notification-phone-confirm', 'invoice-donation-confirm', 'invoice-tax-confirm'].includes(pending.purpose)
@@ -523,7 +533,7 @@ export function createBrowserDialogue(io: {
       if (!binding || !pending || !isCurrent())
         return
       if (pending.kind === 'service' && ['notification-phone-confirm', 'submit-order'].includes(pending.purpose)
-        && /^(?:這樣就好|就這樣)[。！!，,\s]*$/.test(transcript.trim())) {
+        && finishedOrdering(transcript)) {
         return { kind: 'receipt' as const, result: receipt(pending.question) }
       }
       const signature = JSON.stringify({ owner: binding.owner, documentId: binding.documentId, cartVersion: binding.cartVersion, purpose: pending.question.purpose, question: pending.question.question, choices: pending.question.choices })
@@ -685,8 +695,12 @@ export function createBrowserDialogue(io: {
         const attempts = (unresolvedQuestion?.attempts ?? 0) + (sameUtterance ? 0 : 1)
         unresolvedQuestion = { signature, attempts, utteranceId }
         if (attempts >= 2) {
+          const checkoutQuestion = pending.kind === 'service' && (
+            safeParse(pbCheckoutStepSchema, pending.purpose).success || pending.purpose.startsWith('invoice-')
+          )
+          const customerMessage = checkoutQuestion ? orderingMessages['zh-Hant'].nextStep.resumeCheckout : menuNextStep(observed)
           releaseQuestion()
-          return { kind: 'receipt' as const, result: { ok: true, source: 'browser', status: 'clarification', code: 'QUESTION_RETRY_LIMIT', effect: 'none', customerMessage: orderingMessages['zh-Hant'].questionRetryLimit } }
+          return { kind: 'receipt' as const, result: { ok: true, source: 'browser', status: 'clarification', code: 'QUESTION_RETRY_LIMIT', effect: 'none', customerMessage } }
         }
         return { kind: 'receipt' as const, result: { ...receipt(pending.question), customerMessage: pending.question.question } }
       }
@@ -756,7 +770,7 @@ export function createBrowserDialogue(io: {
           recommendations.update({ clearPrice: true })
         const restored = questions.pending(fresh)
         if (selected.choiceId === 'no')
-          return { kind: 'receipt' as const, result: restored ? receipt(restored.question) : { ok: true, source: 'browser', effect: 'none', customerMessage: '好的，您可以繼續看餐點。' } }
+          return { kind: 'receipt' as const, result: restored ? receipt(restored.question) : { ok: true, source: 'browser', effect: 'none', customerMessage: menuNextStep(observed) } }
         return { kind: 'receipt' as const, result: { ok: true, source: 'browser', dataOnly: true, needsAssistant: true, answeredQuestion } }
       }
       if (selected.kind === 'slot') {
@@ -770,15 +784,18 @@ export function createBrowserDialogue(io: {
         orders.reset()
         return { kind: 'order' as const, proposals: selected.proposals, binding: fresh }
       }
-      if (selected.kind === 'cancelled')
+      if (selected.kind === 'cancelled') {
         orders.reset()
+        const next = menuNextStep(observed)
+        return { kind: 'receipt' as const, result: { ok: true, source: 'browser', status: 'clarification', code: 'QUESTION_RELEASED', effect: 'none', customerMessage: `已取消這次選餐，購物車保持不變。${next}` } }
+      }
       if (selected.kind === 'product')
         return { kind: 'product' as const, product: selected.product, request: pending.kind === 'product' ? pending.request : '', requestTarget: pending.kind === 'product' ? pending.query : undefined, requestedQuantity: undefined, orderSelection: pending.kind === 'product' ? pending.orderSelection : undefined, completePurchase: !!literal && pending.kind === 'product' ? completePurchase(observed, pending.request, selected.product.productRef) : undefined, binding: fresh }
       if (selected.kind === 'addition')
         return { kind: 'addition' as const, proposal: selected.proposal, binding: fresh }
       if (selected.kind === 'page')
         return { kind: 'receipt' as const, result: receipt(questions.presentProducts(fresh, selected.products, selected.request, selected.page, selected.query, pending.kind === 'product' ? pending.orderSelection : undefined)) }
-      return { kind: 'receipt' as const, result: { ok: true, source: 'browser', status: 'clarification', effect: 'none', ...(selected.kind === 'cancelled' ? { code: 'QUESTION_RELEASED' } : {}), customerMessage: selected.kind === 'cancelled' ? '已取消這次選餐，購物車保持不變。' : '這個問題已失效，請重新確認。' } }
+      return { kind: 'receipt' as const, result: { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '這個問題已失效，請重新確認。' } }
     },
   }
 }

@@ -42,7 +42,10 @@ try {
           if (request.headers.get('x-inertia-version') !== paymentPage.version)
             return new Response(null, { status: 409, headers: { 'x-inertia-location': request.url } })
           globalThis.fixtureVersionReads++
-          return new Response(JSON.stringify(paymentPage), { headers: { 'x-inertia': 'true', 'content-type': 'application/json' } })
+          const snapshot = structuredClone(paymentPage)
+          if (globalThis.fixtureExpired)
+            snapshot.props.order.status = 79
+          return new Response(JSON.stringify(snapshot), { headers: { 'x-inertia': 'true', 'content-type': 'application/json' } })
         }
         if (url.pathname.includes('/linepay/redirect/'))
           return new Response(null, { status: 302, headers: { location: gateway.line } })
@@ -56,7 +59,12 @@ try {
       }
       if (url.origin === 'https://payment.ecpay.com.tw' && request.method === 'POST')
         globalThis.fixtureCreditPostSeen = await request.text() === 'fixture=preserved'
-      return new Response(`<!doctype html><h1>Fixture payment provider</h1><a id="return" href="${root}orders/TEST">Return to merchant</a>`, { headers: htmlHeaders })
+      const selector = url.href === gateway.credit
+        ? `<button onclick="panel.innerHTML=card.innerHTML">信用卡</button><button onclick="panel.innerHTML=wallet.innerHTML">綠界Pay</button><button onclick="panel.innerHTML=apple.innerHTML">Apple Pay</button>
+           <template id="card">信用卡卡號 <input type="tel"><input type="tel"><input type="tel"><input type="tel"></template>
+           <template id="wallet">掃描付款碼<canvas></canvas></template><template id="apple"><a class="apple-pay-btn" onclick="document.body.dataset.appleClicks=Number(document.body.dataset.appleClicks||0)+1">付款</a></template><section id="panel"></section>`
+        : ''
+      return new Response(`<!doctype html><h1>Fixture payment provider</h1>${selector}<a id="return" href="${root}orders/TEST">Return to merchant</a>`, { headers: htmlHeaders })
     })
   }, { partition, choose, choices, root, gateway, paymentPage })
   host = await app.firstWindow()
@@ -73,14 +81,18 @@ try {
     await app.evaluate((_electron, post) => globalThis.fixtureCreditPost = post, method === 'credit-post')
     await site.goto(choose)
     await site.waitForLoadState('load')
-    if (method === 'line') {
+    if (method !== 'credit-post') {
       await host.waitForFunction(() => window.events.at(-1)?.revision >= 2 && window.events.at(-1)?.state === 'ready', undefined, { timeout: 10000 })
       const discovery = await host.evaluate(placement => window.airiKioskDesktop.invokeService({ serviceId: placement.serviceId, documentKey: placement.documentKey, command: { kind: 'discover', request: { version: 1, connectionId: 'payment-fixture', challenge: 'payment-fixture' } } }), placement)
       const result = await host.evaluate(({ placement, discovery }) => window.airiKioskDesktop.invokeService({ serviceId: placement.serviceId, documentKey: placement.documentKey, command: { kind: 'execute', request: { connectionId: discovery.connectionId, documentId: discovery.documentId, toolsRevision: discovery.toolsRevision, operationId: crypto.randomUUID(), name: 'browser_state_get', input: { includeCatalog: true } } } }), { placement, discovery })
       assert.equal(result.result.ok, true, 'Payment read must send the asset version')
       assert.deepEqual(result.result.order.paymentMethods, ['LINE Pay', '信用卡'])
+      const opened = await host.evaluate(({ placement, discovery, method }) => window.airiKioskDesktop.invokeService({ serviceId: placement.serviceId, documentKey: placement.documentKey, command: { kind: 'execute', request: { connectionId: discovery.connectionId, documentId: discovery.documentId, toolsRevision: discovery.toolsRevision, operationId: crypto.randomUUID(), name: 'browser_payment_open', input: { reference: 'TEST', method: method === 'line' ? 'LinePay' : 'Credit' } } } }), { placement, discovery, method })
+      assert.equal(opened.result.status, 'gateway-requested')
     }
-    await site.locator(`#${method === 'credit-post' ? 'credit' : method}`).click()
+    else {
+      await site.locator('#credit').click()
+    }
     await site.waitForURL(gateway[method === 'credit-post' ? 'credit' : method], { timeout: 15000 })
     await site.waitForLoadState('load')
     await host.waitForFunction(() => window.events.at(-1)?.state === 'manual-payment', undefined, { timeout: 10000 })
@@ -88,14 +100,59 @@ try {
     assert.match(await site.locator('body').textContent(), /Fixture payment provider/)
     const denied = await host.evaluate(placement => window.airiKioskDesktop.invokeService({ serviceId: placement.serviceId, documentKey: placement.documentKey, command: { kind: 'discover', request: { version: 1, connectionId: 'test', challenge: 'test' } } }).then(() => false, () => true), placement)
     assert.equal(denied, true, 'Provider must have no PB automation')
+    const select = (choice, reference = 'TEST', revisionOffset = 0) => host.evaluate(({ placement, choice, reference, revisionOffset }) => window.airiKioskDesktop.invokeService({
+      serviceId: placement.serviceId,
+      documentKey: placement.documentKey,
+      command: { kind: 'choose-gateway', revision: window.events.at(-1).revision + revisionOffset, reference, choice },
+    }), { placement, choice, reference, revisionOffset })
+    if (method === 'line') {
+      assert.equal(await select('apple'), 'unavailable')
+    }
+    else {
+      assert.equal(await select('card', 'OTHER'), 'unavailable')
+      assert.equal(await select('wallet', 'TEST', -1), 'unavailable')
+      assert.equal(await select('card'), 'card-ready')
+      assert.equal(await select('wallet'), 'wallet-ready')
+      assert.equal(await select('apple'), 'apple-requested')
+      assert.equal(await select('apple'), 'apple-requested')
+      assert.equal(await site.locator('body').getAttribute('data-apple-clicks'), '1')
+    }
     records.push({ method, gatewayReached: true, manualPaymentEvent: true, providerAutomationDenied: true })
+    if (method !== 'credit-post') {
+      const change = reference => host.evaluate(({ placement, reference }) => window.airiKioskDesktop.invokeService({
+        serviceId: placement.serviceId,
+        documentKey: placement.documentKey,
+        command: { kind: 'return-payment', revision: window.events.at(-1).revision, reference },
+      }), { placement, reference })
+      assert.equal(await change('OTHER'), 'unavailable')
+      assert.equal(await change('TEST'), 'returned')
+      await site.waitForURL(choose)
+      await host.waitForFunction(() => window.events.at(-1)?.state === 'ready')
+      const open = async () => host.evaluate(async ({ placement, method }) => {
+        const invoke = command => window.airiKioskDesktop.invokeService({ serviceId: placement.serviceId, documentKey: placement.documentKey, command })
+        const d = await invoke({ kind: 'discover', request: { version: 1, connectionId: 'switch', challenge: 'switch' } })
+        return invoke({ kind: 'execute', request: { connectionId: d.connectionId, documentId: d.documentId, toolsRevision: d.toolsRevision, operationId: crypto.randomUUID(), name: 'browser_payment_open', input: { reference: 'TEST', method: method === 'line' ? 'Credit' : 'LinePay' } } })
+      }, { placement, method })
+      await app.evaluate(() => globalThis.fixtureExpired = true)
+      assert.equal((await open()).result.ok, false)
+      assert.equal(site.url(), choose)
+      await app.evaluate(() => globalThis.fixtureExpired = false)
+      assert.equal((await open()).result.status, 'gateway-requested')
+      await site.waitForURL(method === 'line' ? gateway.credit : gateway.line)
+      await host.waitForFunction(() => window.events.at(-1)?.state === 'manual-payment')
+      if (method === 'line')
+        assert.equal(await select('wallet'), 'wallet-ready')
+      records.at(-1).switchedGateway = true
+      records.at(-1).expiredSwitchDenied = true
+      continue
+    }
     await site.locator('#return').click()
     await site.waitForURL(`${root}orders/TEST`)
     await site.waitForLoadState('load')
     await host.waitForFunction(() => window.events.at(-1)?.state === 'ready', undefined, { timeout: 10000 })
   }
   assert.equal(await app.evaluate(() => globalThis.fixtureCreditPostSeen), true, 'Preserve form POST data across a named-window handoff')
-  assert.equal(await app.evaluate(() => globalThis.fixtureVersionReads), 1)
+  assert.equal(await app.evaluate(() => globalThis.fixtureVersionReads), 8)
   console.info(JSON.stringify({ passed: true, records, versionedOrderRead: true, creditPostPreserved: true, realPaymentRequests: 0, realOrders: 0 }))
 }
 finally {

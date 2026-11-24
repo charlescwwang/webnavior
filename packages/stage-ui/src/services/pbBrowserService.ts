@@ -131,7 +131,7 @@ export function createPbService() {
     }
   }, journey.canSubmit, readOrderPage)
   let controlRevision = 0
-  const controlTools = new Set(['browser_return_table', 'browser_table_select', 'browser_start_ordering', 'browser_cart_review', 'browser_search', 'browser_open_product', 'browser_close_product', 'browser_set_note', 'browser_clarify_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_customer_reset', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_invoice_tax', 'browser_order_submit'])
+  const controlTools = new Set(['browser_payment_open', 'browser_return_table', 'browser_table_select', 'browser_start_ordering', 'browser_cart_review', 'browser_search', 'browser_open_product', 'browser_close_product', 'browser_set_note', 'browser_clarify_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_customer_reset', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_invoice_donation', 'browser_invoice_tax', 'browser_order_submit'])
   let activeVisual: AbortController | undefined
   for (const eventName of ['pointerdown', 'keydown', 'wheel']) {
     document.addEventListener(eventName, (event) => {
@@ -178,6 +178,7 @@ export function createPbService() {
         ]
       : []),
     { name: 'browser_present', description: 'Present exact current catalog refs, never cart quantities or subtotal. Default mode=recommendation presents at most three in the supplied ranking order; use it for named selections and ordinary recommendations. other-recommendations requests a different batch and shares the three-item limit; only that mode permits Host exclusion of the last introduced batch. mode=information is only for explicit named comparisons/menu information and allows up to ten. The full requested ref list is validated first; limiting is not evidence of absent products. If the prior search hides any selected product, clears the native search and verifies ALL selected cards before speaking. [] cancels visuals only; browser_search query="" clears the search. Never changes cart. Explicit presentation may return to the menu; preservePage=true keeps both the page and search unchanged.', inputSchema: { type: 'object', properties: { preservePage: { type: 'boolean', description: 'Host speech cue only: keep the current page and search unchanged; skip framing if the cards are not already visible.' }, deferVisual: { type: 'boolean', description: 'Host reserves validated dishes for reply-time cues; no frame or scroll until speech or visible reply starts.' }, productRefs: { type: 'array', items: { type: 'string' }, maxItems: 100 }, mode: { type: 'string', enum: ['recommendation', 'other-recommendations', 'information'], description: 'Defaults to recommendation (three). other-recommendations is only for explicitly requesting a different recommendation batch. Information is only for explicit customer-requested comparisons or factual lists.' } }, required: ['productRefs'], additionalProperties: false }, annotations: { readOnlyHint: true } },
+    { name: 'browser_payment_open', description: 'Host-only opening of an explicitly selected gateway for the current pending order.', inputSchema: { type: 'object', properties: { reference: { type: 'string' }, method: { type: 'string', enum: ['LinePay', 'Credit'] } }, required: ['reference', 'method'], additionalProperties: false } },
     { name: 'browser_state_get', description: 'Host-only fresh page, form and order state. Never a model tool; never navigates or grants write authority.', inputSchema: { type: 'object', properties: { includeCatalog: { type: 'boolean' } }, required: ['includeCatalog'], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_cart_get', description: 'Read planning data before a cart edit: current cart/version and optional product references. includeCatalog=true is internal planning data, not a customer cart-review receipt. forAdmission=true is Host-only reception preparation, including a fresh cart read on the table page. For 核對、我點了什麼、目前訂單、還不要送 use browser_cart_review instead. This does not submit an order.', inputSchema: { type: 'object', properties: { includeCatalog: { type: 'boolean' }, forAdmission: { type: 'boolean' } }, required: ['includeCatalog'], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_return_menu', description: 'Return to the full actual menu, clear website search and unfinished selection, and verify the cart is unchanged. Does not increase servings, clear cart items, submit or pay.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false }, annotations: { readOnlyHint: true } },
@@ -690,6 +691,20 @@ export function createPbService() {
     }
     async function executeAction() {
       positionMenu()
+      if (name === 'browser_payment_open') {
+        const { reference, method } = parse(strictObject({ reference: string(), method: picklist(['LinePay', 'Credit']) }), input)
+        const url = location.href
+        if (isPbOrderResultUrl(entry, url) && url.endsWith('/choosePayment')) {
+          const order = readPbOrderState(entry, url, await readOrderPage())
+          const label = method === 'Credit' ? /^(?:信用卡|credit(?:\s*card)?)$/i : /^line\s*pay$/i
+          if (!controller.signal.aborted && admittedControlRevision === controlRevision && location.href === url
+            && order.reference === reference && order.paymentStatus === 'pending' && order.paymentMethods.some(name => label.test(name.trim()))
+            && paymentPolicy.open(reference, method)) {
+            return { ok: true, source: 'browser', status: 'gateway-requested', reference, method, customerMessage: method === 'Credit' ? '已點選信用卡。進入綠界後，您可以說自行輸入卡號、Apple Pay 或綠界 Pay。' : '已點選 LINE Pay，請在支付頁完成授權。' }
+          }
+        }
+        return { ok: false, source: 'browser', effect: 'none', customerMessage: '目前無法開啟這個付款方式，請確認訂單畫面。' }
+      }
       if (name === 'browser_state_get') {
         parse(strictObject({ includeCatalog: boolean() }), input)
         if (isPbOrderResultUrl(entry, location.href)) {
@@ -1149,7 +1164,7 @@ export function createPbService() {
     positionMenu()
     if (active?.id !== request.connectionId)
       active = { id: request.connectionId, operations: new Map() }
-    const available = isPbOrderResultUrl(entry, location.href) ? tools.filter(tool => ['browser_state_get', 'browser_reception_reset'].includes(tool.name)) : tools
+    const available = isPbOrderResultUrl(entry, location.href) ? tools.filter(tool => ['browser_state_get', 'browser_reception_reset'].includes(tool.name) || (tool.name === 'browser_payment_open' && location.pathname.endsWith('/choosePayment'))) : tools
     return { ...request, documentId, toolsRevision: 1, tools: available }
   }
   function enqueue(request: InferOutput<typeof executionRequestSchema>, binding: NonNullable<typeof active>) {

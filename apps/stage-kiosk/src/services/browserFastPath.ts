@@ -20,6 +20,7 @@ import { resolveTableName } from '@proj-airi/stage-shared/table-names'
 import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
 import { array, literal, looseObject, number, optional, safeParse, string } from 'valibot'
 
+import { finishedOrdering } from './checkoutInvitation'
 import { createMenuReplyWindow } from './questionPresentation'
 import { approximateTables } from './tableSelection'
 
@@ -111,7 +112,7 @@ export function createBrowserFastPathSource(io: {
         return { contextError: '目前網頁狀態資料不完整，請重新讀取畫面。' }
       const order = safeParse(pbOrderReadStateSchema, raw)
       if (order.success) {
-        return { phase: 'ordering', readOnly: true, requiresPlanner: true, paymentState: order.output.order.paymentStatus, allowedPaymentMethods: [], interactionState: { matchingCartLines: 0, screen: 'checkout', pendingAction: `訂單${order.output.order.number ?? ''}已建立；付款狀態：${order.output.order.paymentStatus}；畫面付款方式：${order.output.order.paymentMethods.join('、')}。僅能讀取，不可改單、送單或代付款。` }, candidates: [] }
+        return { phase: 'ordering', readOnly: true, requiresPlanner: true, paymentState: order.output.order.paymentStatus, allowedPaymentMethods: io.tools.some(tool => tool.name === 'browser_payment_open') ? order.output.order.paymentMethods : [], interactionState: { matchingCartLines: 0, screen: 'checkout', pendingAction: `訂單${order.output.order.number ?? ''}已建立；付款狀態：${order.output.order.paymentStatus}；畫面付款方式：${order.output.order.paymentMethods.join('、')}。請將明確選擇畫面付款方式的需求交給 Main，由顧客完成授權。` }, candidates: [] }
       }
       if (!io.tools.some(tool => tool.name === 'browser_cart_get'))
         return { contextError: '訂單結果頁尚未就緒，請先查看畫面，避免重複送單。' }
@@ -152,7 +153,7 @@ export function createBrowserFastPathSource(io: {
         return { phase: 'selecting_table', tableSelectionRequired: true, tableSelection: { choices: table.output.tableChoices, selectedTable: table.output.selectedTable }, candidates: offered.map(choice => ({ ...choice, description: `使用${plans[choice.id].input.name}開始點餐` })) }
       }
 
-      if (!io.hasPendingQuestion() && /^(?:這樣就好|就這樣)[。！!，,\s]*$/.test(transcript) && io.tools.some(tool => tool.name === 'browser_cart_review')) {
+      if (!io.hasPendingQuestion() && finishedOrdering(transcript) && io.tools.some(tool => tool.name === 'browser_cart_review')) {
         const editor = safeParse(pbEditorStateSchema, raw)
         if (editor.success && editor.output.page === 'menu' && !editor.output.itemSelectionOpen && editor.output.cart.lines.length)
           navigation = { id: 'intent:view-cart', name: 'browser_cart_review', description: '顧客點完了，開始結帳並核對已點餐點與總額。' }

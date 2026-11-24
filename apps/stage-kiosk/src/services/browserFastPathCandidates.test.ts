@@ -135,11 +135,11 @@ it.each([
   expect(execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'browser_cart_add' }), expect.objectContaining({ quantity: 1 }))
 })
 
-it('offers cart review for 這樣就好 after ordering without a pending question', async () => {
+it.each(['這樣就好', '先這樣好了', '點好了'])('offers cart review for %s after ordering without a pending question', async (transcript) => {
   const facts = { ...emptyFacts(), cart: { version: 'draft', lines: [{ ref: 'line', name: '炸排骨便當', productRef: 'p-0', quantity: 1, unitPrice: 130, configuration: 'plain' }] } }
   const execute = vi.fn(async () => ({ ok: true }))
   const source = createBrowserFastPathSource({ tools, read: async () => facts, execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
-  expect(await source.context({ transcript: '這樣就好' })).toMatchObject({ candidates: [{ id: 'intent:view-cart' }] })
+  expect(await source.context({ transcript })).toMatchObject({ candidates: [{ id: 'intent:view-cart' }] })
   await source.execute({ candidateId: 'intent:view-cart' })
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_review' }), {})
 })

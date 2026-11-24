@@ -2,8 +2,9 @@ import type { PbJourney } from '@proj-airi/stage-shared/pb-journey'
 
 import { orderingMessages } from '../../../i18n/src/orderingMessages'
 
-/** Restricts native PB payment links in this kiosk; retains native LINE Pay and credit choices; never initiates payment. */
+/** Restricts native PB payment links in this kiosk; retains native LINE Pay and credit choices; can open one current-order gateway on explicit selection. */
 export function installPaymentPolicy(journey: PbJourney) {
+  let openedReference: string | undefined
   const disabled = new Map<HTMLAnchorElement, { href: string, tabindex: string | null, title: string | null, aria: string | null, disabledClass: boolean }>()
   const notice = document.createElement('p')
   notice.dataset.webnaviorPaymentPolicy = ''
@@ -91,6 +92,18 @@ export function installPaymentPolicy(journey: PbJourney) {
     document.addEventListener(event, block, true)
   sync()
   return {
+    open(reference: string, method: 'LinePay' | 'Credit') {
+      if (reference !== orderReference() || document.hidden || openedReference === reference)
+        return false
+      const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('.order-pay .pay-method a[href]')).filter(link =>
+        allowed(link, reference) && new URL(link.href).pathname.endsWith(`/${method}`)
+        && link.checkVisibility({ visibilityProperty: true, opacityProperty: true }) && !link.closest('[inert], [aria-disabled="true"], .is-disabled'))
+      if (links.length !== 1)
+        return false
+      openedReference = reference
+      links[0]!.click()
+      return true
+    },
     dispose() {
       observer.disconnect()
       for (const event of ['click', 'auxclick', 'keydown'])

@@ -6,11 +6,12 @@ import type { Diagnostics } from './diagnostics'
 import { createHash } from 'node:crypto'
 
 import { executionResultSchema } from '@proj-airi/stage-shared/interactive-service'
-import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { pbGatewayReceiptSchema, pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { isPbJourneyPage, isPbOrderResultUrl, isPbTableEntryUrl, menuEntryReceiptSchema, readPbJourney, tableSelectionReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
 import { WebContentsView } from 'electron'
 import { safeParse } from 'valibot'
 
+import { selectGatewayChoice } from './gatewayChoice'
 import { observeSubmission } from './observeSubmission'
 import { createPaymentNavigation } from './paymentNavigation'
 import { clipBounds, parsePageUrl } from './policy'
@@ -30,6 +31,7 @@ export class ServiceSurface {
   // tools until the full load completes, without hiding that renderable page.
   private documentLoading = false
   private serviceReady?: Promise<void>
+  private paymentNavigation?: ReturnType<typeof createPaymentNavigation>
   private navigation = 0
   private navigationTarget?: string
   private serviceEntry?: string
@@ -63,6 +65,7 @@ export class ServiceSurface {
       } })
       this.window.contentView.addChildView(this.view)
       const paymentNavigation = createPaymentNavigation(url.href)
+      this.paymentNavigation = paymentNavigation
       const paymentView = this.view
       this.view.webContents.setWindowOpenHandler((details) => {
         const view = this.view
@@ -118,7 +121,7 @@ export class ServiceSurface {
         this.documentLoading = false
         this.failed = false
         current.setVisible(this.desiredVisible)
-        this.onNavigation({ ...this.active, revision: this.navigation, state: paymentNavigation.isManualPage(current.webContents.getURL()) ? 'manual-payment' : 'ready' })
+        this.onNavigation({ ...this.active, revision: this.navigation, paymentProvider: paymentNavigation.providerAt(current.webContents.getURL()), gatewayOrder: paymentNavigation.gatewayOrder(current.webContents.getURL()), state: paymentNavigation.isManualPage(current.webContents.getURL()) ? 'manual-payment' : 'ready' })
       })
       current.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
         // Chromium aborts the previous load during a redirect. The following
@@ -231,8 +234,30 @@ export class ServiceSurface {
     const hostGeneration = this.hostGeneration
     const entry = this.serviceEntry!
     const beforeUrl = new URL(view.webContents.getURL())
+    const command = input.command
+    if (command.kind === 'choose-gateway' || command.kind === 'return-payment') {
+      const current = () => this.view === view && this.navigation === command.revision && this.hostGeneration === hostGeneration
+        && this.active?.documentKey === input.documentKey && this.active.serviceId === input.serviceId
+        && !this.documentLoading && !this.failed && view.getVisible()
+        && this.paymentNavigation?.gatewayOrder(view.webContents.getURL()) === command.reference
+      if (!current())
+        return 'unavailable'
+      if (command.kind === 'return-payment') {
+        const target = this.paymentNavigation?.returnUrl(beforeUrl.href, command.reference)
+        if (!target)
+          return 'unavailable'
+        await view.webContents.loadURL(target)
+        return this.view === view && this.hostGeneration === hostGeneration && view.webContents.getURL() === target ? 'returned' : 'unavailable'
+      }
+      if (this.paymentNavigation?.providerAt(beforeUrl.href) !== 'ecpay')
+        return 'unavailable'
+      // Only the three enum values enter this isolated function. Never install
+      // the PB adapter or expose selectors, card data or gateway frames to the host.
+      const result = await view.webContents.executeJavaScriptInIsolatedWorld(1002, [{ code: `(${selectGatewayChoice.toString()})(${JSON.stringify(command.choice)})` }], true)
+      return current() ? result : 'unavailable'
+    }
     const before = readPbJourney(beforeUrl.href)
-    const approved = () => this.view === view && !this.failed && !this.documentLoading && this.navigation === generation && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey && (isPbJourneyPage(entry, view.webContents.getURL()) || (isPbOrderResultUrl(entry, view.webContents.getURL()) && (input.command.kind !== 'execute' || ['browser_state_get', 'browser_reception_reset'].includes(input.command.request.name))))
+    const approved = () => this.view === view && !this.failed && !this.documentLoading && this.navigation === generation && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey && (isPbJourneyPage(entry, view.webContents.getURL()) || (isPbOrderResultUrl(entry, view.webContents.getURL()) && (command.kind !== 'execute' || ['browser_state_get', 'browser_reception_reset'].includes(command.request.name) || (command.request.name === 'browser_payment_open' && beforeUrl.pathname.endsWith('/choosePayment')))))
     if (!approved())
       throw new Error('Native automation is restricted to the approved PB menu/cart journey.')
     // All JavaScript is bundled application code. The untrusted renderer can
@@ -241,7 +266,7 @@ export class ServiceSurface {
     await this.serviceReady
     if (!approved())
       throw new Error('Native service navigated during initialization.')
-    const { kind, request } = input.command
+    const { kind, request } = command
     const finish = kind === 'execute' ? this.diagnostics.operation(request.name, request.operationId) : undefined
     const submissionEvent = kind === 'execute' && request.name === 'browser_order_submit' && beforeUrl.pathname === before?.cartPath ? `pb-submit-${request.operationId}` : undefined
     let result: unknown
@@ -265,6 +290,17 @@ export class ServiceSurface {
       // an accepted click into a rejection. This proves no cart/order effect.
       // Every other stale-document result, especially a cart write, still fails.
       const receipt = safeParse(executionResultSchema, result)
+      if (kind === 'execute' && request.name === 'browser_payment_open' && receipt.success) {
+        const gateway = safeParse(pbGatewayReceiptSchema, receipt.output.result)
+        if (gateway.success && gateway.output.reference === request.input.reference && gateway.output.method === request.input.method
+          && receipt.output.connectionId === request.connectionId && receipt.output.documentId === request.documentId && receipt.output.operationId === request.operationId
+          && this.view === view && !this.failed && this.hostGeneration === hostGeneration
+          && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey) {
+          const provider = gateway.output.method === 'Credit' ? 'ecpay' : 'linepay'
+          if (this.navigationTarget === `${beforeUrl.origin}/order/${provider}/redirect/${gateway.output.reference}/${gateway.output.method}`)
+            return result
+        }
+      }
       const submission = receipt.success && safeParse(pbSubmissionResultSchema, receipt.output.result)
       // Inertia/history navigation can replace the cart URL without starting a
       // new document. The last full-navigation target is stale in that case;

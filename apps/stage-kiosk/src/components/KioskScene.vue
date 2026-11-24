@@ -100,6 +100,7 @@ import { createSpeechPlayer } from '../services/kioskSpeech'
 import { createUtteranceTiming } from '../services/kioskTiming'
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
 import { createMouthActivityGate } from '../services/mouthActivity'
+import { chooseGateway, gatewayPage, paymentChoiceFromSpeech, paymentOptionsReply, switchPayment } from '../services/paymentChoice'
 import { browserRecoveryReply, createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromReceipt, replyWithQuestion } from '../services/questionPresentation'
 import { scenarioRegistry } from '../services/scenario-registry'
 import { createSpeechInterruption } from '../services/speechInterruption'
@@ -1127,6 +1128,38 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     }
     return
   }
+  const cashier = gatewayPage.value
+  if (cashier?.gatewayOrder && interactiveServiceClient.availability.value === 'manual-payment') {
+    const choice = paymentChoiceFromSpeech(utterance.text)
+    const guidance = paymentOptionsReply(utterance.text, undefined, true)
+    if ((!choice && !guidance) || manualControlPending.value) {
+      finishVoiceDiagnostic(utterance.id, 'ignored')
+      return
+    }
+    const generation = receptionGeneration
+    await currentAgentRequest()?.done
+    const current = () => ticket.isCurrent() && generation === receptionGeneration && !manualControlPending.value
+      && scenarioRegistry.activeScenario.value?.id === cashier.serviceId && cashier.documentKey === `${cashier.serviceId}:${scenarioRegistry.iframeRevision.value}`
+    if (!current())
+      return
+    const result = guidance ? { ok: true, customerMessage: guidance } : await switchPayment(cashier, choice!, current)
+    if (!current())
+      return
+    const message = result.customerMessage
+    finishVoiceDiagnostic(utterance.id, result.ok ? 'decided' : 'failed')
+    conversationMessages.value = [...conversationMessages.value, { role: 'assistant', content: message, slices: [], tool_results: [] }]
+    if (utterance.source === 'simulation')
+      asrSimulationStatus.value = message
+    const turn = interactionTurn.begin('voice', 'speaking')
+    try {
+      await speakAssistantReply(message, turn)
+    }
+    finally {
+      if (interactionTurn.isCurrent(turn))
+        interactionTurn.complete(turn)
+    }
+    return
+  }
   const input: FastPathInput = { ...utterance, deadlineAt: Date.now() + serviceRecoveryLimits.turnMs, signal: AbortSignal.any([ticket.signal, AbortSignal.timeout(serviceRecoveryLimits.turnMs)]) }
   const entry: KioskDecisionEntry = {
     id: utterance.id,
@@ -1228,6 +1261,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
                 admittedBrowserDemand = true
               }
               const release = beginBrowserCartTask(utterance.text, {
+                selectGateway: chooseGateway,
                 intentSource: 'jev',
                 utteranceId: utterance.id,
                 informationUnavailable: () => t('stage.kiosk.information-unavailable'),
@@ -2703,6 +2737,7 @@ async function sendConversationMessage(
     }
     if (conversationSource(interactiveServiceClient.tools.value) === 'browser') {
       releaseBrowserCartTask = beginBrowserCartTask(text, {
+        selectGateway: chooseGateway,
         utteranceId: options.utteranceId,
         informationUnavailable: () => t('stage.kiosk.information-unavailable'),
         servicePolicyReply: kind => t(`stage.kiosk.service-policy.${kind}`),
