@@ -1,0 +1,45 @@
+{
+  "version": "0.7.8-rc.10",
+  "previousVersion": "0.7.8-rc.9",
+  "sourceCommit": "5bd097e05dffcbb358d595b43ff224af34b99160",
+  "package": {
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc10-20261124-r1/windows/Webnavior-Kiosk-v0.7.8-rc.10-Windows-x64-20261124-221132.zip",
+    "sha256": "2b0ef67530679a1ce0be50fe6979f9ce4f531c8d9a63b805ad110078a288e6b5",
+    "bytes": 163770266,
+    "files": 81
+  },
+  "frontend": {
+    "release": "kiosk-rc10-20261124-r1",
+    "status": "activated-http-verified",
+    "apiRestart": false,
+    "changed": 96,
+    "apiPid": "1214145",
+    "httpChecks": 9,
+    "sharedCancellationChunkVerified": true
+  },
+  "validation": {
+    "kioskTests": {
+      "passed": 1293,
+      "expectedFail": 1,
+      "skipped": 49
+    },
+    "pbControlsBrowserTests": 39,
+    "scopedTypechecks": [
+      "stage-kiosk",
+      "stage-kiosk-desktop",
+      "stage-ui"
+    ],
+    "repositoryLint": {
+      "warnings": 14,
+      "errors": 0
+    },
+    "windowsArchiveVerified": true,
+    "windowsPhysicalValidation": false,
+    "electronMissingSearchReset": "passed",
+    "electronDesktopSmoke": "stopped at existing offscreen product cue assertion: expected ok=false, received ok=true",
+    "apiReadiness": {
+      "local": "ready",
+      "public": "ready"
+    }
+  }
+}
