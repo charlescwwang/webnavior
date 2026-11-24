@@ -2,6 +2,7 @@ import type { KioskProfileDraft, KioskSiteManagementCapabilities } from '../../c
 
 import { expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
+import { page } from 'vitest/browser'
 import { createI18n } from 'vue-i18n'
 
 import deviceSettings from '../../../../../packages/i18n/src/locales/zh-Hant/deviceSettings.yaml'
@@ -30,11 +31,15 @@ it('edits and publishes discovery labels without changing the source draft or me
   const onSave = vi.fn()
   const screen = render(KioskProfileEditor, { props: { busy: false, capabilities, draft, onSave }, global })
   try {
-    await screen.getByText('互動服務', { exact: true }).click()
-    await screen.getByRole('button', { name: '新增餐點別名／類別', exact: true }).click()
-    await screen.getByLabelText('餐點完整品名', { exact: true }).fill('炸雞腿便當')
-    await screen.getByLabelText('常用別名（例如：雞腿飯、雞腿）', { exact: true }).fill('雞腿飯、雞腿')
-    await screen.getByLabelText('選餐類別（例如：便當、麵食）', { exact: true }).fill('便當')
+    await screen.getByRole('button', { name: '設定點餐網站' }).click()
+    expect(page.getByRole('button', { name: '新增餐點別名／類別' }).elements()).toHaveLength(0)
+    await page.getByText('餐點別名與分類（0 筆）', { exact: true }).click()
+    await page.getByRole('button', { name: '新增餐點別名／類別', exact: true }).click()
+    await page.getByLabelText('餐點完整品名', { exact: true }).fill('炸雞腿便當')
+    await page.getByLabelText('常用別名（例如：雞腿飯、雞腿）', { exact: true }).fill('雞腿飯、雞腿')
+    await page.getByLabelText('選餐類別（例如：便當、麵食）', { exact: true }).fill('便當')
+    await page.getByText('餐點別名與分類（1 筆）', { exact: true }).click()
+    await page.getByRole('button', { name: '返回體驗設定' }).click()
     await screen.getByRole('button', { name: '儲存草稿', exact: true }).click()
     expect(onSave.mock.calls[0][0].draft.snapshot.interactiveService).toEqual({ ...draft.snapshot.interactiveService, catalogLabels: [{ name: '炸雞腿便當', aliases: ['雞腿飯', '雞腿'], category: '便當' }] })
     expect(draft.snapshot.interactiveService).not.toHaveProperty('catalogLabels')
@@ -71,6 +76,27 @@ it.each([
   try {
     expect(screen.container.querySelectorAll('input[type="file"]').length).toBe(0)
     expect(screen.getByRole('button', { name: '下載角色套件', exact: true }).elements()).toHaveLength(0)
+  }
+  finally { screen.unmount() }
+})
+
+it('allows entering a merchant ID only until the saved draft is loaded', async () => {
+  const onSave = vi.fn()
+  const screen = render(KioskProfileEditor, { props: { busy: false, capabilities, draft, onSave }, global })
+  try {
+    await screen.getByRole('button', { name: '設定點餐網站' }).click()
+    await page.getByRole('button', { name: '新增店家／點餐網站' }).click()
+    const id = page.getByRole('textbox', { name: /店家識別碼/ })
+    await id.fill('merchant')
+    await id.fill('merchant-two')
+    await page.getByRole('button', { name: '返回體驗設定' }).click()
+    await screen.getByRole('button', { name: '儲存草稿', exact: true }).click()
+    const saved = onSave.mock.calls[0][0].draft
+    expect(saved.snapshot.orderingSites[0].id).toBe('merchant-two')
+    await screen.rerender({ draft: saved })
+    await screen.getByRole('button', { name: '設定點餐網站' }).click()
+    await expect.element(page.getByText('merchant-two', { exact: true })).toBeVisible()
+    expect(id.elements()).toHaveLength(0)
   }
   finally { screen.unmount() }
 })

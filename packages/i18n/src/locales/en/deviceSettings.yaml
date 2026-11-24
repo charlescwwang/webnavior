@@ -1,8 +1,17 @@
+orderingSetup: Ordering websites
+openOrderingSetup: Configure ordering websites
+defaultSite: Default ordering website
+defaultSiteHint: Devices open this website unless another one is selected.
+additionalSites: Other available websites
+siteName: Website name
+orderingDraftHint: Return to the experience settings to save your draft. Publish it to apply the changes on devices.
+backToProfile: Back to experience settings
 activeOrderingSite: 'Currently active: {name}'
 pendingOrderingSite: Merchant selection saved; waiting for the current round to finish or restart.
 orderingSiteApplyFailed: Could not apply the merchant selection. Check the connection and published sites before starting a new order.
 orderingSiteRegistryHint: Add supported merchant pages and publish them before selecting them on a device. A URL alone does not provide an operation adapter.
 orderingSiteId: Stable merchant ID
+orderingSiteIdReadOnly: Merchant ID (read-only)
 orderingSiteUrl: Ordering page URL
 orderingSiteDescription: Description
 removeOrderingSite: Remove merchant option
@@ -115,6 +124,7 @@ conversationMode:
   voice: Voice-only mode
   description: Change text-only mode in Device Settings. Successful saves apply immediately. This status reflects both device settings and the assigned Profile.
 catalogLabels:
+  summary: 'Product aliases and categories ({count})'
   hint: 'Discovery labels: enter the exact current PB product name, comma-separated aliases and category. These never change merchant prices, options or availability. Renamed, absent or duplicate-name products receive no labels; shared aliases require clarification. Save and publish to apply.'
   name: 'Exact product name'
   aliases: 'Common aliases, separated by commas'

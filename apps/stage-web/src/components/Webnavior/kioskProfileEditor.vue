@@ -5,7 +5,6 @@ import { Button, FieldCheckbox, Input, Select, Textarea } from '@proj-airi/ui'
 import { computed, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import CatalogLabelsEditor from './catalogLabelsEditor.vue'
 import ExperienceEditorSection from './experienceEditorSection.vue'
 import KioskCharacterPackageActions from './kioskCharacterPackageActions.vue'
 import OrderingSitesEditor from './orderingSitesEditor.vue'
@@ -280,25 +279,13 @@ function selectMotion(slot: MotionSlot, event: Event) {
       </label>
     </ExperienceEditorSection>
 
-    <ExperienceEditorSection title="互動服務" :description="t('stage.kiosk.service-editor-description')">
-      <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
-        服務名稱
-        <Input v-model="form.snapshot.interactiveService.title" :disabled="busy || !props.capabilities?.canEditExperience" placeholder="例如：線上點餐" />
-      </label>
-      <label v-if="props.capabilities?.canEditTechnicalSettings" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
-        服務網址
-        <Input v-model="form.snapshot.interactiveService.url" :disabled="busy || !props.capabilities?.canEditExperience" type="url" placeholder="https://example.com/menu" />
-      </label>
-      <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
-        說明
-        <Textarea v-model="form.snapshot.interactiveService.description" :disabled="busy || !props.capabilities?.canEditExperience" :rows="2" />
-      </label>
-      <CatalogLabelsEditor v-model="form.snapshot.interactiveService.catalogLabels" :disabled="busy || !props.capabilities?.canEditExperience" />
-    </ExperienceEditorSection>
-
-    <ExperienceEditorSection v-if="props.capabilities?.canEditTechnicalSettings" :title="t('deviceSettings.orderingSite')" :description="t('deviceSettings.orderingSiteRegistryHint')">
-      <OrderingSitesEditor v-model="form.snapshot.orderingSites" :disabled="busy" />
-    </ExperienceEditorSection>
+    <OrderingSitesEditor
+      v-model="form.snapshot.orderingSites"
+      v-model:default-site="form.snapshot.interactiveService"
+      :disabled="busy"
+      :can-edit="Boolean(props.capabilities?.canEditExperience)"
+      :technical="Boolean(props.capabilities?.canEditTechnicalSettings)"
+    />
 
     <ExperienceEditorSection v-if="props.capabilities?.canEditTechnicalSettings" title="回饋" description="互動結束後提供給顧客的回饋連結。">
       <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">

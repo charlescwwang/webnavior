@@ -5,9 +5,11 @@ import type { KioskProfileDraft } from '../../composables/useKioskManagement'
 import { createPinia } from 'pinia'
 import { afterEach, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
+import { page } from 'vitest/browser'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
+import deviceSettings from '../../../../../packages/i18n/src/locales/zh-Hant/deviceSettings.yaml'
 import stage from '../../../../../packages/i18n/src/locales/zh-Hant/stage.yaml'
 import ProfilesPage from './profiles.vue'
 
@@ -74,7 +76,7 @@ async function fixture(gate?: Promise<void>, packageCharacter?: KioskCharacterSe
   })
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/admin/kiosk/profiles', component: ProfilesPage }] })
   await router.push('/admin/kiosk/profiles')
-  const screen = render(ProfilesPage, { global: { plugins: [router, createPinia(), createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage } } })] } })
+  const screen = render(ProfilesPage, { global: { plugins: [router, createPinia(), createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage, deviceSettings } } })] } })
   await expect.element(screen.getByRole('button', { name: '發布到此店別', exact: true })).toBeEnabled()
   return { screen, router, submitted: () => submitted, exported: () => exported, uploadCount: () => uploadCount, publishCount: () => publishCount }
 }
@@ -173,8 +175,9 @@ it('imports a complete character while retaining local merchant settings and uns
   const { screen, submitted, publishCount } = await fixture(undefined, character)
   try {
     await screen.getByText('角色卡與虛擬角色', { exact: true }).click()
-    await screen.getByText('互動服務', { exact: true }).click()
-    await screen.getByLabelText('服務名稱', { exact: true }).fill('未儲存的店別服務')
+    await screen.getByRole('button', { name: '設定點餐網站' }).click()
+    await page.getByLabelText('網站名稱', { exact: true }).fill('未儲存的店別服務')
+    await page.getByRole('button', { name: '返回體驗設定' }).click()
     await screen.getByLabelText(/上傳角色套件 ZIP/).upload(new File(['package'], 'character.zip'))
     await expect.element(screen.getByLabelText('顧客看到的服務員名稱', { exact: true })).toHaveValue('套件角色')
     expect(submitted()).toBeUndefined()

@@ -1,8 +1,17 @@
+orderingSetup: 點餐網站
+openOrderingSetup: 設定點餐網站
+defaultSite: 預設點餐網站
+defaultSiteHint: 裝置未指定其他網站時，會開啟這個網站。
+additionalSites: 其他可選網站
+siteName: 網站名稱
+orderingDraftHint: 編輯完成後請回到體驗設定儲存草稿。發布後，裝置才會套用。
+backToProfile: 返回體驗設定
 activeOrderingSite: '目前使用：{name}'
 pendingOrderingSite: 新店家設定已儲存，待目前訂單結束或重新開始後套用。
 orderingSiteApplyFailed: 無法套用店家設定，請確認連線與發佈清單後重試新訂單。
 orderingSiteRegistryHint: 新增已支援操作的店家網頁，發布後可在裝置設定選擇。僅填入網址不會自動建立操作支援。
-orderingSiteId: 店家識別碼（小寫英文、數字與連字號，建立後請勿變更）
+orderingSiteId: 店家識別碼（小寫英文、數字與連字號）
+orderingSiteIdReadOnly: 店家識別碼（唯讀）
 orderingSiteUrl: 點餐網頁網址
 orderingSiteDescription: 說明
 removeOrderingSite: 移除此店家選項
@@ -115,6 +124,7 @@ conversationMode:
   voice: 純語音模式
   description: 請在裝置設定中調整純文字模式，儲存成功後立即套用。此處顯示裝置與角色設定共同決定的實際模式。
 catalogLabels:
+  summary: '餐點別名與分類（{count} 筆）'
   hint: '選餐輔助：填入 PB 畫面上的完整品名、顧客常用別名及類別。別名以頓號或逗號分隔；不會更改 PB 的價格、選項或供應狀態。改名、下架或同名的餐點不套用；共同別名會先詢問品項。儲存後需發布才套用。'
   name: '餐點完整品名'
   aliases: '常用別名（例如：雞腿飯、雞腿）'
