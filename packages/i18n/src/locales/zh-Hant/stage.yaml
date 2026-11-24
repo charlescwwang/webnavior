@@ -331,7 +331,7 @@ customer-session:
     title: 訂單已送出
     description: 感謝您的點餐，我們已完成本次訂單流程。
     simulated-notice: 此為模擬訂單，尚未傳送至 POS 系統。
-    countdown: 此畫面將在 {seconds} 秒後自動結束。
+    countdown: '{seconds} 秒後將開始新訂單。'
     finish: 完成，重新開始
     qr-alt: 問卷 QR Code
     qr-loading: 正在準備問卷 QR Code…

@@ -78,6 +78,7 @@ import { useKioskProcessingCue } from '../composables/useKioskProcessingCue'
 import { useKioskServiceRecovery } from '../composables/useKioskServiceRecovery'
 import { useKioskStreamingReply } from '../composables/useKioskStreamingReply'
 import { useKioskVoiceTest } from '../composables/useKioskVoiceTest'
+import { usePaidOrderCompletion } from '../composables/usePaidOrderCompletion'
 import { setKioskLocale } from '../modules/i18n'
 import { endKioskAdminSession, isKioskAdminSessionActive } from '../services/admin-session'
 import { beginBrowserCartTask, cancelBrowserItemSelection, executeBrowserCartTool, executeBrowserQuantityQuestion, prepareBrowserQuestionAnswer, readBrowserConversation } from '../services/browserCartTask'
@@ -639,6 +640,13 @@ watch(() => scenarioRegistry.activeScenario.value?.serviceUrl, async (serviceUrl
 watch(interactiveServiceClient.completionRevision, (revision, previousRevision) => {
   if (revision > previousRevision)
     handleScenarioCompleted()
+})
+usePaidOrderCompletion(interactiveServiceClient, () => {
+  if (customerSessionState.value === 'resetting' || customerSessionState.value === 'completing')
+    return
+  if (customerSessionState.value === 'awaiting-idle-confirmation')
+    continueCurrentSession()
+  void handleScenarioCompleted()
 })
 const proactiveCamera = useTemplateRef<HTMLVideoElement>('proactiveCamera')
 const initialMicrophonePermission = createKioskStartupPermissionGate()
@@ -3127,18 +3135,27 @@ async function handleScenarioCompleted(message?: InteractionLifecycleMessage) {
   // A direct iframe click may emit `activity` and `completed` back-to-back.
   // Establish the anonymous session here as well so completion cannot outrun
   // the asynchronous activity handler and disappear without a customer screen.
+  const generation = receptionGeneration
   await recordCustomerActivity('completed')
+  if (generation !== receptionGeneration)
+    return
   await interactionRecording.append('service_event', 'completed')
   if (message?.orderResult)
     await interactionRecording.recordOrderResult(message.orderResult)
-  if (customerSession.completeOrder())
+  if (generation === receptionGeneration && customerSession.completeOrder())
     await interactionRecording.append('service_event', 'feedback_invitation_shown')
 }
 
 async function finishCustomerSessionCompletion() {
   await interactionRecording.append('service_event', 'feedback_invitation_dismissed')
   mediaCapture.stopContinuousCapture()
-  await customerSession.end('completed')
+  try {
+    await customerSession.end('completed')
+  }
+  catch (error) {
+    customerResetError.value = error instanceof BrowserRestartBlocked ? error.message : t('stage.kiosk.cart-handoff.restart-failed')
+    console.error('[stage-kiosk] failed to finish the paid customer session:', error)
+  }
 }
 
 async function startNewCustomerSession() {

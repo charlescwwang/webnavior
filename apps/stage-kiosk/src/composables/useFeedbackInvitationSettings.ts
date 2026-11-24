@@ -13,6 +13,7 @@ export function useFeedbackInvitationSettings() {
   const enabled = useFeedbackInvitationEnabled()
   return computed(() => ({
     ...kioskInteractionProfile.feedbackInvitation.value,
+    displayDurationSeconds: 10,
     enabled: enabled.value && kioskInteractionProfile.feedbackInvitation.value.enabled,
   }))
 }

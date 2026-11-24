@@ -327,7 +327,7 @@ customer-session:
     title: Order submitted
     description: Thank you for your order. This order flow is complete.
     simulated-notice: This is a simulated order and has not been sent to the POS system.
-    countdown: This screen will close in {seconds} seconds.
+    countdown: 'A new order will start in {seconds} seconds.'
     finish: Finish and start over
     qr-alt: Survey QR code
     qr-loading: Preparing the survey QR code…

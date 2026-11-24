@@ -1223,6 +1223,11 @@ document to verify the result. The Host then reloads the configured entry URL
 (PB's select-table page), replacing the previous customer's document and tool
 handles while retaining the dedicated browser profile's login. A successful
 native reset alone does not prepare the next customer's entry screen.
+After payment returns to PB’s order detail page, Kiosk starts a ten-second
+countdown once the current document confirms a paid order and permits restart.
+At expiry it reloads the entry for the next customer. Selecting a payment
+method, submitting the order, or returning with a cancelled payment keeps the
+current reception open.
 Manual **重新開始／新訂單** checks the editable PB cart. When it contains
 items, the Host uses the same verified clear operation before opening the
 configured entry. A failed clear keeps the current reception active. An empty

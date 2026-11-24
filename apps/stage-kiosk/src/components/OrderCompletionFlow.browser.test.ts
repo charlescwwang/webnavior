@@ -5,7 +5,33 @@ import { createI18n } from 'vue-i18n'
 
 import CustomerSessionCompletion from '../../../../packages/stage-ui/src/components/scenarios/customer-session/CustomerSessionCompletion.vue'
 
+import { useFeedbackInvitationSettings } from '../composables/useFeedbackInvitationSettings'
 import { createScenarioRegistry } from '../services/scenario-registry'
+
+it('finishes the kiosk reception after ten seconds even with the order QR visible', async () => {
+  const finish = vi.fn()
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  const screen = render(defineComponent({
+    setup() {
+      const settings = useFeedbackInvitationSettings()
+      return () => h(CustomerSessionCompletion, { settings: settings.value, orderContinuationUrl: 'https://example.com/test', onFinish: finish })
+    },
+  }), { global: { plugins: [createI18n({ legacy: false, locale: 'en', missingWarn: false, fallbackWarn: false, messages: {
+    en: { stage: { 'customer-session': { completion: { countdown: 'Next order in {seconds}' } } } },
+  } })] } })
+  try {
+    expect(document.body.textContent).toContain('Next order in 10')
+    await vi.advanceTimersByTimeAsync(9000)
+    expect(document.body.textContent).toContain('Next order in 1')
+    expect(finish).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(finish).toHaveBeenCalledOnce()
+  }
+  finally {
+    screen.unmount()
+    vi.useRealTimers()
+  }
+})
 
 // This integration uses only the loopback test Bridge and its payment simulator.
 // Opt in with VITE_ORDER_MENU_COMPLETION_TEST=true and both menu URLs configured.
