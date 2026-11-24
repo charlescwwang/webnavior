@@ -133,6 +133,7 @@ export function browserConversationInstructions(context: BrowserConversation) {
     currentActivity: activities[context.phase],
     availableActions: context.allowedToolNames,
     currentPage: context.page ? { 'table': '選桌', 'menu': '菜單', 'cart': '購物車', 'checkout': '發票與結帳', 'payment': '選擇付款方式', 'order-result': '訂單結果' }[context.page] : undefined,
+    menuSearchActive: context.page === 'menu' && context.search !== undefined ? context.search.length > 0 : undefined,
     tableChoices: context.tableChoices,
     // Name normalization is verified input evidence, not a website selection.
     requestedTable: context.phase === 'selecting_table' ? resolveTableName(context.sourceUtterance, context.tableChoices ?? []) : undefined,

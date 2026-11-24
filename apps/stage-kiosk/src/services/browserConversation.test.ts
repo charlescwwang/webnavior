@@ -100,3 +100,19 @@ it('gives business tools names and prices without asking the model to carry host
   expect(data.catalog.products[0].orderSpecifications[0]).toMatchObject({ name: '大份', unitPrice: 100 })
   expect(instructions).not.toContain('private-')
 })
+
+// Report: docs/codex-handoff.md, Nov20 — the planner could not see the active menu filter.
+it.each([['previous manual filter', true], ['', false]] as const)('tells the planner whether the menu is filtered without forwarding the search text (%s)', (search, menuSearchActive) => {
+  const instructions = browserConversationInstructions({
+    taskId: 'menu',
+    sourceUtterance: '看全部',
+    phase: 'browsing',
+    page: 'menu',
+    search,
+    readOnly: true,
+    catalog: { complete: true, products: [] },
+    allowedToolNames: ['return_to_menu'],
+  })
+  expect(JSON.parse(instructions.slice(instructions.indexOf('{')))).toMatchObject({ menuSearchActive })
+  expect(instructions).not.toContain('previous manual filter')
+})
