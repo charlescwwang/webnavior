@@ -1,0 +1,52 @@
+{
+  "release": "kiosk-rc12-20261125-r2",
+  "frontend": {
+    "release": "kiosk-rc12-20261125-r2",
+    "status": "activated-http-verified",
+    "apiRestart": false,
+    "changed": 96,
+    "apiPid": "704202"
+  },
+  "httpChecks": 9,
+  "package": {
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc12-20261125-r1/windows/Webnavior-Kiosk-v0.7.8-rc.12-Windows-x64-20261125-211955.zip",
+    "sha256": "152523c5ab6619ec4e94dcb3bd16017570d9eb147a5cce31230dd39d3f3d5cc8",
+    "bytes": 163771465,
+    "files": 81,
+    "version": "0.7.8-rc.12",
+    "sourceCommit": "35f1f2d449129eba5902b0fe53be7329cea0033d",
+    "pairedFrontend": "kiosk-rc12-20261125-r2"
+  },
+  "api": {
+    "previousPid": "704202",
+    "files": [
+      {
+        "path": "packages/stage-shared/src/orderingTools.ts",
+        "before": "74989a807925b588310dbda9fd7116cb547240bf6bcf507427a4128b90ec8fcf",
+        "after": "cd14766ac944cb8b76ae2a0b64efda04940ba9f4094476986f26cc1912580208"
+      }
+    ],
+    "status": "rolled-back",
+    "apiPid": "704202",
+    "health": {
+      "status": "ready",
+      "checks": {
+        "db": "ok",
+        "redis": "ok"
+      }
+    }
+  },
+  "mainModel": "gpt-6.2-sol",
+  "validation": {
+    "kioskPassed": 1356,
+    "kioskExpectedFail": 1,
+    "kioskSkipped": 49,
+    "sharedOrderingToolsPassed": 19,
+    "kioskTypecheck": "passed"
+  },
+  "commits": [
+    "e077210e",
+    "ce61421f",
+    "ac1e1ffd"
+  ]
+}
