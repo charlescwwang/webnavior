@@ -87,6 +87,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.scenario-surface { padding: 6px; position: relative; isolation: isolate; display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; border: 1px solid rgb(255 255 255 / 30%); border-radius: 1.5rem; background: #fff8ee; box-shadow: 0 1.25rem 4rem rgb(0 0 0 / 24%); }
+.scenario-surface { padding: 3px; position: relative; isolation: isolate; display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; border: 1px solid rgb(255 255 255 / 30%); border-radius: 1rem; background: #fff8ee; box-shadow: 0 1.25rem 4rem rgb(0 0 0 / 24%); }
 iframe { min-height: 0; width: 100%; height: 100%; border: 0; }
 </style>

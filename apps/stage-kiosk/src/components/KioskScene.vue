@@ -3484,14 +3484,14 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.kiosk-scene { display: grid; box-sizing: border-box; width: 100vw; height: 100dvh; grid-template-columns: minmax(0, 1fr); padding: 1.25rem; overflow: hidden; background: radial-gradient(circle at 12% 0%, rgb(59 79 63 / 24%), transparent 38%), linear-gradient(135deg, #111a17, #15211d); row-gap: 1rem; }
+.kiosk-scene { display: grid; box-sizing: border-box; width: 100vw; height: 100dvh; grid-template-columns: minmax(0, 1fr); padding: 1.25rem; overflow: hidden; background: radial-gradient(circle at 12% 0%, rgb(59 79 63 / 24%), transparent 38%), linear-gradient(135deg, #111a17, #15211d); row-gap: .5rem; }
 .kiosk-scene.is-landscape { grid-template-rows: minmax(0, .25fr) minmax(0, .75fr); }
 .kiosk-scene.is-portrait { grid-template-rows: minmax(0, .25fr) minmax(0, .75fr); }
 .kiosk-scene.has-native-console.is-landscape { grid-template-rows: minmax(120px, .25fr) auto minmax(180px, .75fr); }
 .kiosk-scene.has-native-console.is-portrait { grid-template-rows: minmax(120px, .25fr) auto minmax(180px, .75fr); }
 .native-text-console { position: relative; z-index: 60; min-width: 0; min-height: 0; grid-column: 1; grid-row: 2; }
 .has-native-console .menu-region { grid-row: 3; }
-.service-hero { position: relative; display: grid; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 10%); border-radius: 1.125rem; background: radial-gradient(ellipse at 24% 16%, rgb(238 205 148 / 10%), transparent 25%), linear-gradient(105deg, #24352d 0%, #1a2922 43%, #101a16 100%); grid-column: 1; grid-row: 1; }.service-hero.is-landscape { grid-template-columns: minmax(5.5rem, .24fr) minmax(0, .76fr); }.service-hero.is-portrait { grid-template-columns: minmax(5.5rem, .24fr) minmax(0, .76fr); }
+.service-hero { position: relative; display: grid; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 10%); border-radius: 1rem; background: radial-gradient(ellipse at 24% 16%, rgb(238 205 148 / 10%), transparent 25%), linear-gradient(105deg, #24352d 0%, #1a2922 43%, #101a16 100%); grid-column: 1; grid-row: 1; }.service-hero.is-landscape { grid-template-columns: minmax(5.5rem, .24fr) minmax(0, .76fr); }.service-hero.is-portrait { grid-template-columns: minmax(5.5rem, .24fr) minmax(0, .76fr); }
 .stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: transparent; transition: box-shadow .2s ease; }.stage-region.is-hearing-speech, .stage-region.is-listening { box-shadow: inset 0 0 1.4rem rgb(50 201 181 / 7%); }.stage-region.is-processing, .stage-region.is-transcribing { box-shadow: inset 0 0 1.6rem rgb(255 180 76 / 8%); }.stage-region.is-speaking { box-shadow: inset 0 0 1.6rem rgb(117 157 255 / 8%); }
 /* Keep the upper-body gestures prominent in the narrow hero column. Scaling from
    the bottom and shifting down together keeps the face at the same height while
@@ -3501,7 +3501,13 @@ onUnmounted(() => {
 /* Keep the administrator hold target available without exposing controls in the customer-facing composition. */
 :global(.kiosk-admin-access) { position: fixed; z-index: 100; top: 1.75rem; left: 1.75rem; display: inline-flex; height: 2.25rem; align-items: center; gap: .35rem; border: 1px solid rgb(217 250 246 / 28%); border-radius: .7rem; padding: 0 .7rem; color: #d9faf6; background: rgb(1 17 20 / 92%); box-shadow: 0 .35rem 1rem rgb(0 0 0 / 28%); opacity: 0; transition: opacity .16s ease, background .16s ease; }
 :global(.kiosk-admin-access:hover), :global(.kiosk-admin-access:focus-visible) { background: #153f43; opacity: 1; }
-.conversation-region { min-width: 0; min-height: 0; }
+.service-hero > .conversation-region {
+  min-width: 0;
+  min-height: 0;
+  margin: .25rem .25rem .25rem .4rem;
+  border: 1px solid rgb(217 250 246 / 22%);
+  border-radius: .75rem;
+}
 .menu-region { min-width: 0; min-height: 0; grid-column: 1; grid-row: 2; }
 .proactive-camera { position: fixed; width: 1px; height: 1px; pointer-events: none; opacity: 0; }
 /* Keep the action inside the avatar column, clear of both messages and the native website. */
@@ -3515,7 +3521,7 @@ onUnmounted(() => {
 }
 
 @media (max-width: 700px) {
-  .kiosk-scene { padding: .6rem; row-gap: .6rem; }
+  .kiosk-scene { padding: .6rem; row-gap: .35rem; }
   .service-hero.is-landscape { grid-template-columns: minmax(5rem, .24fr) minmax(0, .76fr); }
 }
 </style>
