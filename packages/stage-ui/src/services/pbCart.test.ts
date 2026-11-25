@@ -3,6 +3,7 @@ import type { CartGateway, CartSnapshot } from './pbCart'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createCartOperations, readCartPage, verifyCartRowEdit } from './pbCart'
+import { prepareAddition } from './pbProduct'
 
 function setup() {
   let cart: CartSnapshot = { context: { orderRef: 'order', date: 'today', time: 'noon', manualRevision: 0 }, lines: [{ ref: 'old', productRef: 'p-old', name: '原餐', quantity: 1, unitPrice: 17, configuration: 'original' }], subtotal: 17 }
@@ -37,6 +38,22 @@ function setup() {
 }
 
 describe('pb cart operations', () => {
+  // Report: this chat, 2026-11-25, RC10 rejected 「魚丸湯也一份」 before opening the product.
+  it('identifies a fresh product configuration mismatch as an unexecuted add', async () => {
+    const { operations, gateway } = setup()
+    const before = await gateway.read()
+    const { version } = operations.publish(before)
+    const prepare = gateway.prepare
+    gateway.prepare = async (request) => {
+      prepareAddition({ version: 'fresh', variantRef: '', name: '魚丸湯', unitPrice: 23, groups: [] }, request.selection, { productId: 1, quantity: request.quantity, note: request.note })
+      return prepare(request)
+    }
+    const receipt = await operations.execute({ action: 'add', version, productRef: 'p-new', quantity: 1, note: '', unitPrice: 23, selection: { version: 'stale', variantRef: '', choices: [] } })
+    expect(receipt).toMatchObject({ ok: false, status: 'rejected', effect: 'none', reason: 'stale-configuration' })
+    expect(await gateway.read()).toEqual(before)
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
   it.each(['quantity', 'remove'] as const)('uses the checked %s readback as the receipt without a second read', async (action) => {
     const { operations, gateway } = setup()
     const current = await gateway.read()

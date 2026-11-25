@@ -87,7 +87,7 @@ interface TaskReads {
 
 // Server admission compares transcript with this turn's stored customer text.
 // Matching text and orderEvidence may include prior answers; transcript may not.
-let active: TaskQuestions & { tableSelectionRequired?: boolean, answerResolved?: boolean, selectedAnswer?: SelectedBrowserAnswer, selected?: { productRef: string, request: string, requestTarget?: string, requestedQuantity?: number, orderSelection?: true }, confirmed?: { proposal: AdditionProposal, binding: QuestionSnapshot }, confirmedOrder?: { proposals: AdditionProposal[], binding: QuestionSnapshot, evidence?: OrderEvidence }, text: string, readonly transcript: string, decide: (proposal: BrowserEffect, plan: Pick<BrowserPlan, 'toolName' | 'arguments'>) => Promise<EffectDecision>, isCurrent: () => boolean, orderEvidence?: OrderEvidence, receipts: Map<string, VerifiedReceipt>, reads: TaskReads } | undefined
+let active: TaskQuestions & { tableSelectionRequired?: boolean, answerResolved?: boolean, selectedAnswer?: SelectedBrowserAnswer, selected?: { productRef: string, request: string, requestTarget?: string, requestedQuantity?: number, orderSelection?: true }, confirmed?: { proposal: AdditionProposal, binding: QuestionSnapshot }, confirmedOrder?: { proposals: AdditionProposal[], binding: QuestionSnapshot, evidence?: OrderEvidence }, text: string, readonly transcript: string, decide: (proposal: BrowserEffect, plan: Pick<BrowserPlan, 'toolName' | 'arguments'>) => Promise<EffectDecision>, isCurrent: () => boolean, orderEvidence?: OrderEvidence, receipts: Map<string, VerifiedReceipt>, reads: TaskReads, configurationRefresh?: { addition: string, state: 'pending' | 'dispatching' | 'settled' } } | undefined
 const writes = new Set(['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'])
 const orderingAnswerFactsSchema = looseObject({ products: array(looseObject({ ref: string(), name: string(), configurations: array(productConfigurationSchema) })) })
 const tableEntrySchema = looseObject({ ...pbTableStateSchema.entries, code: literal('table-selection-required'), customerMessage: string() })
@@ -852,6 +852,14 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
   if (active !== task || !task.isCurrent())
     return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
   const action = tool.name === 'browser_cart_add' ? 'add' : tool.name === 'browser_cart_replace' ? 'replace' : tool.name === 'browser_cart_quantity' ? 'quantity' : 'remove'
+  // A refreshed product digest may re-enter admission once with the same cart,
+  // serving, quantity, note and price. A changed purchase needs customer input.
+  const additionIdentity = action === 'add' && servingKey
+    ? JSON.stringify([facts.cart.version, servingKey, input.quantity, input.note, input.unitPrice, input.copySourceRef])
+    : undefined
+  const configurationRefresh = task.configurationRefresh?.state === 'pending' ? task.configurationRefresh : undefined
+  if (configurationRefresh && configurationRefresh.addition !== additionIdentity)
+    return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '最新餐點資料與剛才的加餐條件不同，請確認後再加入。' }
   if (!task.confirmed && input.version !== facts.cart.version && [...task.receipts.values()].some(receipt => receipt.version === facts.cart.version)) {
     // A verified effect in THIS turn owns the new cart version. A later call
     // from the same model batch has not been dispatched or claimed yet: return
@@ -1000,13 +1008,31 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
   }
   if (ambiguous)
     return { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '目前有多筆同名商品，請先在畫面確認要操作的那一筆；尚未變更購物車。' }
+  if (task.configurationRefresh?.state === 'dispatching'
+    || (configurationRefresh && configurationRefresh.state !== 'pending')
+    || (!configurationRefresh && task.configurationRefresh?.state === 'pending')) {
+    return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '餐點資料已更新，這次尚未加入購物車。' }
+  }
+  if (configurationRefresh)
+    configurationRefresh.state = 'dispatching'
   const result = await dispatchCartWrite(client, tool, input)
-  const unexecuted = safeParse(looseObject({ ok: literal(false), source: literal('browser'), status: literal('rejected'), effect: literal('none'), reason: literal('stale-cart'), execution: looseObject({ steps: array(object({})) }) }), result)
+  if (configurationRefresh)
+    configurationRefresh.state = 'settled'
+  const unexecuted = safeParse(looseObject({ ok: literal(false), source: literal('browser'), status: literal('rejected'), effect: literal('none'), reason: picklist(['stale-cart', 'stale-configuration']), execution: looseObject({ steps: array(object({})) }) }), result)
   if (unexecuted.success && unexecuted.output.execution.steps.length === 0 && active === task && task.isCurrent() && !task.receipts.size) {
     // Native validation proved no dispatch. Keep the exact request for Main's
     // normal fresh-read/issued-plan admission flow; never replace only its version
     // or retry it here after a pickup, manual cart or configuration change.
-    return { ...unexecuted.output, ok: true, status: 'proposal_rejected', dataOnly: true, needsAssistant: true, originalRequest: task.transcript, requiredAction: action, ...(replacement ? { selectedProduct: { productRef: replacement.ref, name: replacement.name } } : {}), requestedQuantity: input.quantity, explanation: '購物車資料已更新，這次操作尚未派送。保留原需求、餐點、份數及設定，重新讀取完整最新資料並核對後再提出操作；不要只替換版本，不重做任何已完成或結果不明的操作。' }
+    const staleConfiguration = unexecuted.output.reason === 'stale-configuration'
+    if (staleConfiguration) {
+      if (!additionIdentity || task.configurationRefresh)
+        return result
+      task.configurationRefresh = { addition: additionIdentity, state: 'pending' }
+    }
+    const explanation = staleConfiguration
+      ? '商品資料已更新，尚未派送。重新讀取並核對最新資料，沿用顧客剛才指定的餐點、份數、加購與備註。若購物車或售價已變更、原規格無法沿用，先請顧客確認。'
+      : '購物車資料已更新，這次操作尚未派送。保留原需求、餐點、份數及設定，重新讀取完整最新資料並核對後再提出操作；不要只替換版本，不重做任何已完成或結果不明的操作。'
+    return { ...unexecuted.output, ok: true, status: 'proposal_rejected', dataOnly: true, needsAssistant: true, originalRequest: task.transcript, requiredAction: action, ...(replacement ? { selectedProduct: { productRef: replacement.ref, name: replacement.name } } : {}), requestedQuantity: input.quantity, explanation }
   }
   if (result && typeof result === 'object' && 'ok' in result && result.ok === true && 'status' in result && result.status === 'verified' && 'cart' in result && result.cart && typeof result.cart === 'object' && 'version' in result.cart && typeof result.cart.version === 'string') {
     const receipt = { ...result, planAdmission: semanticDecision, completionScope: 'tool-call', originalRequest: task.orderEvidence?.request ?? task.transcript, completedEffects: [...completedEffects, ...('effectMessage' in result && typeof result.effectMessage === 'string' ? [result.effectMessage] : [])] }

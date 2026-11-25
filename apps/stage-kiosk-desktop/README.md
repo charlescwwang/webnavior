@@ -522,3 +522,8 @@ Use the RC9 portable folder with the paired Kiosk frontend for visible cart veri
 ## Windows 0.7.8-rc.10
 
 Use the RC10 portable folder with the paired Kiosk frontend to test checkout invitations and alternative recommendations after declining an unfinished selection. Cart review opens the cart before asking the customer to confirm its contents. Customer reset works when the full menu has no search field. Exit the running Kiosk and extract the entire ZIP into a new folder.
+
+RC11 preserves the original add request after the PB adapter verifies a product
+configuration mismatch before dispatch. The paired Kiosk frontend can read fresh
+data and propose the same addition once; changes to the purchase require customer
+confirmation. Use the complete RC11 portable folder with the RC11 frontend.

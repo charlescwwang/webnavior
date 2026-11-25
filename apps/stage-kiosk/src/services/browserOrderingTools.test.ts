@@ -406,6 +406,36 @@ it('resolves the unique dumpling extra by its observed option identity instead o
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_add' }), expect.objectContaining({ quantity: 1, unitPrice: 80, selection: { version: 'config', variantRef: '', choices: [{ ref: 'dumpling', quantity: 2 }] } }))
 })
 
+// Report: this chat, 2026-11-25, RC10 rejected 「魚丸湯也一份」 before opening the product.
+it.each([false, true])('recompiles the same fish ball soup add from fresh facts (price changed: %s)', async (priceChanged) => {
+  const { call, execute, facts } = setup('魚丸湯也一份')
+  const soup = { ...facts.products[0], ref: 'soup', name: '魚丸湯', price: 50, configurations: [{ ...facts.products[0].configurations[0], unitPrice: 50 }] }
+  facts.products.push(soup)
+  const executeNative = execute.getMockImplementation()!
+  execute.mockImplementation(async (tool, input) => {
+    if (tool.name !== 'browser_cart_add')
+      return executeNative(tool, input)
+    if (input.selection && Reflect.get(input.selection, 'version') === 'config') {
+      soup.configurations[0].version = 'fresh'
+      if (priceChanged)
+        soup.configurations[0].unitPrice = soup.price = 55
+      return { ok: false, source: 'browser', status: 'rejected', effect: 'none', reason: 'stale-configuration', execution: { steps: [] } }
+    }
+    facts.cart.lines.push({ ref: 'added', productRef: String(input.productRef), name: soup.name, quantity: Number(input.quantity), unitPrice: Number(input.unitPrice), configuration: '', note: '', options: [] })
+    facts.cart.version = 'updated-cart'
+    return { ok: true, source: 'browser', status: 'verified', effect: 'applied', cart: structuredClone(facts.cart) }
+  })
+  const request = { items: [{ name: '魚丸湯', quantity: 1 }] }
+  expect(await call('add_items_to_cart', request)).toMatchObject({ status: 'proposal_rejected', dataOnly: true, originalRequest: '魚丸湯也一份' })
+  expect(facts.cart.lines.map(line => line.name)).toEqual(['雞腿飯'])
+  expect(await call('add_items_to_cart', request)).toMatchObject({ status: priceChanged ? 'rejected' : 'verified' })
+  expect(facts.cart.lines.map(line => [line.name, line.quantity])).toEqual(priceChanged ? [['雞腿飯', 3]] : [['雞腿飯', 3], ['魚丸湯', 1]])
+  const additions = execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add')
+  expect(additions).toHaveLength(priceChanged ? 1 : 2)
+  if (!priceChanged)
+    expect(additions[1][1]).toMatchObject({ productRef: 'soup', quantity: 1, unitPrice: 50, selection: { version: 'fresh', choices: [] } })
+})
+
 // Report: this chat, Nov14; servings and dumpling extras must remain distinct.
 it.each([
   { text: '水餃10顆', servings: [[10, 1]] },

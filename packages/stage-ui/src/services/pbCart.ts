@@ -426,7 +426,8 @@ export function createCartOperations(gateway: CartGateway) {
           : dispatched
             ? '這次購物車操作的結果尚未確認，請查看購物車；系統已暫停新的代操作。'
             : `這次沒有變更購物車：${errorMessageFrom(error) ?? '請重新確認目前餐點與購物車。'}`
-        return { ok: false, status: dispatched ? 'unknown' : 'rejected', effect: dispatched ? 'unknown' : 'none', error: errorMessageFrom(error) ?? 'PB operation failed.', ...(verifiedAddition ? { partial: true, verifiedAddition } : {}), customerMessage }
+        const staleConfiguration = !dispatched && error instanceof Error && error.cause === 'stale-configuration'
+        return { ok: false, status: dispatched ? 'unknown' : 'rejected', effect: dispatched ? 'unknown' : 'none', ...(staleConfiguration ? { reason: 'stale-configuration' } : {}), error: errorMessageFrom(error) ?? 'PB operation failed.', ...(verifiedAddition ? { partial: true, verifiedAddition } : {}), customerMessage }
       }
       finally { busy = false }
     },
