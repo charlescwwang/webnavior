@@ -26,8 +26,8 @@
         "after": "cd14766ac944cb8b76ae2a0b64efda04940ba9f4094476986f26cc1912580208"
       }
     ],
-    "status": "rolled-back",
-    "apiPid": "704202",
+    "status": "deployed",
+    "apiPid": "972597",
     "health": {
       "status": "ready",
       "checks": {
