@@ -32,7 +32,7 @@ export async function describeConfiguration(input: { productRef: string, variant
 /** Validates all mandatory groups, option identity, limits and the observed price. */
 export function resolveSelection(configuration: ProductConfiguration, selection: ProductSelection, note: string) {
   if (selection.version !== configuration.version || selection.variantRef !== configuration.variantRef)
-    throw new Error('餐點規格、價格或取餐時段已變更，請重新選擇。')
+    throw new Error('餐點規格、價格或取餐時段已變更，請重新選擇。', { cause: 'stale-configuration' })
   if (new Set(selection.choices.map(choice => choice.ref)).size !== selection.choices.length)
     throw new Error('同一規格不能重複傳入。')
   const choices = selection.choices.map((selection) => {

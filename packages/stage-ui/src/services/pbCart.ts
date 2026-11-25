@@ -26,7 +26,7 @@ export interface CartSnapshot {
   lines: CartLine[]
   subtotal: number
   /** Vendor order/pickup context and trusted manual-interaction generation. */
-  context: { orderRef?: string, date: string, time: string, manualRevision: number, tableName?: string }
+  context: { orderRef?: string, date: string, time: string, defaultPickupTime?: true, manualRevision: number, tableName?: string }
 }
 
 /** Parses PB's active order, including the explicit state before its first item. */
@@ -38,7 +38,7 @@ export function readCartPage(value: unknown, pickup: { date: string, time: strin
     // must fail closed instead of permitting a new customer to adopt an old cart.
     if (page.subtotal !== 0 || (page.details !== undefined && page.details !== null && (!Array.isArray(page.details) || page.details.length)))
       throw new Error('PB 空訂單的明細與小計不一致。')
-    return { lines: [], subtotal: 0, context: { ...pickup, manualRevision, ...tableContext } }
+    return { lines: [], subtotal: 0, context: { ...pickup, defaultPickupTime: true, manualRevision, ...tableContext } }
   }
   const cart = parse(looseObject({ subtotal: number(), order: looseObject({ hash: nullable(string()), pick_up_date: nullable(string()), pick_up_time: nullable(string()) }), details: array(looseObject({ id: number(), amount: number(), unit_price: number(), note: unknown(), item_type: string(), item: looseObject({ id: number(), name: string() }), product_prices: array(looseObject({ parent_id: unknown(), product_attrs: array(looseObject({ amount: number(), attr: looseObject({ name: string() }) })) })) })) }), value)
   // PB can create the empty draft before assigning its hash during the first
@@ -49,7 +49,7 @@ export function readCartPage(value: unknown, pickup: { date: string, time: strin
   // PB Create-CjexdErb.js leaves draft pickup fields null until checkout.
   // Resolve only explicit nulls against a fresh menu context, as for the empty
   // cart; persisted strings remain authoritative and malformed fields reject.
-  return { context: { ...(cart.order.hash === null ? {} : { orderRef: cart.order.hash }), date: cart.order.pick_up_date ?? pickup.date, time: cart.order.pick_up_time ?? pickup.time, manualRevision, ...tableContext }, subtotal: cart.subtotal, lines: cart.details.map(line => ({ ref: String(line.id), productRef: `${line.item_type === 'product' ? 'p' : 'pg'}-${line.item.id}`, name: line.item.name, options: line.product_prices.flatMap(price => price.product_attrs.map(choice => ({ name: choice.attr.name, quantity: choice.amount }))), description: line.product_prices.flatMap(price => price.product_attrs.map(choice => `${choice.attr.name} ×${choice.amount}`)).join('、'), quantity: line.amount, unitPrice: line.unit_price, note: typeof line.note === 'string' ? line.note : '', configuration: cartConfiguration(typeof line.note === 'string' ? line.note : '', line.product_prices) })) }
+  return { context: { ...(cart.order.hash === null ? {} : { orderRef: cart.order.hash }), date: cart.order.pick_up_date ?? pickup.date, time: cart.order.pick_up_time ?? pickup.time, ...(cart.order.pick_up_time === null ? { defaultPickupTime: true as const } : {}), manualRevision, ...tableContext }, subtotal: cart.subtotal, lines: cart.details.map(line => ({ ref: String(line.id), productRef: `${line.item_type === 'product' ? 'p' : 'pg'}-${line.item.id}`, name: line.item.name, options: line.product_prices.flatMap(price => price.product_attrs.map(choice => ({ name: choice.attr.name, quantity: choice.amount }))), description: line.product_prices.flatMap(price => price.product_attrs.map(choice => `${choice.attr.name} ×${choice.amount}`)).join('、'), quantity: line.amount, unitPrice: line.unit_price, note: typeof line.note === 'string' ? line.note : '', configuration: cartConfiguration(typeof line.note === 'string' ? line.note : '', line.product_prices) })) }
 }
 
 /** Formats vendor-confirmed rows for both read-back and write receipts without merging configurations. */
@@ -82,7 +82,21 @@ export interface CartGateway {
 }
 
 function fingerprint(cart: CartSnapshot) {
-  return JSON.stringify({ context: [cart.context.orderRef, cart.context.date, cart.context.time, cart.context.manualRevision, cart.context.tableName], subtotal: cart.subtotal, lines: [...cart.lines].sort((a, b) => a.ref.localeCompare(b.ref)) })
+  return JSON.stringify({ context: [cart.context.orderRef, cart.context.date, cart.context.time, cart.context.defaultPickupTime, cart.context.manualRevision, cart.context.tableName], subtotal: cart.subtotal, lines: [...cart.lines].sort((a, b) => a.ref.localeCompare(b.ref)) })
+}
+
+/** Only the next minute of the merchant's rolling default can advance during a prepared add. */
+export function advancedDefaultPickup(before: CartSnapshot['context'], after: CartSnapshot['context']) {
+  if (!before.defaultPickupTime || !after.defaultPickupTime || before.date !== after.date || before.manualRevision !== after.manualRevision)
+    return false
+  const minutes = (time: string) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time) ? Number(time.slice(0, 2)) * 60 + Number(time.slice(3)) : Number.NaN
+  return minutes(after.time) === minutes(before.time) + 1
+}
+
+/** Compares the complete cart at the press, allowing an unselected default minute to tick. */
+export function sameCartForAddition(before: CartSnapshot, after: CartSnapshot) {
+  const context = advancedDefaultPickup(before.context, after.context) ? { ...after.context, time: before.context.time } : after.context
+  return fingerprint(before) === fingerprint({ ...after, context })
 }
 
 /**
@@ -104,12 +118,17 @@ export function verifyCartRowEdit(before: CartSnapshot, after: CartSnapshot, ref
   })
 }
 
+function sameAddContext(before: CartSnapshot['context'], after: CartSnapshot['context']) {
+  return before.orderRef === after.orderRef && before.date === after.date && before.tableName === after.tableName
+    && before.manualRevision === after.manualRevision && (before.time === after.time || advancedDefaultPickup(before, after))
+}
+
 /** Verifies the complete result of one add, including first-order creation and unrelated rows. */
 function verifyAddition(before: CartSnapshot, after: CartSnapshot, selection: PreparedItem, quantity: number) {
   const expectedContext = !before.lines.length && !before.context.orderRef
     ? { ...before.context, orderRef: after.context.orderRef }
     : before.context
-  if (after.context.orderRef !== expectedContext.orderRef || after.context.date !== expectedContext.date || after.context.time !== expectedContext.time || after.context.tableName !== expectedContext.tableName || after.context.manualRevision !== expectedContext.manualRevision)
+  if (!sameAddContext(expectedContext, after.context))
     return false
   const matches = (line: CartLine) => line.productRef === selection.productRef && line.configuration === selection.configuration && line.unitPrice === selection.unitPrice
   const count = (cart: CartSnapshot) => cart.lines.filter(matches).reduce((sum, line) => sum + line.quantity, 0)
@@ -260,7 +279,8 @@ export function createCartOperations(gateway: CartGateway) {
           // Preparation can take time while the customer or another executor
           // changes the cart. Revalidate immediately before the single commit.
           await prepared.revalidate?.()
-          if (fingerprint(await gateway.read()) !== fingerprint(before))
+          const ready = await gateway.read()
+          if (operation === 'add' ? !sameCartForAddition(before, ready) : fingerprint(ready) !== fingerprint(before))
             throw new Error('選餐期間購物車已變更，請重新確認。')
           if (operation === 'quantity')
             prepared = undefined
@@ -332,7 +352,7 @@ export function createCartOperations(gateway: CartGateway) {
           const expectedContext = prepared && !before.lines.length && !before.context.orderRef
             ? { ...before.context, orderRef: after.context.orderRef }
             : before.context
-          if (after.context.orderRef !== expectedContext.orderRef || after.context.date !== expectedContext.date || after.context.time !== expectedContext.time || after.context.tableName !== expectedContext.tableName || after.context.manualRevision !== expectedContext.manualRevision)
+          if (!sameAddContext(expectedContext, after.context) || (operation !== 'add' && after.context.time !== expectedContext.time))
             throw new Error('購物車取餐情境或人工操作已變更。')
           if (prepared) {
             if (!verifyAddition(before, after, prepared, quantity))
@@ -426,7 +446,8 @@ export function createCartOperations(gateway: CartGateway) {
           : dispatched
             ? '這次購物車操作的結果尚未確認，請查看購物車；系統已暫停新的代操作。'
             : `這次沒有變更購物車：${errorMessageFrom(error) ?? '請重新確認目前餐點與購物車。'}`
-        return { ok: false, status: dispatched ? 'unknown' : 'rejected', effect: dispatched ? 'unknown' : 'none', error: errorMessageFrom(error) ?? 'PB operation failed.', ...(verifiedAddition ? { partial: true, verifiedAddition } : {}), customerMessage }
+        const staleConfiguration = !dispatched && error instanceof Error && error.cause === 'stale-configuration'
+        return { ok: false, status: dispatched ? 'unknown' : 'rejected', effect: dispatched ? 'unknown' : 'none', ...(staleConfiguration ? { reason: 'stale-configuration' } : {}), error: errorMessageFrom(error) ?? 'PB operation failed.', ...(verifiedAddition ? { partial: true, verifiedAddition } : {}), customerMessage }
       }
       finally { busy = false }
     },

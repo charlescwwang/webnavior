@@ -176,3 +176,29 @@ it('owns phone editing from the first touch and fills the real field through a t
   row.append(document.createElement('span'))
   await vi.waitFor(() => expect(page.getByRole('group', { name: '通知手機數字鍵盤' }).query()).toBeNull())
 })
+
+it('opens the selected tax ID keypad, preserves leading zeroes and leaves the phone and order untouched', async () => {
+  const { submit } = setup()
+  const form = document.querySelector('form')!
+  form.insertAdjacentHTML('beforeend', '<label class="el-radio"><input id="tax-radio" type="radio" value="4" checked><input id="tax" placeholder="請輸入統一編號"></label><div class="field"><label>手機號碼</label><input id="contact" value="0912345678"></div>')
+  const tax = document.querySelector<HTMLInputElement>('#tax')!
+  const open = page.getByRole('button', { name: '開啟統編數字鍵盤' })
+  await open.click()
+  const panel = page.getByRole('group', { name: '統一編號數字鍵盤' })
+  for (const digit of '012345678')
+    await panel.getByRole('button', { name: digit, exact: true }).click()
+  expect(tax.value).toBe('01234567')
+  await panel.getByRole('button', { name: '刪除一碼' }).click()
+  expect(tax.value).toBe('0123456')
+  await panel.getByRole('button', { name: '關閉鍵盤' }).click()
+  await open.click()
+  await page.getByRole('button', { name: '開啟數字鍵盤' }).click()
+  expect(panel.query()).toBeNull()
+  expect(tax.value).toBe('0123456')
+  expect(document.querySelector<HTMLInputElement>('#contact')!.value).toBe('0912345678')
+  document.querySelector<HTMLInputElement>('#tax-radio')!.checked = false
+  form.dispatchEvent(new Event('input', { bubbles: true }))
+  tax.remove()
+  await vi.waitFor(() => expect(open.query()).toBeNull())
+  expect(submit).not.toHaveBeenCalled()
+})

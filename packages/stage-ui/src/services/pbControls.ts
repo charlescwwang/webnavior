@@ -4,6 +4,8 @@ import type { ServiceAction, ServiceStep } from '@proj-airi/stage-shared/service
 import type { CartLine, CartSnapshot } from './pbCart'
 import type { createOperation } from './pbOperation'
 
+import { pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
+
 import { resolveSelection } from './pbProduct'
 
 const searchSelector = 'input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]'
@@ -263,6 +265,21 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
     const destination = path === menuPath ? `${searchSelector}, ${menuCardSelector}` : '.order-create'
     await act('navigate', path === menuPath ? '返回菜單' : '查看購物車', 'navigation', locate, target => target.click(), () => location.pathname === path && Boolean(document.querySelector(destination)), { kind: 'route', ref: path })
     await dismissAnnouncement()
+  }
+  async function restoreMenuCards(catalog: string[], visibleNames: () => string[], missingDish?: string, hasCart = false) {
+    const missing = missingDish && pbProductName(missingDish)
+    const absent = missing && !catalog.some(name => pbProductName(name) === missing)
+    const hasStaleCard = (names: string[]) => absent && names.some(name => pbProductName(name) === missing)
+    // Same-route navigation leaves old PB cards mounted. Visit the merchant menu
+    // again only when a previously visible dish disappeared from its fresh catalog.
+    if (hasCart && hasStaleCard(visibleNames())) {
+      await navigate(cartPath)
+      await navigate(menuPath)
+    }
+    await search('', () => {
+      const visible = visibleNames()
+      return !hasStaleCard(visible) && catalog.every(name => visible.includes(name))
+    })
   }
   async function inspectCart(readPage: (page: unknown) => Promise<CartSnapshot>) {
     let inspected = false
@@ -574,5 +591,5 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
       }
     }, { deferredDispatch: true, target: { kind: 'field', ref: 'cart-clear' } })
   }
-  return { act, ready, canEdit, search, open, close, dismissAnnouncement, navigate, inspectCart, prepare, add, edit, clearCart, note: setNote }
+  return { act, ready, canEdit, search, restoreMenuCards, open, close, dismissAnnouncement, navigate, inspectCart, prepare, add, edit, clearCart, note: setNote }
 }

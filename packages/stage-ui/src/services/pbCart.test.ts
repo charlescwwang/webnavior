@@ -3,6 +3,7 @@ import type { CartGateway, CartSnapshot } from './pbCart'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createCartOperations, readCartPage, verifyCartRowEdit } from './pbCart'
+import { prepareAddition } from './pbProduct'
 
 function setup() {
   let cart: CartSnapshot = { context: { orderRef: 'order', date: 'today', time: 'noon', manualRevision: 0 }, lines: [{ ref: 'old', productRef: 'p-old', name: '原餐', quantity: 1, unitPrice: 17, configuration: 'original' }], subtotal: 17 }
@@ -37,6 +38,42 @@ function setup() {
 }
 
 describe('pb cart operations', () => {
+  // Lunch replay: the menu's default advanced from 11:27 to 11:28 while the product dialog was open.
+  it.each(['default', 'fixed', 'manual', 'later'])('checks a pickup minute change before the prepared add: %s', async (mode) => {
+    const { operations, gateway, change } = setup()
+    const before = await gateway.read()
+    before.context = { ...before.context, ...readCartPage({ order: null, subtotal: 0 }, { date: '2026-11-25', time: '11:27' }, 0).context }
+    if (mode === 'fixed')
+      before.context = { orderRef: 'order', date: '2026-11-25', time: '11:27', manualRevision: 0 }
+    change(before)
+    const { version } = operations.publish(before)
+    const prepare = gateway.prepare
+    gateway.prepare = async (request) => {
+      const result = await prepare(request)
+      change({ ...before, context: { ...before.context, time: mode === 'later' ? '12:00' : '11:28', manualRevision: Number(mode === 'manual') } })
+      return result
+    }
+    const result = await operations.execute({ action: 'add', version, productRef: 'p-new', quantity: 3, note: '', unitPrice: 23, selection: { version: 'config', variantRef: '', choices: [] } })
+    expect(result.status).toBe(mode === 'default' ? 'verified' : 'rejected')
+    expect((await gateway.read()).lines.length).toBe(mode === 'default' ? 2 : 1)
+  })
+
+  // Report: this chat, 2026-11-25, RC10 rejected 「魚丸湯也一份」 before opening the product.
+  it('identifies a fresh product configuration mismatch as an unexecuted add', async () => {
+    const { operations, gateway } = setup()
+    const before = await gateway.read()
+    const { version } = operations.publish(before)
+    const prepare = gateway.prepare
+    gateway.prepare = async (request) => {
+      prepareAddition({ version: 'fresh', variantRef: '', name: '魚丸湯', unitPrice: 23, groups: [] }, request.selection, { productId: 1, quantity: request.quantity, note: request.note })
+      return prepare(request)
+    }
+    const receipt = await operations.execute({ action: 'add', version, productRef: 'p-new', quantity: 1, note: '', unitPrice: 23, selection: { version: 'stale', variantRef: '', choices: [] } })
+    expect(receipt).toMatchObject({ ok: false, status: 'rejected', effect: 'none', reason: 'stale-configuration' })
+    expect(await gateway.read()).toEqual(before)
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
   it.each(['quantity', 'remove'] as const)('uses the checked %s readback as the receipt without a second read', async (action) => {
     const { operations, gateway } = setup()
     const current = await gateway.read()
@@ -543,7 +580,7 @@ describe('pb empty order lifecycle', () => {
     expect(() => readCartPage({ ...draft, details: undefined }, pickup, 0)).toThrow()
   })
   it('accepts an explicit null order only when no details and zero subtotal agree', () => {
-    expect(readCartPage({ order: null, subtotal: 0 }, pickup, 3)).toEqual({ lines: [], subtotal: 0, context: { ...pickup, manualRevision: 3 } })
+    expect(readCartPage({ order: null, subtotal: 0 }, pickup, 3)).toEqual({ lines: [], subtotal: 0, context: { ...pickup, defaultPickupTime: true, manualRevision: 3 } })
     expect(readCartPage({ order: null, details: null, subtotal: 0 }, pickup, 3).lines).toEqual([])
     expect(() => readCartPage({ order: null, subtotal: 10 }, pickup, 0)).toThrow()
     expect(() => readCartPage({ order: null, details: [{ id: 1 }], subtotal: 0 }, pickup, 0)).toThrow()

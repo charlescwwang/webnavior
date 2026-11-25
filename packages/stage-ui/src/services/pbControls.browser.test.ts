@@ -201,6 +201,27 @@ it.each([false, true])('leaves a verified full menu alone when the search input 
   expect(operation.snapshot().steps).toEqual([])
 })
 
+it('re-enters the visible menu when a sold-out card survived a catalog refresh', async () => {
+  const { controls, operation } = setup()
+  const menu = location.pathname
+  const cart = menu.replace(/menu$/, 'orders/create')
+  document.body.innerHTML = '<main><button><h4>魚丸湯</h4></button><button id="cart">去結算</button></main>'
+  document.querySelector('#cart')!.addEventListener('click', () => {
+    history.pushState({}, '', cart)
+    document.body.innerHTML = `<main class="order-create"><a href="${menu}">加點</a></main>`
+    document.querySelector('a')!.addEventListener('click', (event) => {
+      event.preventDefault()
+      history.pushState({}, '', menu)
+      document.body.innerHTML = '<main><button><h4>雞腿飯</h4></button></main>'
+    })
+  })
+  const visible = () => Array.from(document.querySelectorAll('main h4'), heading => heading.textContent ?? '')
+  await controls.restoreMenuCards(['雞腿飯'], visible, '魚丸湯', true)
+  expect(visible()).toEqual(['雞腿飯'])
+  expect(location.pathname).toBe(menu)
+  expect(operation.snapshot().steps.map(step => step.action)).toEqual(['navigate', 'navigate'])
+})
+
 it('clears a real search and waits for the full menu to render', async () => {
   const { controls, operation } = setup()
   document.body.insertAdjacentHTML('afterbegin', '<input placeholder="搜尋品項，例如：拿鐵、雞腿、套餐" value="雞腿">')

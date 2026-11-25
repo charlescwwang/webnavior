@@ -2,7 +2,7 @@ import type { CatalogGateway } from './pbCatalog'
 
 import { expect, it, vi } from 'vitest'
 
-import { readCatalog } from './pbCatalog'
+import { matchesPreparedConfiguration, readCatalog } from './pbCatalog'
 import { resolveSelection } from './pbProduct'
 
 function fixture(day: number) {
@@ -15,6 +15,23 @@ function fixture(day: number) {
   }))
   return { menu: { menuCategories: categories, defaultPickUpDate: `2026-11-0${day + 1}`, defaultPickUpTime: '11:30' }, responses }
 }
+
+// 11:28 lunch regression: the priced meal is already prepared when the clock advances.
+it.each(['same', 'price', 'missing', 'fixed', 'options'])('rechecks the meal at the add button across a default minute: %s', async (mode) => {
+  const data = fixture(0)
+  data.menu.defaultPickUpTime = '11:27'
+  const gateway: CatalogGateway = { menu: async () => data.menu, category: async ({ categoryId }) => data.responses.get(categoryId), attributes: async () => ({}) }
+  const product = (await readCatalog(gateway, { scope: 'store' })).products[0]
+  data.menu.defaultPickUpTime = '11:28'
+  if (mode === 'price')
+    data.responses.get(1)!.products[0].price++
+  if (mode === 'options')
+    gateway.attributes = async () => ({ 飯量: [{ id: 3, name: '小', attr_group: { id: 4, required: true, amount: 1 }, attr_item: null, pivot: {} }] })
+  const latest = (await readCatalog(gateway, { scope: 'store' })).products[0]
+  const before = { ...product.pickup, defaultPickupTime: mode === 'fixed' ? undefined : true as const, manualRevision: 0 }
+  expect(product.configurations[0].version).not.toBe(latest.configurations[0].version)
+  expect(matchesPreparedConfiguration(product, product.configurations[0], before, mode === 'missing' ? undefined : latest, { ...before, ...latest.pickup })).toBe(mode === 'same')
+})
 
 // Report: this chat, Nov14 full Host replay; detail reads lost a supplied combo description.
 it('retains merchant descriptions while leaving null or absent descriptions unknown', async () => {

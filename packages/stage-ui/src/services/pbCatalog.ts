@@ -1,7 +1,10 @@
 import type { ProductConfiguration } from '@proj-airi/stage-shared/product-configuration'
 
+import type { CartSnapshot } from './pbCart'
+
 import { array, integer, looseObject, minValue, nullable, number, optional, parse, pipe, string } from 'valibot'
 
+import { advancedDefaultPickup } from './pbCart'
 import { describeConfiguration } from './pbProduct'
 
 /** Product identity is vendor kind plus ID, independent of name or category order. */
@@ -17,6 +20,21 @@ export interface CatalogProduct {
   priceType: number
   pickup: { date: string, time: string }
   configurations: ProductConfiguration[]
+}
+
+/** At the native add button, recheck the full priced configuration for the same merchant product. */
+export function matchesPreparedConfiguration(product: CatalogProduct, configuration: ProductConfiguration, before: CartSnapshot['context'], latest: CatalogProduct | undefined, after: CartSnapshot['context']) {
+  if (latest?.ref !== product.ref)
+    return false
+  const current = latest.configurations.find(candidate => candidate.variantRef === configuration.variantRef)
+  if (!current || current.version === configuration.version)
+    return Boolean(current)
+  // The regular digest includes pickup. Only PB's own one-minute advance can
+  // use an equivalent configuration; fixed times and other changes stay stale.
+  return advancedDefaultPickup(before, after)
+    && product.pickup.date === before.date && product.pickup.time === before.time
+    && latest.pickup.date === after.date && latest.pickup.time === after.time
+    && JSON.stringify({ ...configuration, version: current.version }) === JSON.stringify(current)
 }
 
 /** All IO is ordinary vendor reads; implementations keep cookies inside the browser. */

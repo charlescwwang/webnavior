@@ -6,7 +6,7 @@ import { orderingMessages } from '../../../i18n/src/orderingMessages'
 import { notificationField } from './pbCheckout'
 
 /**
- * Owns checkout field editing and the notification phone touch keypad. Scanner Enter finishes input;
+ * Owns checkout field editing and the tax ID and notification phone keypads. Scanner Enter finishes input;
  * it never clicks checkout or grants order consent. Values stay in the page.
  */
 export function installInvoiceInput() {
@@ -16,8 +16,13 @@ export function installInvoiceInput() {
   // one focus transfer until the selected radio's own field becomes visible.
   let selectedRadio: HTMLInputElement | undefined
   let disposed = false
-  let keypad: { field: HTMLInputElement, root: HTMLElement, trigger: HTMLButtonElement } | undefined
-  let keyboardClosed = false
+  interface Keypad {
+    field: HTMLInputElement
+    root: HTMLElement
+    trigger: HTMLButtonElement
+    closed: boolean
+  }
+  const keypads = new Map<'phone' | 'tax', Keypad>()
   const copy = orderingMessages['zh-Hant'].checkout
 
   function current() {
@@ -34,37 +39,52 @@ export function installInvoiceInput() {
     return fields.length === 1 ? fields[0] : undefined
   }
 
-  function sync() {
-    if (disposed)
+  function keypadField(kind: 'phone' | 'tax') {
+    if (!location.pathname.endsWith('/orders/create'))
       return
-    const phone = location.pathname.endsWith('/orders/create') ? notificationField('phone') : undefined
-    if (keypad && (keypad.field !== phone || !keypad.root.isConnected)) {
+    if (kind === 'phone')
+      return notificationField(kind)
+    if (!document.querySelector('.order-create input[type="radio"][value="4"]:checked'))
+      return
+    const visible = Array.from(document.querySelectorAll<HTMLInputElement>('.order-create input[placeholder="請輸入統一編號"]'))
+      .filter(field => field.getClientRects().length)
+    return visible.length === 1 ? visible[0] : undefined
+  }
+
+  function syncKeypad(kind: 'phone' | 'tax') {
+    const field = keypadField(kind)
+    let keypad = keypads.get(kind)
+    if (keypad && (keypad.field !== field || !keypad.root.isConnected || !keypad.trigger.isConnected)) {
       keypad.root.remove()
       keypad.trigger.remove()
+      keypads.delete(kind)
       keypad = undefined
     }
-    if (phone && !keypad) {
+    if (field && !keypad) {
+      const labels = kind === 'phone' ? copy.phoneKeypad : copy.taxKeypad
       const root = document.createElement('div')
+      const trigger = document.createElement('button')
+      const panel = { field, root, trigger, closed: false }
       root.setAttribute('role', 'group')
-      root.setAttribute('aria-label', copy.phoneKeypad.title)
+      root.setAttribute('aria-label', labels.title)
       root.popover = 'manual'
       root.style.cssText = 'display:none;position:fixed;inset:auto 12px 12px auto;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:min(340px,calc(100vw - 24px));max-height:70vh;overflow:auto;margin:0;padding:14px;border:1px solid #ead7c9;border-radius:18px;background:#fff;color:#3d281c;box-shadow:0 12px 40px #0004;'
       const title = document.createElement('strong')
-      title.textContent = copy.phoneKeypad.title
+      title.textContent = labels.title
       title.style.cssText = 'grid-column:span 2;align-self:center;'
       const close = document.createElement('button')
       close.type = 'button'
       close.textContent = copy.phoneKeypad.close
       close.style.cssText = 'min-height:40px;border:1px solid #ead7c9;border-radius:10px;background:#fff9f3;color:#3d281c;'
       close.addEventListener('click', () => {
-        // Closing must not reopen when hidePopover restores focus to the phone.
-        keyboardClosed = true
+        // Closing must not reopen when hidePopover restores focus to the field.
+        panel.closed = true
         root.hidePopover()
         root.style.display = 'none'
       })
       root.append(title, close)
       const hint = document.createElement('p')
-      hint.textContent = copy.phoneKeypad.hint
+      hint.textContent = labels.hint
       hint.style.cssText = 'grid-column:1/-1;margin:0 0 4px;font-size:16px;line-height:1.5;color:#3d281c;'
       root.append(hint)
       // The keypad writes only this connected merchant field via Vue's native
@@ -72,40 +92,49 @@ export function installInvoiceInput() {
       for (const key of ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'delete']) {
         const button = document.createElement('button')
         button.type = 'button'
-        button.dataset.phoneDigit = 'true'
+        button.dataset.keypadDigit = 'true'
         button.textContent = key === 'clear' ? copy.phoneKeypad.clear : key === 'delete' ? copy.phoneKeypad.delete : key
         button.style.cssText = 'min-height:48px;border:1px solid #ead7c9;border-radius:12px;background:#fff9f3;color:#3d281c;font-size:20px;touch-action:manipulation;'
-        button.disabled = phone.disabled || phone.readOnly
+        button.disabled = field.disabled || field.readOnly
         button.addEventListener('click', () => {
-          if (!phone.isConnected || phone.disabled || phone.readOnly || notificationField('phone') !== phone || !location.pathname.endsWith('/orders/create'))
+          if (!field.isConnected || field.disabled || field.readOnly || keypadField(kind) !== field)
             return
-          const value = key === 'clear' ? '' : key === 'delete' ? phone.value.slice(0, -1) : (phone.value + key).slice(0, phone.maxLength > 0 ? phone.maxLength : 15)
-          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(phone, value)
-          phone.dispatchEvent(new Event('input', { bubbles: true }))
-          phone.dispatchEvent(new Event('change', { bubbles: true }))
-          phone.focus({ preventScroll: true })
+          const limit = Math.min(field.maxLength > 0 ? field.maxLength : Infinity, kind === 'tax' ? 8 : 15)
+          const value = key === 'clear' ? '' : key === 'delete' ? field.value.slice(0, -1) : (field.value + key).slice(0, limit)
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, value)
+          field.dispatchEvent(new Event('input', { bubbles: true }))
+          field.dispatchEvent(new Event('change', { bubbles: true }))
+          field.focus({ preventScroll: true })
         })
         root.append(button)
       }
-      const trigger = document.createElement('button')
       trigger.type = 'button'
-      trigger.textContent = copy.phoneKeypad.open
+      trigger.textContent = labels.open
       trigger.style.cssText = 'margin:6px 0;min-height:40px;padding:6px 12px;border:1px solid #ead7c9;border-radius:10px;background:#fff9f3;color:#3d281c;'
-      trigger.addEventListener('click', showKeypad)
-      phone.closest('.el-form-item, .field')!.append(trigger)
+      trigger.addEventListener('click', () => showKeypad(panel))
+      // PB may render the tax input inside the radio label. Keep its button outside the label.
+      const anchor = field.closest('label') ?? field
+      anchor.after(trigger)
       document.body.append(root)
-      keypad = { field: phone, root, trigger }
-      keyboardClosed = false
-      if (document.activeElement === phone)
-        showKeypad()
+      keypad = panel
+      keypads.set(kind, panel)
+      if (document.activeElement === field)
+        showKeypad(panel)
     }
     if (keypad) {
-      for (const button of [...Array.from(keypad.root.querySelectorAll<HTMLButtonElement>('button[data-phone-digit]')), keypad.trigger]) {
+      for (const button of [...Array.from(keypad.root.querySelectorAll<HTMLButtonElement>('button[data-keypad-digit]')), keypad.trigger]) {
         const disabled = keypad.field.disabled || keypad.field.readOnly
         if (button.disabled !== disabled)
           button.disabled = disabled
       }
     }
+  }
+
+  function sync() {
+    if (disposed)
+      return
+    syncKeypad('phone')
+    syncKeypad('tax')
     const selected = current()
     if (selectedRadio && (!selectedRadio.isConnected || !selectedRadio.checked))
       selectedRadio = undefined
@@ -128,10 +157,17 @@ export function installInvoiceInput() {
         owned = { ...selected, path: location.pathname }
     }
   }
-  function showKeypad() {
-    if (!keypad || keypad.field.disabled || keypad.field.readOnly || !keypad.field.isConnected)
+  function showKeypad(keypad: Keypad) {
+    if (keypad.field.disabled || keypad.field.readOnly || !keypad.field.isConnected)
       return
-    keyboardClosed = false
+    for (const other of keypads.values()) {
+      if (other !== keypad && other.root.matches(':popover-open')) {
+        other.closed = true
+        other.root.hidePopover()
+        other.root.style.display = 'none'
+      }
+    }
+    keypad.closed = false
     if (keypad.root.matches(':popover-open'))
       return
     // Use the same native top-layer popover boundary as PB's visual cues.
@@ -144,8 +180,10 @@ export function installInvoiceInput() {
     keypad.root.showPopover()
   }
   function pointer(event: PointerEvent) {
-    if (event.target === keypad?.field)
-      showKeypad()
+    for (const keypad of keypads.values()) {
+      if (event.target === keypad.field)
+        showKeypad(keypad)
+    }
   }
   function ownsScanner(event: Event) {
     const selected = current()
@@ -153,8 +191,10 @@ export function installInvoiceInput() {
       && event.target === owned.field && document.activeElement === owned.field)
   }
   function focus(event: FocusEvent) {
-    if (!keyboardClosed && event.target === keypad?.field)
-      showKeypad()
+    for (const keypad of keypads.values()) {
+      if (!keypad.closed && event.target === keypad.field)
+        showKeypad(keypad)
+    }
     const selected = current()
     owned = selected && event.target === selected.field ? { ...selected, path: location.pathname } : undefined
   }
@@ -208,10 +248,11 @@ export function installInvoiceInput() {
     // Checkout drafts do not change cart contents. Preserve the bound step from
     // the first pointerdown, before focusin has established scanner ownership.
     owns(event: Event) {
-      if (!location.pathname.endsWith('/orders/create') || !(event.target instanceof Node))
+      const target = event.target
+      if (!location.pathname.endsWith('/orders/create') || !(target instanceof Node))
         return false
-      return event.target === current()?.field || event.target === notificationField('phone')
-        || event.target === notificationField('email') || event.target === keypad?.trigger || Boolean(keypad?.root.contains(event.target))
+      return target === current()?.field || target === notificationField('phone')
+        || target === notificationField('email') || Array.from(keypads.values()).some(keypad => target === keypad.field || target === keypad.trigger || keypad.root.contains(target))
     },
     /** True only while this document's selected invoice field owns keyboard input. */
     pending: () => Boolean(owned && current()?.field === owned.field && document.activeElement === owned.field && owned.path === location.pathname),
@@ -222,8 +263,8 @@ export function installInvoiceInput() {
       owned = undefined
       // Native submission checks occlusion. Close our own panel before leaving
       // editing, and suppress focus restoration from reopening it over checkout.
-      keyboardClosed = true
-      if (keypad) {
+      for (const keypad of keypads.values()) {
+        keypad.closed = true
         keypad.root.hidePopover()
         keypad.root.style.display = 'none'
         if (document.activeElement === keypad.field)
@@ -242,9 +283,11 @@ export function installInvoiceInput() {
       disposed = true
       selectedRadio = undefined
       owned = undefined
-      keypad?.root.remove()
-      keypad?.trigger.remove()
-      keypad = undefined
+      for (const keypad of keypads.values()) {
+        keypad.root.remove()
+        keypad.trigger.remove()
+      }
+      keypads.clear()
       observer.disconnect()
       document.removeEventListener('pointerdown', pointer, true)
       document.removeEventListener('focusin', focus, true)

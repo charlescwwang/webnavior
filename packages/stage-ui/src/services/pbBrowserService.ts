@@ -15,11 +15,12 @@ import { browserPresentationInputSchema, browserRecommendationLimit } from '@pro
 import { array, boolean, integer, isValiError, literal, looseObject, maxLength, maxValue, minLength, minValue, nullable, number, optional, parse, picklist, pipe, safeParse, strictObject, string, unknown } from 'valibot'
 
 import { orderingMessages } from '../../../i18n/src/orderingMessages'
-import { createCartOperations, describeCartLines, readCartPage, verifyCartRowEdit } from './pbCart'
-import { readCatalog as collectCatalog } from './pbCatalog'
+import { createCartOperations, describeCartLines, readCartPage, sameCartForAddition, verifyCartRowEdit } from './pbCart'
+import { readCatalog as collectCatalog, matchesPreparedConfiguration } from './pbCatalog'
 import { createCheckout } from './pbCheckout'
 import { createControls } from './pbControls'
 import { installInvoiceInput } from './pbInvoiceInput'
+import { installMenuViewport } from './pbMenuViewport'
 import { createOperation } from './pbOperation'
 import { installPaymentPolicy } from './pbPayment'
 import { createPresentation } from './pbPresentation'
@@ -98,29 +99,8 @@ export function createPbService() {
   let queuedCount = 0
   let executingName: string | undefined
   let manualRevision = 0
-  let menuPositioned = false
-  const menuLayoutObserver = new MutationObserver(positionMenu)
-  // One initial viewport adjustment per document. Subsequent reads, search and
-  // trusted input belong to the customer; they never reset the scroll position.
-  function positionMenu() {
-    if (menuPositioned || location.pathname !== journey.menuPath)
-      return
-    const category = document.querySelector<HTMLElement>('main .category-section h3')?.textContent?.trim()
-    const tab = Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find(tab => tab.textContent?.trim() === category && tab.getClientRects().length && tab.getAttribute('aria-disabled') !== 'true')
-    if (!tab || !document.querySelector('main [role="button"] h4, main button h4'))
-      return
-    menuPositioned = true
-    menuLayoutObserver.disconnect()
-    if (window.scrollY > 0)
-      return
-    // PB's category tabs scroll to their section while retaining every item.
-    // Use its own sticky-header offset rather than stopping at the search box.
-    tab.click()
-  }
-  // PB can render its catalog after did-finish-load/discovery. Observe only
-  // until initial placement or customer takeover, and release on pagehide.
-  menuLayoutObserver.observe(document.documentElement, { childList: true, subtree: true })
-  window.addEventListener('pagehide', () => menuLayoutObserver.disconnect(), { once: true })
+  const menuViewport = installMenuViewport(journey.menuPath, journey.cartPath)
+  window.addEventListener('pagehide', () => menuViewport.dispose(), { once: true })
   const checkout = createCheckout(readCart, () => manualRevision, () => {
     writeMarker = `order:${crypto.randomUUID()}`
     localStorage.setItem(blockedKey, writeMarker)
@@ -136,10 +116,7 @@ export function createPbService() {
   for (const eventName of ['pointerdown', 'keydown', 'wheel']) {
     document.addEventListener(eventName, (event) => {
       if (event.isTrusted && !invoiceInput.owns(event)) {
-        if (location.pathname === journey.menuPath) {
-          menuPositioned = true
-          menuLayoutObserver.disconnect()
-        }
+        menuViewport.takeOver()
         // Scrolling cancels the visual cue but changes no cart data. Checkout
         // field editing is likewise excluded above; form values are separately
         // fingerprinted before the final submission ticket can be consumed.
@@ -181,7 +158,7 @@ export function createPbService() {
     { name: 'browser_payment_open', description: 'Host-only opening of an explicitly selected gateway for the current pending order.', inputSchema: { type: 'object', properties: { reference: { type: 'string' }, method: { type: 'string', enum: ['LinePay', 'Credit'] } }, required: ['reference', 'method'], additionalProperties: false } },
     { name: 'browser_state_get', description: 'Host-only fresh page, form and order state. Never a model tool; never navigates or grants write authority.', inputSchema: { type: 'object', properties: { includeCatalog: { type: 'boolean' } }, required: ['includeCatalog'], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_cart_get', description: 'Read planning data before a cart edit: current cart/version and optional product references. includeCatalog=true is internal planning data, not a customer cart-review receipt. forAdmission=true is Host-only reception preparation, including a fresh cart read on the table page. For 核對、我點了什麼、目前訂單、還不要送 use browser_cart_review instead. This does not submit an order.', inputSchema: { type: 'object', properties: { includeCatalog: { type: 'boolean' }, forAdmission: { type: 'boolean' } }, required: ['includeCatalog'], additionalProperties: false }, annotations: { readOnlyHint: true } },
-    { name: 'browser_return_menu', description: 'Return to the full actual menu, clear website search and unfinished selection, and verify the cart is unchanged. Does not increase servings, clear cart items, submit or pay.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false }, annotations: { readOnlyHint: true } },
+    { name: 'browser_return_menu', description: 'Return to the full actual menu, clear website search and unfinished selection, and verify the cart is unchanged. Does not increase servings, clear cart items, submit or pay.', inputSchema: { type: 'object', properties: { missingDish: { type: 'string', minLength: 1, maxLength: 200 } }, required: [], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_cart_review', description: 'Open the actual cart for review and read back the CURRENT ORDER, quantities, options, notes and actual PB subtotal as a customer receipt. Use for 核對一下、我點了什麼、確認目前訂單、先不要送. This is read-only: it neither presents menu unit prices as an order nor changes or submits anything. No parameters.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_product_get', description: 'For an order naming exact products, call this FIRST with those names; no prior browser_observe or browser_present is needed. Reads complete fresh configurations for 1–10 exact product names in one batch, returns cart.version, without presenting cards or opening a product window. Use browser_present separately when a customer asks to see the items. Copy each configuration.version and option refs; never guess. Read-only.', inputSchema: { type: 'object', properties: { names: { type: 'array', items: { type: 'string', maxLength: 200 }, minItems: 1, maxItems: 10 } }, required: ['names'], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_cart_add', description: 'Add the exact observed PB product and quantity. Requires the current cart version and freshly observed unit price. Each call adds ONE configuration and ONE shared per-serving note. Split different notes into separate calls: two meals, one note A and one note B, means quantity=1/note=A then quantity=1/note=B; never quantity=2/note="one A, one B". Use only customer-requested notes without meal-count narration. selection must explicitly contain version, variantRef and choices (use [] for no options); copy the observed configuration version, not cart.version. selection.choices quantities and unitPrice are PER SERVING, including paid options; top-level quantity is the number of meals. Never multiply per-serving options or unitPrice by meal quantity. Never choose a mandatory option for the customer. Never use for price inquiries.', inputSchema: { type: 'object', properties: { version: cartVersion, copySourceRef: { type: 'string' }, productRef: { type: 'string' }, quantity: { type: 'integer', minimum: 1, maximum: 99 }, unitPrice: { type: 'number', minimum: 0 }, note: { type: 'string', maxLength: 200 }, selection: selectionInputSchema }, required: ['version', 'productRef', 'quantity', 'unitPrice', 'note', 'selection'], additionalProperties: false } },
@@ -499,11 +476,11 @@ export function createPbService() {
         async commit(onDispatch) {
           let observed: CartSnapshot | undefined
           await controls.add(product.name, productRef, async () => {
-            const [products, cart] = await Promise.all([readCatalog([productRef]), readCart()])
-            const current = products.find(candidate => candidate.ref === productRef)?.configurations.find(candidate => candidate.variantRef === selection.variantRef)
-            if (!current || current.version !== selection.version)
+            const [products, latestCart] = await Promise.all([readCatalog([productRef]), readCart()])
+            const latest = products.find(candidate => candidate.ref === productRef)
+            if (!matchesPreparedConfiguration(product, configuration, cart.context, latest, latestCart.context))
               throw new Error('派送前餐點規格或價格已變更，尚未加入。')
-            if (JSON.stringify(cart) !== JSON.stringify(before))
+            if (!sameCartForAddition(before, latestCart))
               throw new Error('移動期間購物車已變更，尚未加入。')
           }, async () => {
             const cart = await readCart()
@@ -709,7 +686,7 @@ export function createPbService() {
         activeVisual = undefined
     }
     async function executeAction() {
-      positionMenu()
+      menuViewport.positionMenu()
       if (name === 'browser_payment_open') {
         const { reference, method } = parse(strictObject({ reference: string(), method: picklist(['LinePay', 'Credit']) }), input)
         const url = location.href
@@ -835,15 +812,12 @@ export function createPbService() {
         return { ok: true, source: 'browser', status: 'verified', effect: 'none', customerMessage: '已取消這次選餐，購物車內容保持不變。' }
       }
       if (name === 'browser_return_menu') {
-        parse(strictObject({}), input)
+        const { missingDish } = parse(strictObject({ missingDish: optional(pipe(string(), minLength(1), maxLength(200))) }), input)
         const before = await readCart()
         await controls.close()
         await controls.navigate(journey.menuPath)
         const catalog = await readCatalog(undefined, false)
-        await controls.search('', () => {
-          const visible = observe().products.map(product => product.name)
-          return catalog.every(product => visible.includes(product.name))
-        })
+        await controls.restoreMenuCards(catalog.map(product => product.name), () => observe().products.map(product => product.name), missingDish, before.lines.length > 0)
         presentation.cancel()
         const after = await readCart()
         if (JSON.stringify(before) !== JSON.stringify(after))
@@ -1184,7 +1158,7 @@ export function createPbService() {
   function discover(raw: unknown) {
     console.info('Webnavior PB discovery received.')
     const request = parse(discoveryRequestSchema, raw)
-    positionMenu()
+    menuViewport.positionMenu()
     if (active?.id !== request.connectionId)
       active = { id: request.connectionId, operations: new Map() }
     const available = isPbOrderResultUrl(entry, location.href) ? tools.filter(tool => ['browser_state_get', 'browser_reception_reset'].includes(tool.name) || (tool.name === 'browser_payment_open' && location.pathname.endsWith('/choosePayment'))) : tools
