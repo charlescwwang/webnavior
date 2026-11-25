@@ -173,6 +173,7 @@ kiosk:
   restart-order: 重新開始／新訂單
   restarting-order: 正在準備新訂單，請稍候…
   release:
+    desktop: Kiosk 程式版本
     loaded: 目前載入版本
     recover: 修復後台快取
   presence-diagnostics:
@@ -441,12 +442,16 @@ kiosk-agent:
   context-unavailable: 菜單資料暫時無法取得，這句尚未完成，請確認連線後再說一次。
   operation-unconfirmed: 先前餐點操作的結果尚未核對完成，正在自動核對購物車，請稍候；不會重複加餐。
   service-recovery-failed: 暫時無法確認先前餐點操作的結果，已保留購物車並暫停代操作，請現場人員協助核對。
+  return-payment: 上一頁（付款方式）
   manual-payment: 請在支付頁面完成付款或取消付款。
   service-unavailable: 菜單連線暫時中斷，正在自動重新連線並核對購物車，請稍候。
   service-reconnect: 恢復菜單連線
   service-recovered: 已核對購物車並恢復服務，未重送先前操作；您可以繼續點餐或結帳。
   audio-too-large: 這段錄音超過上傳限制，這句未執行，請分次說明。
   audio-failed: 這次語音未能完整辨識，尚未執行，請再說一次。
+  continue-session-question: 要繼續點餐嗎？
+  reading-stopped: '已停止朗讀。{question}'
+  next-request: 可以請我推薦餐點，或說「我要結帳」來核對購物車。
   voice-capture-mouth: 說話期間未能持續確認同一個嘴部目標，這句尚未執行。請面向鏡頭，再說一次。
   voice-capture-incomplete: 這句超過收音上限或收音不完整，尚未執行。請分次說明。
   service-connecting: 正在連接助手操作功能，您也可直接操作服務畫面。

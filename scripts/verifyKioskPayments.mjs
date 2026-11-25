@@ -9,12 +9,23 @@ import { resolve } from 'node:path'
 
 import { _electron as electron } from 'playwright'
 
+import { buildPaymentReturnFixture } from '../apps/stage-kiosk/scripts/buildPaymentReturnFixture.mjs'
+
 // Every HTTPS request, including redirects, is served inside this isolated
 // partition. No merchant, payment provider, real order or charge is contacted.
 const runtime = process.env.ESGPB_ELECTRON_PATH
 assert(runtime, 'Set ESGPB_ELECTRON_PATH to the inspected Electron runtime.')
 const profile = await mkdtemp(resolve(tmpdir(), 'kiosk-payment-fixture-'))
-const server = createServer((_request, response) => response.end('<!doctype html><h1>Payment fixture host</h1>'))
+const hostScript = await buildPaymentReturnFixture()
+const server = createServer((request, response) => {
+  if (request.url === '/kiosk/fixture.js') {
+    response.setHeader('content-type', 'application/javascript; charset=utf-8')
+    response.end(hostScript)
+    return
+  }
+  response.setHeader('content-type', 'text/html; charset=utf-8')
+  response.end('<!doctype html><div id="fixture"></div><script src="/kiosk/fixture.js"></script>')
+})
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const root = 'https://app.esgpb.com/order/store/1kgJeql/internal_use/'
 const choose = `${root}orders/TEST/choosePayment`
@@ -69,6 +80,7 @@ try {
   }, { partition, choose, choices, root, gateway, paymentPage })
   host = await app.firstWindow()
   await host.waitForFunction(() => window.airiKioskDesktop)
+  assert.equal(await host.evaluate(() => window.airiKioskDesktop.appVersion), await app.evaluate(({ app }) => app.getVersion()))
   await host.evaluate(() => {
     window.events = []
     window.airiKioskDesktop.onNavigation(event => window.events.push(event))
@@ -125,7 +137,24 @@ try {
         command: { kind: 'return-payment', revision: window.events.at(-1).revision, reference },
       }), { placement, reference })
       assert.equal(await change('OTHER'), 'unavailable')
-      assert.equal(await change('TEST'), 'returned')
+      if (method === 'credit') {
+        const back = host.getByRole('button', { name: '上一頁（付款方式）' })
+        await back.waitFor({ timeout: 5000 }).catch(async (error) => {
+          console.error(await host.locator('body').innerHTML(), (await host.pageErrors()).map(entry => entry.message))
+          throw error
+        })
+        const bounds = await back.boundingBox()
+        assert(bounds && bounds.y + bounds.height < placement.bounds.y)
+        const touch = await app.context().newCDPSession(host)
+        await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true })
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }] })
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+        await touch.detach()
+        records.at(-1).touchedReturnAfterApplePay = true
+      }
+      else {
+        assert.equal(await change('TEST'), 'returned')
+      }
       await site.waitForURL(choose)
       await host.waitForFunction(() => window.events.at(-1)?.state === 'ready')
       const open = async () => host.evaluate(async ({ placement, method }) => {

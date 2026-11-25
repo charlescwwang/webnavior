@@ -513,6 +513,8 @@ Use the full RC7 portable folder with the paired Kiosk frontend for PB checkout 
 
 ## Windows 0.7.8-rc.8
 
+The Kiosk host now offers a back-to-payment-methods button and accepts an explicit spoken return on a recognized payment provider page. Both return to the same PB order. The admin panel and Main task metrics expose the installed desktop package version when the host supplies it.
+
 RC8 adds spoken payment choices and switching for the same pending PB order. Card entry, login, scanning and payment authorization remain customer actions. Exit the running Kiosk and extract the complete Windows x64 portable ZIP into a new folder before launching it.
 
 ## Windows 0.7.8-rc.9

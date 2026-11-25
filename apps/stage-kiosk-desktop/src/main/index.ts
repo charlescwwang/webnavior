@@ -91,6 +91,7 @@ async function start() {
     webPreferences: {
       preload: resolve(import.meta.dirname, '../preload/index.cjs'),
       partition: 'persist:kiosk-host',
+      additionalArguments: [`--kiosk-app-version=${app.getVersion()}`],
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,

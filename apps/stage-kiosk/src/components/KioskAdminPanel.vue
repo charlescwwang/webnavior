@@ -28,6 +28,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const buildInfo = useBuildInfo()
+const desktopVersion = window.airiKioskDesktop?.appVersion
 const development = import.meta.env.DEV
 // Production must not load the demo application through operator test controls.
 const MenuSimulationPanel = import.meta.env.DEV
@@ -59,6 +60,9 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
     </header>
 
     <div class="admin-content">
+      <p v-if="desktopVersion" :class="['admin-note']">
+        {{ t('stage.kiosk.release.desktop') }}：{{ desktopVersion }}
+      </p>
       <p :class="['admin-note']" data-build-info>
         {{ t('stage.kiosk.release.loaded') }}：{{ buildInfo.release }} · {{ buildInfo.builtOn }}
       </p>

@@ -1,4 +1,5 @@
 export interface KioskUtterance {
+  duringPlayback?: boolean
   capturedAt: number
   id: number
   recording?: Blob
@@ -107,10 +108,10 @@ export function createKioskUtteranceQueue(options: {
   }
 
   /** Claims ordering at speech-capture time, before asynchronous ASR completes. */
-  function reserve(source: KioskUtterance['source']): KioskUtteranceReservation {
+  function reserve(source: KioskUtterance['source'], duringPlayback?: boolean): KioskUtteranceReservation {
     if (pending.length >= maxPending)
       return { kind: 'OVERLOADED' }
-    const utterance: KioskUtterance = { capturedAt: now(), id: ++nextId, source, text: '' }
+    const utterance: KioskUtterance = { capturedAt: now(), id: ++nextId, source, ...(duringPlayback ? { duringPlayback } : {}), text: '' }
     let resolveReady!: (completed?: KioskUtterance) => void
     const ready = new Promise<KioskUtterance | undefined>(resolve => resolveReady = resolve)
     let settled = false

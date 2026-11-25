@@ -55,6 +55,7 @@ import KioskIdleDiagnostics from './KioskIdleDiagnostics.vue'
 import KioskPresenceDiagnostics from './KioskPresenceDiagnostics.vue'
 import KioskSessionNotice from './KioskSessionNotice.vue'
 import KioskVoiceDiagnostics from './KioskVoiceDiagnostics.vue'
+import PaymentReturnButton from './PaymentReturnButton.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
 import { arrayCaptureConstraints, standardCaptureConstraints } from '../audio/microphoneInput'
@@ -101,8 +102,8 @@ import { createSpeechPlayer } from '../services/kioskSpeech'
 import { createUtteranceTiming } from '../services/kioskTiming'
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
 import { createMouthActivityGate } from '../services/mouthActivity'
-import { chooseGateway, gatewayPage, paymentChoiceFromSpeech, paymentOptionsReply, switchPayment } from '../services/paymentChoice'
-import { browserRecoveryReply, createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromReceipt, replyWithQuestion } from '../services/questionPresentation'
+import { chooseGateway, gatewayPage, paymentChoiceFromSpeech, paymentOptionsReply, requestsPaymentReturn, switchPayment } from '../services/paymentChoice'
+import { browserRecoveryReply, createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromReceipt, replyWithQuestion, requestsReadingStop } from '../services/questionPresentation'
 import { scenarioRegistry } from '../services/scenario-registry'
 import { createSpeechInterruption } from '../services/speechInterruption'
 import { createVoicePresenceGate } from '../services/voicePresence'
@@ -526,6 +527,19 @@ onUnmounted(() => {
   productPresentation.dispose()
 })
 const manualControlPending = shallowRef(false)
+const paymentNavigationBusy = shallowRef(false)
+
+function paymentReturnOwner() {
+  const page = gatewayPage.value
+  const generation = receptionGeneration
+  return () => !!page && generation === receptionGeneration && !manualControlPending.value
+    && scenarioRegistry.activeScenario.value?.id === page.serviceId && page.documentKey === `${page.serviceId}:${scenarioRegistry.iframeRevision.value}`
+}
+
+function showPaymentReply(message: string) {
+  conversationMessages.value = [...conversationMessages.value, { role: 'assistant', content: message, slices: [], tool_results: [] }]
+}
+
 function requestManualOrderControl() {
   manualControlPending.value = true
   utteranceQueue.reset()
@@ -763,6 +777,7 @@ watch(adminPanelOpen, (open) => {
   }
 }, { flush: 'sync' })
 
+let captureDuringPlayback = false
 let captureDiagnosticId: number | undefined
 const adminVoiceTest = useKioskVoiceTest({
   active: adminVoiceTestActive,
@@ -785,6 +800,7 @@ const voiceEvents = {
   onSpeechStart: () => {
     if (discardSpeechUntilBoundary)
       return
+    captureDuringPlayback = processingSpeechActive.value
     const blocked = adminVoiceTestActive.value ? undefined : voiceBlockReason()
     captureDiagnosticId = startVoiceDiagnostic(blocked ? 'blocked' : 'speech-start', blocked ?? ((adminVoiceTest.speaking.value || interactionTurn.phase.value === 'speaking') ? 'tts-overlap' : undefined))
     if (adminVoiceTestActive.value) {
@@ -857,7 +873,7 @@ const voiceEvents = {
       speechInterruption.release(candidate.id)
       return
     }
-    const reservation = utteranceQueue.reserve('asr')
+    const reservation = utteranceQueue.reserve('asr', captureDuringPlayback)
     if (reservation.kind === 'OVERLOADED') {
       speechInterruption.release(candidate.id)
       interactionTurn.completeVoiceCandidate(candidate)
@@ -1087,6 +1103,39 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     finishVoiceDiagnostic(utterance.id, 'ignored')
     return
   }
+  // VAD can already have silenced playback by the time the queued transcript arrives.
+  if (requestsReadingStop(utterance.text, utterance.source === 'simulation' ? processingSpeechActive.value : !!utterance.duringPlayback)) {
+    interruptAssistantOutput()
+    const generation = receptionGeneration
+    let question = ''
+    if (customerSessionState.value === 'awaiting-idle-confirmation') {
+      question = t('stage.kiosk-agent.continue-session-question')
+    }
+    else {
+      const browser = conversationSource(interactiveServiceClient.tools.value) === 'browser'
+      const tool = interactiveServiceClient.tools.value.find(tool => tool.name === (browser ? 'browser_cart_get' : 'kiosk_interaction_state'))
+      if (tool) {
+        try {
+          const facts = await interactiveServiceClient.execute(tool, browser ? { includeCatalog: true } : {})
+          if (!ticket.isCurrent() || generation !== receptionGeneration)
+            return
+          question = browser ? browserDialogue.readingFollowUp(facts) : conversationDecisionStateFrom(facts)?.waitingFor?.question ?? ''
+        }
+        catch {
+          // Keep the screen usable even if the embedded service cannot return its current question.
+        }
+      }
+    }
+    if (!ticket.isCurrent() || generation !== receptionGeneration)
+      return
+    const message = t('stage.kiosk-agent.reading-stopped', { question: question || t('stage.kiosk-agent.next-request') })
+    conversationMessages.value = [...conversationMessages.value, { role: 'assistant', content: message, slices: [], tool_results: [] }]
+    finishVoiceDiagnostic(utterance.id, 'decided')
+    if (utterance.source === 'simulation')
+      asrSimulationStatus.value = message
+    await recordUtteranceEvidence({ ...utterance, signal: ticket.signal })
+    return
+  }
   if (customerSessionState.value === 'awaiting-idle-confirmation') {
     const deadline = idleDeadlineAt.value
     const visitor = interactionRecording.visitorSessionId.value
@@ -1127,9 +1176,9 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
   }
   const cashier = gatewayPage.value
   if (cashier?.gatewayOrder && interactiveServiceClient.availability.value === 'manual-payment') {
-    const choice = paymentChoiceFromSpeech(utterance.text)
-    const guidance = paymentOptionsReply(utterance.text, undefined, true)
-    if ((!choice && !guidance) || manualControlPending.value) {
+    const choice = requestsPaymentReturn(utterance.text) ? 'back' : paymentChoiceFromSpeech(utterance.text)
+    const guidance = choice ? undefined : paymentOptionsReply(utterance.text, undefined, true)
+    if ((!choice && !guidance) || manualControlPending.value || paymentNavigationBusy.value) {
       finishVoiceDiagnostic(utterance.id, 'ignored')
       return
     }
@@ -1139,7 +1188,18 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       && scenarioRegistry.activeScenario.value?.id === cashier.serviceId && cashier.documentKey === `${cashier.serviceId}:${scenarioRegistry.iframeRevision.value}`
     if (!current())
       return
-    const result = guidance ? { ok: true, customerMessage: guidance } : await switchPayment(cashier, choice!, current)
+    if (paymentNavigationBusy.value || !current()) {
+      finishVoiceDiagnostic(utterance.id, 'ignored')
+      return
+    }
+    paymentNavigationBusy.value = true
+    let result
+    try {
+      result = guidance ? { ok: true, customerMessage: guidance } : await switchPayment(cashier, choice!, current)
+    }
+    finally {
+      paymentNavigationBusy.value = false
+    }
     if (!current())
       return
     const message = result.customerMessage
@@ -3286,8 +3346,17 @@ onUnmounted(() => {
           :thinking="conversationSending"
           :external-audio-source="assistantAudioNode"
         />
+        <PaymentReturnButton
+          v-if="gatewayPage?.gatewayOrder && interactiveServiceClient.availability.value === 'manual-payment'"
+          v-model:busy="paymentNavigationBusy"
+          class="customer-restart"
+          :disabled="manualControlPending"
+          :label="t('stage.kiosk-agent.return-payment')"
+          :owner="paymentReturnOwner"
+          @result="showPaymentReply"
+        />
         <button
-          v-if="customerSessionState === 'active' || customerSessionState === 'standby'"
+          v-else-if="customerSessionState === 'active' || customerSessionState === 'standby'"
           type="button"
           :class="['customer-restart']"
           :disabled="(interactiveServiceClient.availability.value !== 'ready' && !interactiveServiceClient.editorRetired.value) || activeServiceOperations.size > 0"

@@ -48,6 +48,8 @@ export type DesktopSurfaceNavigation = InferOutput<typeof desktopSurfaceNavigati
 /** Narrow preload capability: only a registered host surface, never raw Electron or JavaScript. */
 export interface KioskDesktopBridge {
   version: 1
+  /** Installed desktop package version supplied by the host process. */
+  appVersion?: string
   updateSurface: (input: Omit<DesktopSurfaceRequest, 'sequence'>) => Promise<DesktopSurfaceResult>
   invokeService: (input: DesktopServiceRequest) => Promise<unknown>
   onActivity: (listener: (activity: DesktopSurfaceActivity) => void) => () => void

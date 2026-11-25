@@ -629,7 +629,7 @@ export function useKioskInteractionRecording() {
       // Record orchestration latency (models, context refresh and browser tools),
       // separately from provider-round timing. Never attach an old turn to a new visitor.
       if (visitorSessionId.value === sessionId)
-        void append('service_event', JSON.stringify({ kind: 'main_task_metrics', ...(metricTaskId ? { taskId: metricTaskId } : {}), ...(terminalReason ? { reason: terminalReason, failureStage: stage, ...(failureDetail ? { error: failureDetail } : {}) } : {}), durationMs: performance.now() - startedAt, modelRounds: rounds, requestedToolCount: requestedTools.length, interrupted: control.manual || control.controller.signal.aborted || deadline?.aborted === true || callbacks.signal?.aborted === true }), { source: 'main_task_metrics', utteranceId: callbacks.utteranceId })
+        void append('service_event', JSON.stringify({ kind: 'main_task_metrics', desktopVersion: globalThis.window?.airiKioskDesktop?.appVersion, ...(metricTaskId ? { taskId: metricTaskId } : {}), ...(terminalReason ? { reason: terminalReason, failureStage: stage, ...(failureDetail ? { error: failureDetail } : {}) } : {}), durationMs: performance.now() - startedAt, modelRounds: rounds, requestedToolCount: requestedTools.length, interrupted: control.manual || control.controller.signal.aborted || deadline?.aborted === true || callbacks.signal?.aborted === true }), { source: 'main_task_metrics', utteranceId: callbacks.utteranceId })
       // An older cancelled turn cannot release its replacement's controls.
       if (activeControl === control) {
         activeControl = undefined

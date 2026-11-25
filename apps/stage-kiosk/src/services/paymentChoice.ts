@@ -28,7 +28,7 @@ export function paymentChoiceFromSpeech(text: string) {
  */
 export function paymentOptionsReply(text: string, methods?: readonly string[], atPayment = false) {
   const compact = text.replaceAll(/\s/g, '')
-  const question = /有沒有|能不能|可不可以|是否(?:有|能|支援)|(?:可以|能用|有|支援|接受).*嗎|哪些|哪(?:幾|一)?種|什麼(?:付款|支付|方式)|(?:付款|支付)方式.*什麼|怎麼付|如何付|有(?:其他|別的|別種)|還有|支援|支持/.test(compact)
+  const question = /有無|有沒有|能不能|可不可以|是否(?:有|能|支援)|(?:可以|能用|有|支援|接受).*嗎|哪些|哪(?:幾|一)?種|什麼(?:付款|支付|方式)|(?:付款|支付)方式.*什麼|怎麼付|如何付|有(?:其他|別的|別種)|還有|支援|支持/.test(compact)
   const paymentTopic = /付款|支付|付錢|付費|結帳方式|一卡通|悠遊卡|街口|現金|信用卡|刷卡|行動支付|(?:apple|line|綠界)pay/i.test(compact)
   const change = /^請?(?:幫我)?我?(?:想要|想|要)?(?:更換|換|改)(?:個|一個|一種|其他|別的|成別的|成其他)?(?:(?:付款|支付|付費)的?(?:方式|方案)|方式|一種)[。！!]*$/.test(compact)
   const otherOptions = /^(?:請問)?(?:還有沒有|還有|有沒有|有)(?:其他|別的|別種)(?:的|方式|選擇)?(?:嗎|呢)?[？?。！!]*$/.test(compact)
@@ -45,6 +45,20 @@ export function paymentOptionsReply(text: string, methods?: readonly string[], a
     return '這張訂單目前沒有可用的付款入口。'
   const prefix = compact.includes('一卡通') ? '目前這台點餐機沒有提供一卡通。' : ''
   return `${prefix}可以使用${labels}。${change ? '您想換成哪一種？' : ''}`
+}
+
+/** Only a whole navigation command may leave the current payment provider. */
+export function requestsPaymentReturn(text: string) {
+  const compact = text.replaceAll(/\s/g, '').replace(/[。！!]+$/, '')
+  // A failed payment alone has no navigation intent. Only strip a reason when
+  // the remainder independently asks to go back or choose a different method.
+  const command = compact.replace(/^(?:這張卡|這個方式|信用卡|這個)?(?:刷不過|不能用|不支援|付不了|付款失敗)[，,。]?/, '')
+    .replace(/^(?:麻煩|請)?(?:幫我)?(?:我(?:想要|想|要))?/, '')
+  if (/^(?:上一頁|上一步|回上一頁重新選|回去重選付款方式)$/.test(command))
+    return true
+  const back = /^(?:返回|回到|回去|回|退回去|退回|退到|退)(?:上一頁|上一步|(?:選擇?|選擇其他)?(?:付款|支付)方式(?:選擇)?的?(?:頁面|畫面|頁)?|重選)$/
+  const reselect = /^(?:重新選擇|重新選|重選|更換|換|改換|改)(?:一個|個|一種|種|其他|別的|別種)?(?:付款|支付)(?:方式|方法)$/
+  return back.test(command) || reselect.test(command)
 }
 
 export const gatewayPage = shallowRef<DesktopSurfaceNavigation>()
@@ -92,14 +106,14 @@ export async function chooseGateway(choice: GatewayChoice, reference: string, is
  * Switches gateways through the original PB order. The native PB open command
  * re-reads the order and checks pending status immediately before dispatch.
  */
-export async function switchPayment(page: DesktopSurfaceNavigation, choice: NonNullable<ReturnType<typeof paymentChoiceFromSpeech>>, current: () => boolean) {
+export async function switchPayment(page: DesktopSurfaceNavigation, choice: NonNullable<ReturnType<typeof paymentChoiceFromSpeech>> | 'back', current: () => boolean) {
   const unavailable = { ok: false, customerMessage: orderingMessages['zh-Hant'].checkout.gateway.unavailable }
   const reference = page.gatewayOrder
   if (!reference || !current() || gatewayPage.value !== page)
     return unavailable
   if (page.paymentProvider === 'line' && choice === 'line')
     return { ok: true, customerMessage: '目前已在 LINE Pay 付款頁。' }
-  if (page.paymentProvider === 'ecpay' && choice !== 'line') {
+  if (page.paymentProvider === 'ecpay' && choice !== 'line' && choice !== 'back') {
     const local = await chooseGateway(choice === 'credit' ? 'card' : choice, reference, current)
     if (!local.returnRequired)
       return local
@@ -110,6 +124,8 @@ export async function switchPayment(page: DesktopSurfaceNavigation, choice: NonN
     const returned = await window.airiKioskDesktop?.invokeService({ serviceId: page.serviceId, documentKey: page.documentKey, command: { kind: 'return-payment', revision: page.revision, reference } })
     if (returned !== 'returned' || !current())
       return unavailable
+    if (choice === 'back')
+      return { ok: true, customerMessage: orderingMessages['zh-Hant'].checkout.gateway.returned }
     // loadURL resolves in main before Vue necessarily processes its navigation
     // event. The old manual page has no tools; wait for its replacement first.
     if (interactiveServiceClient.availability.value === 'manual-payment') {

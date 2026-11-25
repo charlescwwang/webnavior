@@ -169,6 +169,7 @@ kiosk:
   restart-order: Restart / New order
   restarting-order: Preparing a new order. Please wait…
   release:
+    desktop: Kiosk app version
     loaded: Loaded version
     recover: Repair admin cache
   presence-diagnostics:
@@ -437,12 +438,16 @@ kiosk-agent:
   context-unavailable: Menu information is unavailable. This request is unfinished; check the connection and say it again.
   operation-unconfirmed: The previous cart operation is being verified automatically. Please wait; no items will be added again.
   service-recovery-failed: The previous cart operation could not be verified. The cart is retained and assistance is paused. Please ask a staff member to check it.
+  return-payment: Back to payment methods
   manual-payment: Please complete or cancel payment on the payment page.
   service-unavailable: The menu connection was interrupted. Reconnecting and checking the cart automatically; please wait.
   service-reconnect: Reconnect menu
   service-recovered: The cart has been checked and service restored without replaying the previous operation. You can continue ordering or check out.
   audio-too-large: This recording exceeds the upload limit. No request was executed; please speak in shorter turns.
   audio-failed: Your speech could not be fully transcribed. No request was executed; please say it again.
+  continue-session-question: Would you like to continue ordering?
+  reading-stopped: 'Reading stopped. {question}'
+  next-request: You can ask for a meal recommendation or say “check out” to review your cart.
   voice-capture-mouth: The same mouth target could not be tracked throughout this phrase. No action was taken. Face the camera and try again.
   voice-capture-incomplete: This phrase exceeded the capture limit or was incomplete. No action was taken. Please try shorter phrases.
   service-connecting: Connecting assistant controls. You can also use the service screen directly.

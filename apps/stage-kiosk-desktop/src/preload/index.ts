@@ -14,6 +14,9 @@ if (location.protocol === 'http:' || location.protocol === 'https:') {
   let sequence = 0
   const bridge: KioskDesktopBridge = {
     version: 1,
+    // Sandboxed preloads expose argv on the injected process and cannot import node:process.
+    // eslint-disable-next-line node/prefer-global/process
+    appVersion: process.argv.find(arg => arg.startsWith('--kiosk-app-version='))?.slice('--kiosk-app-version='.length),
     invokeService: input => defineInvoke(transport.context, invokeDesktopService)(parse(desktopServiceRequestSchema, input), { signal: AbortSignal.timeout(60_000) }),
     updateSurface: async input => parse(desktopSurfaceResultSchema, await invoke({ ...input, sequence: ++sequence }, { signal: AbortSignal.timeout(30_000) })),
     onActivity: listener => transport.context.on(desktopSurfaceActivity, (event) => {
