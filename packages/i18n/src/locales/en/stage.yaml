@@ -24,6 +24,11 @@ chat:
     failed: This service step could not be completed right now
 kiosk:
   voice-received: Audio received. Recognizing…
+  voice-status:
+    ready: You can speak
+    text-ready: You can type a message
+    thinking: The assistant is thinking
+    unavailable: Voice input is unavailable
   monitor:
     live: Live monitor (refreshes every 3 seconds without interrupting the kiosk)
     updated: 'Last refreshed: {time}'

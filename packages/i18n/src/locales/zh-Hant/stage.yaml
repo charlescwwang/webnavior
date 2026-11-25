@@ -24,6 +24,11 @@ chat:
     failed: 這個服務步驟暫時無法完成
 kiosk:
   voice-received: 已收到語音，正在辨識…
+  voice-status:
+    ready: 可以說話
+    text-ready: 可以輸入訊息
+    thinking: 服務員正在思考
+    unavailable: 目前無法收音
   monitor:
     live: 即時監看（每 3 秒更新，不影響機台接待）
     updated: '最後更新：{time}'

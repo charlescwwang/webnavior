@@ -55,6 +55,7 @@ import KioskIdleDiagnostics from './KioskIdleDiagnostics.vue'
 import KioskPresenceDiagnostics from './KioskPresenceDiagnostics.vue'
 import KioskSessionNotice from './KioskSessionNotice.vue'
 import KioskVoiceDiagnostics from './KioskVoiceDiagnostics.vue'
+import KioskVoiceStatus from './KioskVoiceStatus.vue'
 import PaymentReturnButton from './PaymentReturnButton.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
@@ -919,6 +920,18 @@ useIntervalFn(() => {
   }
 }, 250)
 const isAudioListening = computed(() => enabled.value && audioInputStarted.value && !inferenceError.value && customerSessionState.value !== 'completing' && customerSessionState.value !== 'resetting')
+const voiceStatus = computed(() => {
+  // Streaming text and synthesized audio can arrive before playback actually starts.
+  if (!processingSpeechActive.value && (decisionStatus.value?.pending || conversationSending.value || speechPreparationCount.value > 0))
+    return 'thinking'
+  if (!props.voiceConversationOnly)
+    return 'text-ready'
+  // Camera observations refresh the time-based presence gate outside Vue.
+  void presenceDecision.value
+  if (!isAudioListening.value || voiceBlockReason())
+    return 'unavailable'
+  return 'ready'
+})
 
 // Diagnostic snapshots contain lifecycle state only, never audio, images or
 // device identifiers. An existing visitor session owns each persisted snapshot.
@@ -3346,6 +3359,7 @@ onUnmounted(() => {
           :thinking="conversationSending"
           :external-audio-source="assistantAudioNode"
         />
+        <KioskVoiceStatus :state="voiceStatus" :speaking="processingSpeechActive" />
         <PaymentReturnButton
           v-if="gatewayPage?.gatewayOrder && interactiveServiceClient.availability.value === 'manual-payment'"
           v-model:busy="paymentNavigationBusy"
@@ -3492,6 +3506,13 @@ onUnmounted(() => {
 .proactive-camera { position: fixed; width: 1px; height: 1px; pointer-events: none; opacity: 0; }
 /* Keep the action inside the avatar column, clear of both messages and the native website. */
 .customer-restart { position: absolute; z-index: 2; bottom: .75rem; left: .75rem; display: inline-flex; max-width: calc(100% - 1.5rem); min-height: 2.75rem; align-items: center; gap: .4rem; border: 1px solid rgb(217 250 246 / 20%); border-radius: 999px; padding: .45rem .75rem; color: #d9e9e1; background: rgb(16 26 22 / 72%); font-size: .75rem; font-weight: 500; backdrop-filter: blur(.5rem); transition: background .16s ease, opacity .16s ease; }.customer-restart:hover:not(:disabled) { background: rgb(36 53 45 / 94%); }.customer-restart:focus-visible { outline: 2px solid #99f6e4; outline-offset: 2px; }.customer-restart:disabled { cursor: wait; opacity: .55; }
+
+/* Use the animated ring as the speaking stroke without stacking a second border. */
+.stage-region { --activity-glow-frame-width: 5px; --activity-glow-outline-width: 0px; container-type: size; border-radius: 1rem; }
+
+@container (min-width: 13rem) {
+  .customer-restart { max-width: calc(100% - 5rem); }
+}
 
 @media (max-width: 700px) {
   .kiosk-scene { padding: .6rem; row-gap: .6rem; }
