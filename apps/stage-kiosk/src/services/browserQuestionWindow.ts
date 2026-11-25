@@ -52,7 +52,7 @@ export interface OrderSlot {
 // It follows the selected product into the quantity ticket without rewriting
 // the original recommendation request; it never supplies a count or options.
 type Ticket = { binding: QuestionSnapshot, question: PresentedQuestion } & (
-  | { kind: 'product', products: QuestionProduct[], visible: QuestionProduct[], page: number, request: string, query: string, orderSelection?: true }
+  | { kind: 'product', products: QuestionProduct[], visible: QuestionProduct[], page: number, request: string, query: string, orderSelection?: true, servingAnswer?: { quantity: number, transcript: string } }
   | { kind: 'addition', proposal: AdditionProposal }
   | { kind: 'quantity', product: QuestionProduct, request: string, requestTarget?: string, orderSelection?: true }
   | { kind: 'slot', slot: OrderSlot }
@@ -138,7 +138,7 @@ export function createBrowserQuestionWindow(now = Date.now) {
       ticket = undefined
       return structuredClone(pending.slot)
     },
-    presentProducts(snapshot: QuestionSnapshot, products: QuestionProduct[], request: string, page = 0, query = '', orderSelection?: true) {
+    presentProducts(snapshot: QuestionSnapshot, products: QuestionProduct[], request: string, page = 0, query = '', orderSelection?: true, servingAnswer?: { quantity: number, transcript: string }) {
       if (!products.length || new Set(products.map(product => product.productRef)).size !== products.length)
         throw new Error('Question requires distinct observed product references.')
       if (products.some(product => !snapshot.products.some(candidate => JSON.stringify(candidate) === JSON.stringify(product))))
@@ -164,8 +164,17 @@ export function createBrowserQuestionWindow(now = Date.now) {
       // Copy at presentation: a later catalog reorder cannot redefine "second".
       // Keep the original query separately so choosing a product can resolve
       // that target across later quantity questions without rewriting the request.
-      ticket = { kind: 'product', binding: structuredClone({ ...snapshot, products }), products: structuredClone(products), visible: structuredClone(visible), page, question, request, query, orderSelection }
+      ticket = { kind: 'product', binding: structuredClone({ ...snapshot, products }), products: structuredClone(products), visible: structuredClone(visible), page, question, request, query, orderSelection, servingAnswer }
       return structuredClone(question)
+    },
+    recordProductServings(snapshot: QuestionSnapshot, questionId: string, quantity: number, transcript: string) {
+      const pending = current(snapshot)
+      if (pending?.kind !== 'product' || !pending.orderSelection || pending.question.questionId !== questionId)
+        return
+      // The count belongs to this choice only. No product has been selected yet.
+      pending.servingAnswer = { quantity, transcript }
+      pending.question.question = `要 ${quantity} 份，您想點哪一道？`
+      return structuredClone(pending.question)
     },
     presentAddition(snapshot: QuestionSnapshot, proposal: AdditionProposal) {
       const product = snapshot.products.find(product => product.productRef === proposal.productRef && product.configurationVersion === proposal.selection.version)

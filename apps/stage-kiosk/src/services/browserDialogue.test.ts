@@ -1213,3 +1213,20 @@ it('does not let a model-chosen unmentioned meal retire a checkout question', as
   expect(await executeBrowserQuantityQuestion(client, { productRef: 'p-1' })).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-service-question', question: '發票要哪種？' } })
   expect(facts.cart.lines).toEqual([])
 })
+
+it('retains a serving count only for the pending product choice until the customer names a dish', async () => {
+  const { dialogue, facts } = setup()
+  const offer = () => dialogue.presentProducts(facts, '', '我要餐', ['p-0', 'p-1'])
+  offer()
+  for (const text of ['三碗', '三份']) {
+    const result = await dialogue.answer(facts, text, async () => facts, () => true)
+    expect(result).toMatchObject({ kind: 'receipt', result: { effect: 'none', pendingCustomerChoice: { purpose: 'browser-product-choice' } } })
+  }
+  expect(await dialogue.answer(facts, facts.products[1].name, async () => facts, () => true)).toMatchObject({ kind: 'product', requestedQuantity: 3, product: { productRef: 'p-1' } })
+  offer()
+  await dialogue.answer(facts, '兩碗', async () => facts, () => true)
+  const question = dialogue.conversation(facts).waitingFor!
+  expect(await dialogue.answer(facts, '取消', async () => facts, () => true, undefined, { selectedAnswer: { questionId: question.questionId, choiceId: 'cancel' } })).toMatchObject({ kind: 'cancel-selection' })
+  offer()
+  expect(await dialogue.answer(facts, facts.products[0].name, async () => facts, () => true)).toMatchObject({ kind: 'product', requestedQuantity: undefined })
+})

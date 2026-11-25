@@ -756,6 +756,16 @@ export function createBrowserDialogue(io: {
       const selectedAnswer = options.selectedAnswer
       if (selectedAnswer && (selectedAnswer.questionId !== pending.question.questionId || !pending.question.choices.some(choice => choice.id === selectedAnswer.choiceId)))
         return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '目前問題已變更，請依畫面上的問題繼續。' } }
+      if (!selectedAnswer && pending.kind === 'product' && pending.orderSelection && /[份碗杯](?:謝謝)?[。！!，,\s]*$/.test(transcript)) {
+        const count = quantityAnswerCount(transcript)
+        if (count !== undefined) {
+          const question = questions.recordProductServings(binding, pending.question.questionId, count, transcript)
+          if (question) {
+            unresolvedQuestion = undefined
+            return { kind: 'receipt' as const, result: receipt(question) }
+          }
+        }
+      }
       if (!selectedAnswer && pending.kind === 'slot') {
         if (pending.slot.kind === 'dumpling-pieces') {
           const observed = await observe()
@@ -948,12 +958,14 @@ export function createBrowserDialogue(io: {
         orders.reset()
         return { kind: 'cancel-selection' as const, excludedRefs }
       }
-      if (selected.kind === 'product')
-        return { kind: 'product' as const, product: selected.product, request: pending.kind === 'product' ? pending.request : '', requestTarget: pending.kind === 'product' ? pending.query : undefined, requestedQuantity: undefined, orderSelection: pending.kind === 'product' ? pending.orderSelection : undefined, completePurchase: !!literal && pending.kind === 'product' ? completePurchase(observed, pending.request, selected.product.productRef) : undefined, binding: fresh }
+      if (selected.kind === 'product' && pending.kind === 'product') {
+        const request = pending.servingAnswer ? `${pending.request}\n${pending.servingAnswer.transcript}` : pending.request
+        return { kind: 'product' as const, product: selected.product, request, requestTarget: pending.query, requestedQuantity: pending.servingAnswer?.quantity, orderSelection: pending.orderSelection, completePurchase: literal ? completePurchase(observed, pending.request, selected.product.productRef) : undefined, binding: fresh }
+      }
       if (selected.kind === 'addition')
         return { kind: 'addition' as const, proposal: selected.proposal, binding: fresh }
       if (selected.kind === 'page')
-        return { kind: 'receipt' as const, result: receipt(questions.presentProducts(fresh, selected.products, selected.request, selected.page, selected.query, pending.kind === 'product' ? pending.orderSelection : undefined)) }
+        return { kind: 'receipt' as const, result: receipt(questions.presentProducts(fresh, selected.products, selected.request, selected.page, selected.query, pending.kind === 'product' ? pending.orderSelection : undefined, pending.kind === 'product' ? pending.servingAnswer : undefined)) }
       return { kind: 'receipt' as const, result: { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '這個問題已失效，請重新確認。' } }
     },
   }
