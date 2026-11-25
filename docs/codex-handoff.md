@@ -1,9 +1,9 @@
 # Codex Handoff
 
-## 2026-11-25 Kiosk RC12 前端與 Windows 包已發布
+## 2026-11-25 Kiosk RC12 前後端與 Windows 包已發布
 
 - 正式前端四個入口與 Windows 最新包已切換 RC12。真實模型經 Electron 測試，取消只移除剛加的一份，保留原有份數與備註；Jev 開啟、背景音過濾關閉時，旁人問句的誤加餐在寫入前攔下。Windows 實機待驗。
-- 正式 API 重啟授權逾時，三個檔案自動還原，原服務與資料庫、Redis 健康。待主機管理員完成重新部署。[發布紀錄](releases/kiosk-v0.7.8-rc.12-deployment.json)
+- 正式 API 已重啟，三個部署檔案的 SHA-256 均與 RC12 相符。程序 704202 運作中，健康檢查回報資料庫與 Redis 正常。[發布紀錄](releases/kiosk-v0.7.8-rc.12-deployment.json)
 
 ## 2026-11-25 Kiosk RC11 已發布
 

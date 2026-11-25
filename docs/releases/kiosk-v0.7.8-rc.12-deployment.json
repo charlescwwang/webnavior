@@ -37,8 +37,8 @@
         "after": "74989a807925b588310dbda9fd7116cb547240bf6bcf507427a4128b90ec8fcf"
       }
     ],
-    "status": "rolled-back",
-    "apiPid": "1214145",
+    "status": "deployed",
+    "apiPid": "704202",
     "health": {
       "status": "ready",
       "checks": {
@@ -47,7 +47,7 @@
       }
     }
   },
-  "apiRestartAttempt": "systemctl authorization timed out; changes rolled back",
+  "apiRestartAttempt": "First attempt rolled back after authorization timed out. Authorized retry deployed successfully.",
   "validation": {
     "kioskTests": {
       "passed": 1350,
