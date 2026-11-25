@@ -120,12 +120,12 @@ export function createBrowserQuestionWindow(now = Date.now) {
       ticket = { kind: 'slot', binding: structuredClone(snapshot), slot: structuredClone(slot), question }
       return structuredClone(question)
     },
-    presentOrder(snapshot: QuestionSnapshot, proposals: AdditionProposal[]) {
-      if (!proposals.length || proposals.length > 10 || proposals.some(proposal => !snapshot.products.some(product => product.productRef === proposal.productRef && product.name === proposal.productName && product.configurationVersion === proposal.selection.version) || !Number.isInteger(proposal.quantity) || proposal.quantity < 1 || proposal.quantity > 99 || !Number.isFinite(proposal.unitPrice) || proposal.unitPrice < 0))
+    presentOrder(snapshot: QuestionSnapshot, proposals: AdditionProposal[], wholeMenu = false) {
+      if (!proposals.length || (!wholeMenu && proposals.length > 10) || proposals.some(proposal => !snapshot.products.some(product => product.productRef === proposal.productRef && product.name === proposal.productName && product.configurationVersion === proposal.selection.version) || !Number.isInteger(proposal.quantity) || proposal.quantity < 1 || proposal.quantity > 99 || !Number.isFinite(proposal.unitPrice) || proposal.unitPrice < 0))
         throw new Error('Order confirmation requires complete current proposals.')
       const lines = proposals.map(proposal => `${describePbMeal({ ...proposal, name: proposal.productName })}，單份 ${proposal.unitPrice} 元`)
       const total = proposals.reduce((sum, proposal) => sum + Math.round(proposal.unitPrice * 100) * proposal.quantity, 0) / 100
-      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-confirm-add', question: `${lines.join('；')}。合計 ${total} 元，要幫您加入購物車嗎？`, expiresAt: now() + 120_000, choices: [{ id: 'confirm', description: `確認加入上述 ${proposals.length} 組完整餐點，合計 ${total} 元，不送單付款。` }, { id: 'cancel', description: '取消這批尚未加入的餐點，保留購物車。' }] }
+      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-confirm-add', question: wholeMenu ? `整張菜單共 ${proposals.length} 道，各一份合計 ${total} 元，全部幫您加入嗎？` : `${lines.join('；')}。合計 ${total} 元，要幫您加入購物車嗎？`, expiresAt: now() + 120_000, choices: [{ id: 'confirm', description: `確認加入上述 ${proposals.length} 組完整餐點，合計 ${total} 元，不送單付款。` }, { id: 'cancel', description: '取消這批尚未加入的餐點，保留購物車。' }] }
       if (question.question.length > 2000)
         throw new Error('Order confirmation exceeds the presentation limit.')
       ticket = { kind: 'order', binding: structuredClone(snapshot), proposals: structuredClone(proposals), question }

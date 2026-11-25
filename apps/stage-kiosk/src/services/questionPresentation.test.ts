@@ -5,12 +5,46 @@ import { describe, expect, it } from 'vitest'
 import { menu as sampleMenu } from '../../../order-menu/src/domain/order-machine'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
-import { browserRecoveryReply, createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
+import { browserRecoveryReply, createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion, requestsReadingStop } from './questionPresentation'
+
+it('handles only a standalone stop request made during playback', () => {
+  expect(requestsReadingStop('不用唸了', true)).toBe(true)
+  expect(requestsReadingStop('請停止朗讀。', true)).toBe(true)
+  expect(requestsReadingStop('不用唸了', false)).toBe(false)
+  expect(requestsReadingStop('不用唸了，幫我結帳', true)).toBe(false)
+})
 
 it('answers from the cart recheck when a quantity change is still unsettled', () => {
   const customerMessage = '目前購物車：蝦捲 1 份。'
   const result = browserRecoveryReply({ operationAttempted: true, receipt: { source: 'browser', status: 'unknown', reason: 'cart-rechecked', customerMessage } })
   expect(result.content).toBe(customerMessage)
+})
+
+it('shows the native cart recheck until another operation starts', () => {
+  const menu = createMenuReplyWindow()
+  const customerMessage = '目前購物車：牛肉麵 1 份。'
+  menu.beginOperation('add_items_to_cart')
+  menu.record('add_items_to_cart', { ok: false, source: 'browser', status: 'unknown', reason: 'cart-rechecked', customerMessage })
+  const result = { status: 'incomplete', reason: 'provider-error', requestedTools: ['add_items_to_cart'], agentMode: 'active' } as const
+  const present = () => replyFromConversation({ ...result, requestedTools: [...result.requestedTools] }, { menu, browserRecovery: { operationAttempted: true, page: 'cart' }, failureMessage: '模型失敗' })
+  expect(present().content).toBe(customerMessage)
+  menu.beginOperation('add_items_to_cart')
+  expect(present().content).not.toBe(customerMessage)
+})
+
+it('does not turn a failed service-only continuation into cart guidance', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('reply_to_customer', { ok: true, source: 'browser', effect: 'none', dataOnly: true })
+  const result = replyFromConversation({ status: 'incomplete', reason: 'provider-error', requestedTools: ['reply_to_customer'], agentMode: 'active' }, { menu, browserRecovery: { operationAttempted: false, page: 'cart' }, failureMessage: '模型失敗' })
+  expect(result.content).not.toMatch(/訂單|變更餐點|購物車/)
+})
+
+it('retains the Host customer message when a required checkout step is incomplete', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('add_items_to_cart', { ok: true, source: 'browser', status: 'verified', effect: 'applied', customerMessage: '已加入牛肉麵 1 份。' })
+  const result = replyFromConversation({ status: 'incomplete', reason: 'provider-error', requestedTools: ['add_items_to_cart'], agentMode: 'active' }, { handoff: { intent: 'START_CHECKOUT' }, menu, outcome: '已加入牛肉麵 1 份。', browserRecovery: { operationAttempted: true }, failureMessage: '模型失敗' })
+  expect(result.content).toContain('已加入牛肉麵 1 份')
+  expect(result.content).toContain('結帳')
 })
 
 // Report: this chat Nov17 — invoice/notification errors repeatedly told the customer to open the cart.

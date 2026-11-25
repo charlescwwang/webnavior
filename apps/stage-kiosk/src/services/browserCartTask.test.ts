@@ -403,6 +403,31 @@ it('preserves the exact uncompleted purchase for replanning after native pre-dis
   expect(client.execute.mock.calls.filter(([selected]) => selected.name === 'browser_cart_add')).toHaveLength(1)
 })
 
+// Report: this chat, 2026-11-25, RC10 rejected 「魚丸湯也一份」 before opening the product.
+it('reads the latest catalog for the same fish ball soup request after a configuration refusal', async () => {
+  const { client, tool, facts } = setup('魚丸湯也一份')
+  facts.products[0].name = '魚丸湯'
+  const stale = { ok: false, source: 'browser', status: 'rejected', effect: 'none', reason: 'stale-configuration', execution: { steps: [] } }
+  client.execute.mockImplementation(async (selected) => {
+    if (selected.name === 'browser_cart_get')
+      return facts
+    facts.products[0].configurations[0].version = 'fresh'
+    return stale
+  })
+  expect(await executeBrowserCartTool(client, tool, addition)).toMatchObject({
+    status: 'proposal_rejected',
+    effect: 'none',
+    dataOnly: true,
+    needsAssistant: true,
+    originalRequest: '魚丸湯也一份',
+    selectedProduct: { productRef: addition.productRef, name: '魚丸湯' },
+    requestedQuantity: 1,
+  })
+  expect(client.execute.mock.calls.filter(([selected]) => selected.name === 'browser_cart_add')).toHaveLength(1)
+  expect(await executeBrowserCartTool(client, tool, { ...addition, selection: { ...addition.selection, version: 'fresh' } })).toEqual(stale)
+  expect(client.execute.mock.calls.filter(([selected]) => selected.name === 'browser_cart_get')).toHaveLength(2)
+})
+
 it.each([
   { status: 'unknown', effect: 'unknown', steps: [] },
   { status: 'rejected', effect: 'partial', steps: [] },

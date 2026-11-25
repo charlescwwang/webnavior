@@ -22,7 +22,7 @@ export const orderingMessages = {
     previousOperation: { order: '先前訂單送出結果尚未確認，這次沒有新增餐點。請由現場人員核對 PB 訂單紀錄後再繼續。', reset: '先前清空購物車的結果尚未確認，這次沒有新增餐點，請由現場人員核對購物車。', cart: '先前餐點調整的結果尚未確認，這次沒有新增或修改餐點，請先核對購物車。', operation: '先前操作仍在確認，這次沒有新增或修改餐點，請稍候再試。' },
     checkoutInvitation: { question: '要現在結帳嗎？', accept: '開啟購物車核對餐點，接著進行結帳；不送出訂單或付款。', decline: '繼續點餐，保留購物車裡的餐點。' },
     orderState: { pending: '訂單資料已建立，尚待付款。請使用畫面提供的付款方式：{methods}。目前尚不能以語音選擇付款方式。', paid: '目前已核實付款完成。', cancelled: '目前訂單顯示未付款取消，請在畫面開始新訂單。', unknown: '目前無法核實付款結果，請先核對畫面或洽現場人員，避免重複付款或送單。', methodsUnknown: '以畫面為準' },
-    recovery: { 'lookup': '這次查詢尚未完成，請再告訴我想找的餐點或種類。', 'noChange': '這次沒有送出訂單或變更餐點，請告訴我要調整哪一項。', 'applied': '已核實的操作已保留，其他需求尚未完成，請告訴我要繼續哪一步。', 'partial': '已完成的項目已保留，請先確認尚未完成的項目，避免重複操作。', 'payment': '請在付款畫面確認目前訂單與可用方式；付款結果未核實前，請勿重複付款。', 'order-result': '請核對畫面的訂單與付款狀態；結果不明時請洽現場人員，避免重複送單或付款。', 'order': '訂單送出結果尚未確認，請由現場人員核對 PB 訂單紀錄；確認前不要再次送出。', 'table': '請告訴我桌號或要櫃台取餐，我會直接開始點餐；桌號不對可以說「重選桌號」。', 'menu': '這次尚未完成，請再告訴我想點的餐點和份數。', 'cart': '餐點、份數和金額正確嗎？正確請說「正確」，要修改請告訴我。', 'checkout': '請告訴我要調整哪項結帳資料，我會接著協助。', 'review': '剛才的操作尚未核實，需要先核對目前購物車，避免重複操作。', 'unavailable': '目前暫時無法連線操作，請稍後再告訴我需求；若持續失敗，請洽現場人員。' },
+    recovery: { 'replyInterrupted': '剛才的回覆中斷了，請再說一次您的需求。', 'checkoutNotStarted': '結帳還沒開始。', 'lookup': '這次查詢尚未完成，請再告訴我想找的餐點或種類。', 'noChange': '這次沒有送出訂單或變更餐點，請告訴我要調整哪一項。', 'applied': '已核實的操作已保留，其他需求尚未完成，請告訴我要繼續哪一步。', 'partial': '已完成的項目已保留，請先確認尚未完成的項目，避免重複操作。', 'payment': '請在付款畫面確認目前訂單與可用方式；付款結果未核實前，請勿重複付款。', 'order-result': '請核對畫面的訂單與付款狀態；結果不明時請洽現場人員，避免重複送單或付款。', 'order': '訂單送出結果尚未確認，請由現場人員核對 PB 訂單紀錄；確認前不要再次送出。', 'table': '請告訴我桌號或要櫃台取餐，我會直接開始點餐；桌號不對可以說「重選桌號」。', 'menu': '這次尚未完成，請再告訴我想點的餐點和份數。', 'cart': '餐點、份數和金額正確嗎？正確請說「正確」，要修改請告訴我。', 'checkout': '請告訴我要調整哪項結帳資料，我會接著協助。', 'review': '剛才的操作尚未核實，需要先核對目前購物車，避免重複操作。', 'unavailable': '目前暫時無法連線操作，請稍後再告訴我需求；若持續失敗，請洽現場人員。' },
     targetChoice: '請選擇其中一項：{items}。請說餐點名稱或第幾項，也可以說取消。',
     queryActions: { clarify: '你想調整價位，還是換餐點種類？', exhausted: '目前條件下沒有其他餐點了。你想調整價位，還是換餐點種類？' },
     queryScope: { expired: '菜單或推薦已更新，請重新提出查詢。', question: '你想看剛才推薦的，還是整份菜單符合的餐點？', clarification: '剛才推薦的是只查剛才介紹的那幾道；整份菜單是查店裡所有餐點。你想查哪個範圍？', shown: '剛才推薦的', catalog: '整份菜單' },
@@ -39,6 +39,7 @@ export const orderingMessages = {
       invoicePreselected: '目前預選「{method}」。',
       gateway: {
         'unavailable': '目前無法確認付款選項，請查看付款畫面。',
+        'returned': '已返回這張訂單的付款方式頁，請重新選擇。',
         'card-ready': '已顯示信用卡表單，請在畫面輸入卡片資料。',
         'wallet-ready': '請使用綠界 Pay 掃描畫面上的付款碼。',
         'apple-requested': '已選 Apple Pay，行動條碼出現後，請用 iPhone 相機掃描。',
@@ -48,8 +49,10 @@ export const orderingMessages = {
       paymentUnavailable: '目前沒有可用的付款入口，請洽現場人員。',
       resumeEntry: '請繼續提供這一步需要的資料，完成後說「好了」，我會重新檢查。',
 
+      taxKeypad: { title: '統一編號數字鍵盤', open: '開啟統編數字鍵盤', hint: '請輸入 8 碼統一編號。' },
       phoneKeypad: { title: '通知手機數字鍵盤', open: '開啟數字鍵盤', close: '關閉鍵盤', hint: '請輸入通知手機，填好後關閉鍵盤並說「好了」，接著核對訂單內容。', clear: '清除', delete: '刪除一碼' },
       notificationPhone: {
+        mealInterruption: '如果要加點「{meal}」，請說餐名和份數；如果要繼續填手機，請接著報後面的號碼。',
         introduction: '接下來請說通知手機，可以分段說；完整後我會覆誦確認。',
         invalid: '號碼格式不正確，請重新報通知手機，從 0 9 開始，共 10 碼。',
         confirm: '通知手機是 {digits}，正確嗎？確認後才填入，不會送出訂單。',
@@ -152,7 +155,7 @@ export const orderingMessages = {
     incompleteRequest: 'Please state your full request, such as which dish you want and how many servings.',
     previousOperation: { order: 'An earlier order submission is unconfirmed. No dish was added this time. Ask staff to verify the PB order record before continuing.', reset: 'The earlier cart reset is unconfirmed. No dish was added this time. Ask staff to check the cart.', cart: 'An earlier cart change is unconfirmed. No dishes were added or changed this time. Check the cart first.', operation: 'An earlier operation is still being checked. No dishes were added or changed this time. Please wait.' },
     orderState: { pending: 'Order data has been created and payment is pending. Use the methods shown on screen: {methods}. Voice selection of payment methods is not available yet.', paid: 'Payment is confirmed.', cancelled: 'The order shows cancellation before payment. Start a new order on screen.', unknown: 'The payment result cannot be verified. Check the screen or ask staff before submitting or paying again.', methodsUnknown: 'please refer to the screen' },
-    recovery: { 'lookup': 'This lookup is not complete. Please tell me the dish or type you are looking for.', 'noChange': 'This operation did not submit an order or change the meals. Tell me what to adjust.', 'applied': 'Verified changes are retained. Tell me which unfinished step to continue.', 'partial': 'Completed changes are retained. Check the remaining steps before repeating an operation.', 'payment': 'Please check the current order and methods on the payment screen. Do not pay again while the result is unconfirmed.', 'order-result': 'Check the displayed order and payment status. Ask staff if unclear; avoid submitting or paying again.', 'order': 'The order submission is unconfirmed. Please ask staff to check PB order records before submitting again.', 'table': 'Tell me your table or choose counter pickup, and I will start ordering. Say “change table” to correct it.', 'menu': 'This request is unfinished. Please tell me the dishes and quantities again.', 'cart': 'Are the meals, quantities and total correct? Say correct, or tell me what to change.', 'checkout': 'Tell me which checkout detail to update, and I will help.', 'review': 'The previous change is unconfirmed. The current cart must be checked before repeating an operation.', 'unavailable': 'The ordering connection is temporarily unavailable. Try your request again shortly, or ask staff if the problem persists.' },
+    recovery: { 'replyInterrupted': 'My reply was interrupted. Please tell me what you need again.', 'checkoutNotStarted': 'Checkout has not started yet.', 'lookup': 'This lookup is not complete. Please tell me the dish or type you are looking for.', 'noChange': 'This operation did not submit an order or change the meals. Tell me what to adjust.', 'applied': 'Verified changes are retained. Tell me which unfinished step to continue.', 'partial': 'Completed changes are retained. Check the remaining steps before repeating an operation.', 'payment': 'Please check the current order and methods on the payment screen. Do not pay again while the result is unconfirmed.', 'order-result': 'Check the displayed order and payment status. Ask staff if unclear; avoid submitting or paying again.', 'order': 'The order submission is unconfirmed. Please ask staff to check PB order records before submitting again.', 'table': 'Tell me your table or choose counter pickup, and I will start ordering. Say “change table” to correct it.', 'menu': 'This request is unfinished. Please tell me the dishes and quantities again.', 'cart': 'Are the meals, quantities and total correct? Say correct, or tell me what to change.', 'checkout': 'Tell me which checkout detail to update, and I will help.', 'review': 'The previous change is unconfirmed. The current cart must be checked before repeating an operation.', 'unavailable': 'The ordering connection is temporarily unavailable. Try your request again shortly, or ask staff if the problem persists.' },
     targetChoice: 'Choose one item: {items}. Say its name or position, or say cancel.',
     queryActions: { clarify: 'Would you like to change the price range or the type of food?', exhausted: 'There are no more dishes under the current conditions. Would you like to change the price range or the type of food?' },
     queryScope: { expired: 'The menu or recommendations have changed. Please start your query again.', question: 'Would you like to check the previous recommendations or matching dishes from the whole menu?', clarification: 'Previous recommendations means only the dishes just introduced; the whole menu means all dishes offered here. Which would you like to check?', shown: 'Previous recommendations', catalog: 'Whole menu' },
@@ -171,8 +174,10 @@ export const orderingMessages = {
       paymentUnavailable: 'No LINE Pay payment option is currently available. Please ask staff for help.',
       resumeEntry: 'Continue providing the details for this step, then say done for a fresh check.',
 
+      taxKeypad: { title: 'Tax ID keypad', open: 'Open tax ID keypad', hint: 'Enter the 8-digit tax ID.' },
       phoneKeypad: { title: 'Notification phone keypad', open: 'Open numeric keypad', close: 'Close keypad', hint: 'Enter your notification phone, then close the keypad and say done to review your order.', clear: 'Clear', delete: 'Delete digit' },
       notificationPhone: {
+        mealInterruption: 'To add {meal}, say the dish and quantity. To finish entering your phone number, continue with the remaining digits.',
         introduction: 'Please say your notification mobile number. You may say it in parts; I will read it back for confirmation.',
         invalid: 'Please start again with a ten-digit mobile number beginning with 0 9.',
         confirm: 'Your notification number is {digits}. Is that correct? Confirmation fills the field only; it does not submit the order.',

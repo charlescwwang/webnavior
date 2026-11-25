@@ -14,6 +14,11 @@ import { literal, looseObject, safeParse, string } from 'valibot'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 
+/** Only a standalone instruction captured during playback can silence a reply locally. */
+export function requestsReadingStop(text: string, duringPlayback: boolean) {
+  return duringPlayback && /^(?:請|麻煩)?(?:不用[唸念讀]了|停止朗讀|不要再[唸念讀]了)[。！!]*$/.test(text.trim())
+}
+
 /** Aggregated receipts distinguish a known refusal from an unsettled operation. */
 export type BrowserEffectState = 'none' | 'applied' | 'partial' | 'unknown'
 
@@ -137,6 +142,7 @@ export function createMenuReplyWindow(options: { sourceUtterance?: string } = {}
   let presentationFailure: string | undefined
   let cartChange: unknown
   let orderUnconfirmed = false
+  let recheckedCartMessage: string | undefined
   let submissionNotice: PbSubmissionResult | undefined
   let effectState: BrowserEffectState | undefined
   // Counts correlate repeated same-name operations in this one Host turn. An
@@ -147,6 +153,9 @@ export function createMenuReplyWindow(options: { sourceUtterance?: string } = {}
   return {
     /** Marks entry into execution; this is deliberately not evidence of dispatch. */
     beginOperation(name: string, options: { maySubmit?: boolean } = {}) {
+      if (recheckedCartMessage && browserOutcome === recheckedCartMessage)
+        browserOutcome = undefined
+      recheckedCartMessage = undefined
       const native = nativeOrderingToolName(name)
       pendingOperations.set(native, (pendingOperations.get(native) ?? 0) + 1)
       if (options.maySubmit)
@@ -199,6 +208,8 @@ export function createMenuReplyWindow(options: { sourceUtterance?: string } = {}
         orderUnconfirmed = true
       if (pending <= 1)
         pendingSubmissions.delete(name)
+      if (payload.source === 'browser' && payload.reason === 'cart-rechecked' && payload.status === 'unknown' && typeof payload.customerMessage === 'string')
+        recheckedCartMessage = payload.customerMessage
       if (observedEffect) {
         if (effectState === 'unknown' || observedEffect === 'unknown')
           effectState = 'unknown'
@@ -329,6 +340,7 @@ export function createMenuReplyWindow(options: { sourceUtterance?: string } = {}
     effectState: (): BrowserEffectState | undefined => [...pendingOperations.values()].some(count => count > 0) ? 'unknown' : effectState,
     submissionNotice: () => submissionNotice,
     orderUnconfirmed: () => orderUnconfirmed || pendingSubmissions.size > 0,
+    recheckedCartMessage: () => [...pendingOperations.values()].some(count => count > 0) ? undefined : recheckedCartMessage,
     cartChange: () => cartChange,
     presentationFailure: () => presentationFailure,
     reply() {
@@ -414,9 +426,25 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   const clarification = result.status === 'completed' && !commerceAttempted && options.context
     ? replyFromContext('{"kind":"clarification"}', options.context)
     : undefined
+  // A failed continuation carries no new merchant evidence. Keep the last
+  // verified effect and distinguish a missing next step from an unknown write.
+  if (result.status !== 'completed' && options.browserRecovery && !options.menu.orderUnconfirmed()) {
+    const messages = orderingMessages['zh-Hant'].recovery
+    const cart = options.menu.recheckedCartMessage()
+    if (cart)
+      return { role: 'assistant', recovery: true, content: cart }
+    if (result.requestedTools.length && result.requestedTools.every(name => nativeOrderingToolName(name) === 'browser_respond')
+      && options.menu.effectState() === 'none') {
+      return { role: 'assistant', recovery: true, content: outcome || messages.replyInterrupted }
+    }
+    if (options.handoff?.intent === 'START_CHECKOUT' && options.menu.cartChange() && options.menu.effectState() === 'applied'
+      && result.requestedTools.every(name => nativeOrderingToolName(name) === 'browser_cart_add') && outcome) {
+      return { role: 'assistant', recovery: true, content: `${outcome} ${messages.checkoutNotStarted}` }
+    }
+  }
   const unresolved = clarification
     ? { role: 'assistant' as const, content: clarification.content, clarification: true as const }
-    : options.browserRecovery ? browserRecoveryReply({ ...options.browserRecovery, effect: options.menu.effectState(), orderUnconfirmed: options.menu.orderUnconfirmed(), verifiedMessage: options.menu.browserOutcome() ?? (options.menu.hasReceipts() ? options.menu.reply() : undefined) }) : { role: 'error' as const, content: options.failureMessage }
+    : options.browserRecovery ? browserRecoveryReply({ ...options.browserRecovery, effect: options.menu.effectState(), orderUnconfirmed: options.menu.orderUnconfirmed(), verifiedMessage: outcome ?? (options.menu.hasReceipts() ? options.menu.reply() : undefined) }) : { role: 'error' as const, content: options.failureMessage }
   // A true menu receipt cannot complete a known mutation task. Preserve the
   // requested effect even when Main chooses a factual but unrelated lookup.
   const intent = options.handoff?.intent ?? ''

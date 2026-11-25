@@ -19,6 +19,7 @@ import { createBrowserFastPathSource } from './browserFastPath'
 import { createBrowserOrderingTools } from './browserOrderingTools'
 import { offerCheckout } from './checkoutInvitation'
 import { runFastPath } from './kiosk-fast-path'
+import { createKioskUtteranceQueue } from './kioskUtteranceQueue'
 
 const cleanup: Array<() => void> = []
 afterEach(() => cleanup.splice(0).forEach(dispose => dispose()))
@@ -310,6 +311,41 @@ it('lists invoice choices when Main tries to treat cart confirmation as choosing
   expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_select')).toHaveLength(0)
 })
 
+it.each(['resume', 'new-visitor', 'manual-phone', 'expired-question', 'new-document', 'new-order'])('re-enters checkout after a cart change during spoken phone entry: %s', async (mode) => {
+  const { facts, dialogue, client, checkout, execute, binding } = setup('結帳')
+  checkout.fields.push({ kind: 'phone', label: '通知手機', value: '', valid: false })
+  Object.assign(facts, { page: 'cart', checkout })
+  const contact = { purpose: 'notification-details', request: '結帳', question: '請提供通知手機。', choices: [] }
+  dialogue.presentService(facts, contact)
+  const turn = async (text: string) => {
+    cleanup.push(beginBrowserCartTask(text, { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+    return (await prepareBrowserQuestionAnswer(client))!()
+  }
+  await turn('0912')
+  dialogue.pauseCheckout(facts)
+  facts.cart.version = 'after-add'
+  if (mode === 'new-visitor')
+    binding.owner = 'next'
+  if (mode === 'manual-phone')
+    checkout.fields[0].value = '0955'
+  if (mode === 'expired-question')
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 121_000)
+  if (mode === 'new-order')
+    dialogue.reset()
+  if (mode === 'new-document')
+    binding.documentId = 'return-to-checkout'
+  const resumed = dialogue.presentService(facts, contact)
+  vi.restoreAllMocks()
+  if (['resume', 'expired-question', 'new-document', 'manual-phone'].includes(mode)) {
+    expect(resumed.customerMessage).toContain('4 碼')
+    expect(await turn('345678')).toMatchObject({ customerMessage: expect.stringContaining(mode === 'manual-phone' ? '0 9 5 5 3 4 5 6 7 8' : '0 9 1 2 3 4 5 6 7 8') })
+  }
+  else {
+    expect(resumed.customerMessage).toBe(contact.question)
+  }
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_notification_phone')).toBe(false)
+})
+
 // Report: this chat, Nov16 — phone fragments were rejected instead of accumulated.
 it('collects phone fragments in the bound contact question and fills only after read-back confirmation', async () => {
   const { call, client, facts, dialogue, checkout, execute } = setup('手機載具')
@@ -325,6 +361,9 @@ it('collects phone fragments in the bound contact question and fills only after 
   }
   await turn('好了')
   expect((await turn('鈴玖么二')).customerMessage).toContain('4 碼')
+  // A bare menu name during phone entry leaves the four collected digits in place.
+  expect((await turn('雞腿飯')).customerMessage).toContain('要加點')
+  expect(execute.mock.calls.some(([tool]) => ['browser_present', 'browser_cart_add', 'browser_order_submit'].includes(tool.name))).toBe(false)
   expect((await turn('345')).customerMessage).toContain('7 碼')
   const complete = await turn('678')
   expect(complete.customerMessage).toContain('0 9 1 2 3 4 5 6 7 8')
@@ -404,6 +443,196 @@ it('resolves the unique dumpling extra by its observed option identity instead o
   const result = await call('add_items_to_cart', { items: [{ name: product.name, quantity: 1, piecesPerServing: 10 }] })
   expect(result.status).toBe('verified')
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_add' }), expect.objectContaining({ quantity: 1, unitPrice: 80, selection: { version: 'config', variantRef: '', choices: [{ ref: 'dumpling', quantity: 2 }] } }))
+})
+
+// Report: this chat, 2026-11-25, RC10 rejected 「魚丸湯也一份」 before opening the product.
+it.each([false, true])('recompiles the same fish ball soup add from fresh facts (price changed: %s)', async (priceChanged) => {
+  const { call, execute, facts } = setup('魚丸湯也一份')
+  const soup = { ...facts.products[0], ref: 'soup', name: '魚丸湯', price: 50, configurations: [{ ...facts.products[0].configurations[0], unitPrice: 50 }] }
+  facts.products.push(soup)
+  const executeNative = execute.getMockImplementation()!
+  execute.mockImplementation(async (tool, input) => {
+    if (tool.name !== 'browser_cart_add')
+      return executeNative(tool, input)
+    if (input.selection && Reflect.get(input.selection, 'version') === 'config') {
+      soup.configurations[0].version = 'fresh'
+      if (priceChanged)
+        soup.configurations[0].unitPrice = soup.price = 55
+      return { ok: false, source: 'browser', status: 'rejected', effect: 'none', reason: 'stale-configuration', execution: { steps: [] } }
+    }
+    facts.cart.lines.push({ ref: 'added', productRef: String(input.productRef), name: soup.name, quantity: Number(input.quantity), unitPrice: Number(input.unitPrice), configuration: '', note: '', options: [] })
+    facts.cart.version = 'updated-cart'
+    return { ok: true, source: 'browser', status: 'verified', effect: 'applied', cart: structuredClone(facts.cart) }
+  })
+  const request = { items: [{ name: '魚丸湯', quantity: 1 }] }
+  expect(await call('add_items_to_cart', request)).toMatchObject({ status: 'proposal_rejected', dataOnly: true, originalRequest: '魚丸湯也一份' })
+  expect(facts.cart.lines.map(line => line.name)).toEqual(['雞腿飯'])
+  expect(await call('add_items_to_cart', request)).toMatchObject({ status: priceChanged ? 'rejected' : 'verified' })
+  expect(facts.cart.lines.map(line => [line.name, line.quantity])).toEqual(priceChanged ? [['雞腿飯', 3]] : [['雞腿飯', 3], ['魚丸湯', 1]])
+  const additions = execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add')
+  expect(additions).toHaveLength(priceChanged ? 1 : 2)
+  if (!priceChanged)
+    expect(additions[1][1]).toMatchObject({ productRef: 'soup', quantity: 1, unitPrice: 50, selection: { version: 'fresh', choices: [] } })
+})
+
+it.each(['unchanged', 'removed', 'price', 'unknown', 'stale-again'] as const)('refreshes only the unexecuted second dish after a verified first addition: %s', async (mode) => {
+  const { call, execute, facts } = setup('雞腿飯一份，魚丸湯一份')
+  const soup = { ...facts.products[0], ref: 'soup', name: '魚丸湯', price: 50, configurations: [{ ...facts.products[0].configurations[0], unitPrice: 50 }] }
+  facts.products.push(soup)
+  const native = execute.getMockImplementation()!
+  const attempts: unknown[] = []
+  execute.mockImplementation(async (tool, input) => {
+    if (tool.name !== 'browser_cart_add')
+      return native(tool, input)
+    attempts.push(input.productRef)
+    if (input.productRef === 'soup' && (attempts.length === 2 || mode === 'stale-again')) {
+      if (mode === 'unknown')
+        return { ok: false, source: 'browser', status: 'unknown', effect: 'unknown' }
+      soup.configurations[0].version = 'fresh'
+      if (mode === 'removed')
+        facts.products.pop()
+      if (mode === 'price')
+        soup.configurations[0].unitPrice = soup.price = 55
+      return { ok: false, source: 'browser', status: 'rejected', effect: 'none', reason: 'stale-configuration', execution: { steps: [] } }
+    }
+    facts.cart.version += '-added'
+    return { ok: true, source: 'browser', status: 'verified', cart: structuredClone(facts.cart), customerMessage: '已加入。' }
+  })
+  const result = await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: 1 }, { name: '魚丸湯', quantity: 1 }] })
+  expect(attempts).toEqual(mode === 'unchanged' || mode === 'stale-again' ? ['chicken', 'soup', 'soup'] : ['chicken', 'soup'])
+  expect(result.status).toBe(mode === 'unchanged' ? 'verified' : mode === 'unknown' ? 'unknown' : 'rejected')
+  if (mode === 'removed')
+    expect(result.customerMessage).toContain('目前菜單未列出「魚丸湯」')
+})
+
+// Insert a clarification into the 11:53 lunch case, using a synthetic catalog.
+it.each(['確認', '取消'])('quotes the entire menu once and respects the next answer: %s', async (reply) => {
+  const { call, client, facts, dialogue, execute, answer } = setup('整張菜單全部都各要一份')
+  const names = ['炸雞腿便當', '炸排骨便當', '三杯雞便當', '港式油雞腿便當', '周氏水餃(最低8顆)', '老董紅燒牛肉麵', '椒香麻辣牛肉麵', '牛肉湯餃(10顆)', '紅燒牛肉湯(無肉)', '蛋花湯']
+  facts.products = names.map((name, i) => ({ ...facts.products[0], ref: String(i), name }))
+  const quote = reply === '確認'
+    ? await call('ask_customer_question', { questionType: 'whole-menu' })
+    : await call('add_items_to_cart', { items: [{ name: names[0], quantity: 1 }] })
+  expect(quote.customerMessage).toContain('10 道')
+  expect(quote.customerMessage).toContain('1000 元')
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add')).toBe(false)
+  cleanup.push(beginBrowserCartTask(reply, { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  answer.mockResolvedValue({ kind: 'ANSWER', choiceId: reply === '確認' ? 'confirm' : 'cancel', provider: 'main' })
+  const finish = await prepareBrowserQuestionAnswer(client)
+  expect(finish).toBeTypeOf('function')
+  await finish!()
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add').map(([, input]) => input.productRef)).toEqual(reply === '確認' ? facts.products.map(product => product.ref) : [])
+})
+
+// Insert the cancel utterance when the third native add has returned, before
+// the confirmed order coordinator can dispatch the fourth dish.
+it('queues a spoken cancellation arriving after the third dish of a confirmed whole-menu order', async () => {
+  const { call, facts, client, execute, dialogue, answer } = setup('整張菜單全部都各要一份')
+  facts.products = Array.from({ length: 10 }, (_, index) => ({
+    ...facts.products[0],
+    name: `餐點${index + 1}`,
+    ref: String(index + 1),
+  }))
+  await call('ask_customer_question', { questionType: 'whole-menu' })
+  answer.mockResolvedValue({ kind: 'ANSWER', choiceId: 'confirm', provider: 'main' })
+  const events: string[] = []
+  const failures: unknown[] = []
+  const queue = createKioskUtteranceQueue({
+    onReady: utterance => events.push(`收到${utterance.text}`),
+    onError: (_, error) => failures.push(error),
+    process: async (utterance, ticket) => {
+      events.push(`處理${utterance.text}`)
+      cleanup.push(beginBrowserCartTask(utterance.text, { isCurrent: ticket.isCurrent, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+      if (utterance.text === '確認') {
+        const finish = await prepareBrowserQuestionAnswer(client)
+        expect(await finish!()).toMatchObject({ status: 'verified' })
+      }
+      else {
+        const addedCart = structuredClone(facts.cart)
+        expect(await call('cancel_item_selection', {})).toMatchObject({ ok: true, cart: { version: addedCart.version } })
+        expect(facts.cart).toEqual(addedCart)
+      }
+    },
+  })
+  const native = execute.getMockImplementation()!
+  execute.mockImplementation(async (tool, input) => {
+    if (tool.name !== 'browser_cart_add')
+      return native(tool, input)
+    const ref = String(input.productRef)
+    facts.cart.lines.push({ ref, productRef: ref, name: `餐點${ref}`, quantity: 1, configuration: '', unitPrice: 100, note: '', options: [] })
+    facts.cart.version = `after-${ref}`
+    events.push(`加${ref}`)
+    if (ref === '3')
+      queue.submit({ source: 'asr', text: '取消' })
+    return { ok: true, source: 'browser', status: 'verified', effect: 'applied', cart: structuredClone(facts.cart) }
+  })
+  queue.submit({ source: 'asr', text: '確認' })
+  await queue.idle()
+  expect(failures).toEqual([])
+  expect(facts.cart.lines.slice(1).map(line => line.name)).toEqual(facts.products.map(product => product.name))
+  expect(events).toEqual(['收到確認', '處理確認', '加1', '加2', '加3', '收到取消', '加4', '加5', '加6', '加7', '加8', '加9', '加10', '處理取消'])
+})
+
+// Replay the lunch bulk order with a missing line between two available dishes.
+it('finishes the available dishes and reports the missing middle dish once', async () => {
+  const { call, execute, facts } = setup('雞腿飯、魚丸湯和雞湯各一份')
+  facts.products.push({ ...facts.products[0], ref: 'broth', name: '雞湯' })
+  const result = await call('add_items_to_cart', { items: ['雞腿飯', '魚丸湯', '雞湯'].map(name => ({ name, quantity: 1 })) })
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add').map(([, input]) => input.productRef)).toEqual(['chicken', 'broth'])
+  expect(result.effect).toBe('partial')
+  expect(result.customerMessage).toContain('魚丸湯')
+  expect(result.customerMessage).toContain('已完成')
+})
+
+it.each(['雞腿飯一份、魚丸湯一份，再結帳', '雞腿飯和魚丸湯各一份，再結帳'])('refreshes the menu once and checks out the available servings for %s', async (text) => {
+  const { facts, call, execute } = setup(text)
+  const native = execute.getMockImplementation()!
+  execute.mockImplementation(async (tool, input) => {
+    const result = await native(tool, input)
+    if (tool.name !== 'browser_cart_review')
+      return result
+    const subtotal = facts.cart.lines.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0)
+    return { ...result as object, customerMessage: `雞腿飯 ${facts.cart.lines[0].quantity} 份，小計 ${subtotal} 元。` }
+  })
+  const result = await call('add_items_to_cart', { items: ['雞腿飯', '魚丸湯'].map(name => ({ name, quantity: 1 })) })
+  expect(result.customerMessage).toContain('魚丸湯')
+  expect(result.customerMessage).toContain('雞腿飯 4 份，小計 400 元')
+  expect(result.pendingCustomerChoice?.question).toBe('餐點、份數和金額正確嗎？')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_return_menu')).toHaveLength(1)
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add')).toHaveLength(1)
+  expect(facts.cart.lines.map(row => [row.name, row.quantity])).toEqual([['雞腿飯', 4]])
+})
+
+it('resumes the actual question after reading stops and otherwise guides ordering from the current cart', () => {
+  const { facts, dialogue } = setup('不用唸了')
+  expect(dialogue.readingFollowUp(facts)).toContain('結帳')
+  facts.cart.lines.splice(0)
+  expect(dialogue.readingFollowUp(facts)).toContain('雞腿飯')
+  for (const [purpose, question] of [['notification-phone', '請輸入通知手機。'], ['invoice-method', '要使用哪一種發票方式？']]) {
+    dialogue.presentService(facts, { purpose, question, choices: [], request: '' })
+    expect(dialogue.readingFollowUp(facts)).toBe(question)
+    dialogue.reset()
+  }
+})
+
+it.each([
+  ['加一份雞腿飯，再幫我結帳', true],
+  ['雞腿飯一份然後結帳', true],
+  ['雞腿飯一份和魚丸湯一份，再幫我結帳', false],
+  ['雞腿飯兩份，再幫我結帳', false],
+  ['雞腿飯一份，先不要結帳', false],
+  ['雞腿飯一份，等朋友到再結帳', false],
+  ['雞腿飯一份，之後可以結帳嗎？', false],
+])('continues a verified purchase to cart review only when requested now: %s', async (text, checkout) => {
+  const { call, execute } = setup(String(text))
+  const result = await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: 1 }] })
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add')).toHaveLength(1)
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_review')).toHaveLength(checkout ? 1 : 0)
+  if (checkout) {
+    expect(result.pendingCustomerChoice.question).toContain('餐點、份數')
+    expect(result.customerMessage).toContain('已完成指定餐點操作')
+  }
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_order_submit')).toBe(false)
 })
 
 // Report: this chat, Nov14; servings and dumpling extras must remain distinct.
@@ -561,9 +790,9 @@ it('reads cart and menu details without consuming a pending quantity answer or d
   expect(answer).not.toHaveBeenCalled()
   expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_present')).toBe(false)
 })
-it('validates all named additions before the first write', async () => {
-  const { call, execute, facts } = setup('雞腿飯一份和不存在餐一份')
-  expect((await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: 1 }, { name: '不存在餐', quantity: 1 }] })).ok).toBe(false)
+it('validates available configurations before the first write', async () => {
+  const { call, execute, facts } = setup('雞腿飯一份和另一種規格一份')
+  expect((await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: 1 }, { name: '雞腿飯', variant: '不存在的規格', quantity: 1 }] })).ok).toBe(false)
   expect(facts.cart.lines[0].quantity).toBe(3)
   expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add')).toBe(false)
 })
@@ -627,6 +856,43 @@ it('closes the unfinished selection and looks up soup only after switch consent'
   expect(dialogue.hasPending()).toBe(false)
 })
 
+it('clarifies a queued cancellation without changing any existing servings', async () => {
+  const { call, client, dialogue, facts, execute } = setup('取消')
+  const result = await call('ask_customer_question', { questionType: 'cancel-recent-additions' })
+  expect(result.pendingCustomerChoice.question).toBe('您是要把剛才加的餐點拿掉嗎？')
+  cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const answer = await prepareBrowserQuestionAnswer(client)
+  expect(await answer!()).toMatchObject({ needsAssistant: true, answeredQuestion: { purpose: 'cancel-recent-additions' } })
+  expect(facts.cart.lines[0].quantity).toBe(3)
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_remove')).toBe(false)
+})
+
+it.each([false, true])('restores only the original servings after confirmed cancellation, with a separate configuration: %s', async (separate) => {
+  const { call, client, facts, dialogue, execute } = setup('雞腿飯加一份')
+  facts.cart.lines[0].quantity = 2
+  if (separate)
+    facts.cart.lines.push({ ...facts.cart.lines[0], ref: 'other', configuration: '加蛋', description: '加蛋', quantity: 1 })
+  const start = (text: string) => cleanup.push(beginBrowserCartTask(text, { dialogue, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }) }))
+  await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: 1 }] })
+  expect(facts.cart.lines[0].quantity).toBe(3)
+  start('取消')
+  const cancel = await prepareBrowserQuestionAnswer(client)
+  expect(await cancel!()).toMatchObject({ customerMessage: expect.stringContaining('1 份雞腿飯') })
+  start('好')
+  const answer = await prepareBrowserQuestionAnswer(client)
+  const restored = await answer!()
+  expect(restored).toMatchObject({ status: 'verified' })
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_quantity' }), expect.objectContaining({ lineRef: 'line', quantity: 2 }))
+  expect(facts.cart.lines.map(line => line.quantity)).toEqual(separate ? [2, 1] : [2])
+})
+
+it.each(['小王，你要不要也點一份雞腿飯？', '小王你要不要也點一份雞腿飯', '阿姨，妳想不想吃雞腿飯？'])('keeps a companion meal question from authorizing a purchase: %s', async (text) => {
+  const { call, facts, execute } = setup(text)
+  await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: 1 }] })
+  expect(facts.cart.lines[0].quantity).toBe(3)
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add')).toBe(false)
+})
+
 it('returns to the full menu once when the customer confirms cancelling a draft', async () => {
   const { call, client, dialogue, execute } = setup('先看全部餐點', true)
   await call('ask_customer_question', { questionType: 'cancel-and-search', query: '' })
@@ -654,6 +920,27 @@ it('offers checkout after cancelling an unfinished dish and handles assent as ca
   expect(await accepted!()).toMatchObject({ pendingCustomerChoice: { question: '餐點、份數和金額正確嗎？' } })
   expect(facts.cart.lines[0].quantity).toBe(3)
   expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_order_submit')).toBe(false)
+})
+
+// Report: this chat, Nov25 — in RC10 the planner added an unspoken serving after a checkout invitation.
+it.each([false, true])('asks for servings before a planner can add one for a newly requested dish (checkout invitation: %s)', async (checkoutInvitation) => {
+  const { call, client, dialogue, answer, execute, facts } = setup('我要炸雞腿便當')
+  facts.products.push({ ...facts.products[0], ref: 'fried-chicken', name: '炸雞腿便當' })
+  if (checkoutInvitation) {
+    dialogue.presentService(facts, { purpose: 'review-checkout', request: '', question: '要現在結帳嗎？', choices: [{ id: 'yes', description: '核對購物車' }, { id: 'no', description: '繼續點餐' }] })
+    answer.mockResolvedValueOnce({ kind: 'NEW_REQUEST', provider: 'main' })
+  }
+
+  expect(await call('add_items_to_cart', { items: [{ name: '炸雞腿便當', quantity: 1 }] })).toMatchObject({
+    pendingCustomerChoice: { question: '請問「炸雞腿便當」要幾份？' },
+  })
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add')).toBe(false)
+  expect(facts.cart.lines[0].quantity).toBe(3)
+
+  cleanup.push(beginBrowserCartTask('兩份', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const answered = await prepareBrowserQuestionAnswer(client)
+  expect(await answered!()).toMatchObject({ status: 'verified' })
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add').map(([, input]) => input)).toMatchObject([{ productRef: 'fried-chicken', quantity: 2 }])
 })
 
 it('suggests a different dish after a spoken refusal with an empty cart', async () => {

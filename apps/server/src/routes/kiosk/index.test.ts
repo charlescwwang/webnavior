@@ -1850,7 +1850,7 @@ describe('kiosk routes', () => {
     expect(complete.mock.calls[0]?.[0].body.messages).toContainEqual({ role: 'user', content: '嗨' })
   })
 
-  it.each([['timeout', 504], ['provider-error', 503]] as const)('preserves successful tool receipts and reports %s when the model continuation fails', async (reason, statusCode) => {
+  it.each([['timeout', 504], ['provider-error', 503], ['provider-error', 200]] as const)('preserves successful tool receipts and reports %s when the model continuation fails (upstream %i)', async (reason, statusCode) => {
     const complete = vi.fn()
       .mockResolvedValueOnce(Response.json({
         choices: [{ message: {
@@ -1858,7 +1858,14 @@ describe('kiosk routes', () => {
           tool_calls: [{ id: 'call_menu', type: 'function', function: { name: 'menu_get', arguments: '{"query":"牛肉麵"}' } }],
         } }],
       }))
-      .mockRejectedValueOnce(new ApiError(statusCode, 'TEST_MODEL_FAILURE', 'model failure'))
+      .mockImplementationOnce(() => {
+        if (statusCode !== 200)
+          throw new ApiError(statusCode, 'TEST_MODEL_FAILURE', 'model failure')
+        // An HTTP success can still reach Kiosk without the terminal Responses event.
+        const delta = { type: 'response.output_text.delta', delta: '尚未完成的回覆' }
+        const truncated = new Response(`data: ${JSON.stringify(delta)}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } })
+        return translateResponsesResponse(truncated, true)
+      })
     const kioskService = createKioskService(db)
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
       developmentRegistrationEnabled: true,

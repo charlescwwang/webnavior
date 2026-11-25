@@ -13,7 +13,7 @@ import { array, integer, looseObject, maxLength, maxValue, minLength, minValue, 
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { cartLineLabelSchema } from '../../../server/src/services/domain/browser-ordering/contracts'
-import { askBrowserCustomerQuestion, browserRecommendationCriteria, cancelBrowserItemSelection, executeBrowserCartTool, executeBrowserCheckout, executeBrowserConfirmedAddition, executeBrowserQuantityQuestion, executeBrowserReply, filterBrowserRecommendations, readBrowserOrderingFacts } from './browserCartTask'
+import { askBrowserCustomerQuestion, browserRecommendationCriteria, cancelBrowserItemSelection, executeBrowserCartTool, executeBrowserCheckout, executeBrowserConfirmedAddition, executeBrowserQuantityQuestion, executeBrowserReply, filterBrowserRecommendations, readBrowserOrderingFacts, refreshMissingDishMenu, reviewCartAfterAdditions } from './browserCartTask'
 import { orderFactsSchema } from './browserOrderDrafts'
 import { recommendationCriteriaSchema } from './recommendationSession'
 
@@ -125,11 +125,14 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
     const last = parse(looseObject({}), results.at(-1))
     const receipts = results.map(result => parse(looseObject({ status: optional(string()), effectMessage: optional(string()), customerMessage: optional(string()) }), result))
     const completed = receipts.filter(receipt => receipt.status === 'verified')
-    if (!completed.length)
+    const failures = receipts.filter(receipt => receipt.status !== 'verified')
+    if (!failures.some(receipt => receipt.reason === 'product-unavailable') && !completed.length)
       return { ...last, results }
     const messages = completed.map(receipt => receipt.effectMessage ?? receipt.customerMessage).filter(Boolean)
-    const partial = completed.length > 0 && completed.length < receipts.length
-    return { ...last, ...(partial ? { effect: 'partial', partial: true } : {}), effectMessage: messages.join(' '), customerMessage: [...messages, ...(partial && typeof last.customerMessage === 'string' ? [last.customerMessage] : [])].join(' '), results }
+    const failureMessages = failures.map(receipt => receipt.customerMessage).filter(Boolean)
+    // A later success must not turn a skipped item into a verified whole order.
+    const outcome = failures.at(-1)
+    return { ...last, ...outcome, ...(outcome && completed.length ? { effect: 'partial', partial: true } : {}), effectMessage: messages.join(' '), customerMessage: [...messages, ...failureMessages].join(' '), results }
   }
   async function executeOperation(name: OrderingToolName, input: unknown) {
     try {
@@ -224,14 +227,28 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
       if (name === 'add_items_to_cart') {
         const { items } = parse(strictObject({ items: pipe(array(mealSchema), minLength(1), maxLength(10)) }), input)
         const results: unknown[] = []
+        let refreshedMenu = false
+        let verifiedVersion: string | undefined
         // Validate every requested configuration before the first mutation.
         const initial = await read()
-        for (const item of items)
-          resolveMeal(initial, item)
+        for (const item of items) {
+          if (matchingProducts(initial.products, item.name).length)
+            resolveMeal(initial, item)
+        }
         for (const item of items) {
           let result: unknown
           try {
-            result = await call('browser_cart_add', resolveMeal(await read(), item))
+            let current = await read()
+            if (!refreshedMenu && !matchingProducts(current.products, item.name).length) {
+              await refreshMissingDishMenu(client, current.cart.version, item.name)
+              refreshedMenu = true
+              current = await read()
+            }
+            if (!matchingProducts(current.products, item.name).length) {
+              results.push({ ...clientError(`目前菜單未列出「${item.name}」，這道沒有加入。`), reason: 'product-unavailable' })
+              continue
+            }
+            result = await call('browser_cart_add', resolveMeal(current, item))
             // Resolving an old question returns its sealed proposal as data.
             // This explicit add operation completes it without another model round.
             if (result && typeof result === 'object' && 'confirmedAddition' in result)
@@ -243,10 +260,38 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
           }
           results.push(result)
           const receipt = parse(looseObject({ status: optional(string()) }), result)
-          if (receipt.status !== 'verified')
+          if (receipt.status === 'verified') {
+            const cart = safeParse(looseObject({ version: string() }), receipt.cart)
+            verifiedVersion = cart.success ? cart.output.version : undefined
+          }
+          if (receipt.reason === 'product-unavailable' && !refreshedMenu) {
+            try {
+              const current = await read()
+              await refreshMissingDishMenu(client, current.cart.version, item.name)
+              refreshedMenu = true
+            }
+            catch (error) {
+              return batchResult([...results, clientFailure(error)])
+            }
+          }
+          if (receipt.status !== 'verified' && receipt.reason !== 'product-unavailable')
             return batchResult(results)
         }
-        return batchResult(results)
+        const added = batchResult(results)
+        const verified = safeParse(looseObject({ effectMessage: string(), customerMessage: string() }), added)
+        if (!verified.success || !verifiedVersion)
+          return added
+        const { effectMessage, customerMessage } = verified.output
+        try {
+          const reviewed = await reviewCartAfterAdditions(client, items.map(item => ({ ...matchingProducts(initial.products, item.name)[0], ...item })), verifiedVersion)
+          if (!reviewed)
+            return added
+          const receipt = parse(looseObject({ customerMessage: optional(string()) }), reviewed)
+          return { ...added, ...receipt, effect: receipt.ok === false || verified.output.partial ? 'partial' : 'applied', effectMessage, customerMessage: [customerMessage, receipt.customerMessage].filter(Boolean).join(' ') }
+        }
+        catch {
+          return { ...added, ok: false, status: 'rejected', effect: 'partial', customerMessage: `${customerMessage} 購物車畫面暫時無法核對，已加入的餐點會保留。` }
+        }
       }
       if (name === 'set_cart_item_quantity') {
         const parsed = safeParse(strictObject({ target: targetSchema, quantity }), input)
