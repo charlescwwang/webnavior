@@ -1,0 +1,49 @@
+{
+  "version": "0.7.8-rc.11",
+  "previousVersion": "0.7.8-rc.10",
+  "sourceCommit": "2df1465e763ed1517b7236ff332b336f05edbad7",
+  "package": {
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc11-20261125-r1/windows/Webnavior-Kiosk-v0.7.8-rc.11-Windows-x64-20261125-112452.zip",
+    "sha256": "4160ca2fb8549b5e3e5a0d8cb334fbd23e3dd1aec76b7981620c4ff55dffe755",
+    "bytes": 163770425,
+    "files": 81
+  },
+  "frontend": {
+    "release": "kiosk-rc11-20261125-r1",
+    "status": "activated-http-verified",
+    "apiRestart": false,
+    "changed": 480,
+    "apiPid": "1214145",
+    "httpChecks": 10,
+    "recoveryChunkVerified": true
+  },
+  "ubuntuDesktop": {
+    "updatedFiles": {
+      "main/index.js": "91981b311720bad9771f2c7ffb0434de76548a22c92bfa2bda052ad2bd524add",
+      "preload/index.cjs": "9abfd036bf0102de60fc9de97c97296fe60468df8ebf30d3e1d06303c0754008",
+      "service/pb.js": "28dda0a1fabe47b31cfb0ccd79a23edb218d9e1498389409db169460fc455c1e"
+    },
+    "existingWindowRestarted": false
+  },
+  "validation": {
+    "kioskTests": {
+      "passed": 1296,
+      "expectedFail": 1,
+      "skipped": 49
+    },
+    "stageUiPbTests": 77,
+    "desktopTests": 43,
+    "scopedTypechecks": [
+      "stage-kiosk",
+      "stage-kiosk-desktop",
+      "stage-ui"
+    ],
+    "changedCodeLint": "passed",
+    "windowsArchiveVerified": true,
+    "windowsPhysicalValidation": false,
+    "apiReadiness": {
+      "local": "ready",
+      "public": "ready"
+    }
+  }
+}
