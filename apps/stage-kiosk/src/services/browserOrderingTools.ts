@@ -13,8 +13,9 @@ import { array, integer, looseObject, maxLength, maxValue, minLength, minValue, 
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { cartLineLabelSchema } from '../../../server/src/services/domain/browser-ordering/contracts'
-import { askBrowserCustomerQuestion, browserRecommendationCriteria, cancelBrowserItemSelection, executeBrowserCartTool, executeBrowserCheckout, executeBrowserConfirmedAddition, executeBrowserQuantityQuestion, executeBrowserReply, filterBrowserRecommendations, readBrowserOrderingFacts, refreshMissingDishMenu, reviewCartAfterAdditions } from './browserCartTask'
+import { askBrowserCustomerQuestion, browserRecommendationCriteria, cancelBrowserItemSelection, confirmLargeAddition, executeBrowserCartTool, executeBrowserCheckout, executeBrowserConfirmedAddition, executeBrowserQuantityQuestion, executeBrowserReply, filterBrowserRecommendations, readBrowserOrderingFacts, refreshMissingDishMenu, reviewCartAfterAdditions } from './browserCartTask'
 import { orderFactsSchema } from './browserOrderDrafts'
+import { servingLimits } from './browserQuestionWindow'
 import { recommendationCriteriaSchema } from './recommendationSession'
 
 const text = pipe(string(), minLength(1), maxLength(200))
@@ -23,7 +24,7 @@ const optionSchema = strictObject({ group: text, name: text, quantity: pipe(numb
 const mealFields = { name: text, variant: optional(text), options: optional(pipe(array(optionSchema), maxLength(100))), note: optional(pipe(string(), maxLength(200))), piecesPerServing: optional(pipe(number(), integer(), minValue(8), maxValue(108))) }
 const orderingFactsSchema = looseObject({ ...orderFactsSchema.entries, cart: looseObject({ version: string(), lines: array(looseObject({ ...cartLineLabelSchema.entries, ref: string(), productRef: optional(string()), configuration: optional(string()), unitPrice: optional(number()) })) }) })
 const targetSchema = strictObject({ name: text, configuration: optional(pipe(string(), maxLength(2000))), note: optional(pipe(string(), maxLength(200))) })
-const mealSchema = strictObject({ ...mealFields, quantity, copyFrom: optional(targetSchema) })
+const mealSchema = strictObject({ ...mealFields, quantity: pipe(number(), integer(), minValue(1), maxValue(Number.MAX_SAFE_INTEGER)), copyFrom: optional(targetSchema) })
 const clientError = (message: string) => ({ ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: message })
 
 // Only messages constructed at this domain boundary are customer-facing.
@@ -231,6 +232,8 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         let verifiedVersion: string | undefined
         // Validate every requested configuration before the first mutation.
         const initial = await read()
+        if (items.reduce((total, item) => total + item.quantity, 0) > servingLimits.confirmAbove)
+          return confirmLargeAddition(initial, items.map(item => resolveMeal(initial, item)))
         for (const item of items) {
           if (matchingProducts(initial.products, item.name).length)
             resolveMeal(initial, item)

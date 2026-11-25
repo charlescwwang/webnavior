@@ -33,6 +33,7 @@ import { array, boolean, literal, looseObject, minLength, number, object, option
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { browserWriteToolNameSchema, cartLineLabelSchema, cartSnapshotSchema } from '../../../server/src/services/domain/browser-ordering/contracts'
+import { servingLimits } from './browserQuestionWindow'
 import { presentCheckoutInvitation } from './checkoutInvitation'
 import { paymentChoiceFromSpeech, paymentOptionsReply } from './paymentChoice'
 
@@ -763,6 +764,8 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
           }
           const selection = { version: configuration.version, variantRef: configuration.variantRef, choices: [] }
           const selected = resolveSelection(configuration, selection, '')
+          if (requestedQuantity > servingLimits.confirmAbove)
+            return confirmLargeAddition(facts, [{ productRef: product!.ref, quantity: requestedQuantity, unitPrice: selected.unitPrice, note: '', selection }])
           task.confirmed = { binding: answer.binding, proposal: { productRef: product!.ref, productName: product!.name, quantity: requestedQuantity, unitPrice: selected.unitPrice, note: '', selection, optionSummary: '', options: [] } }
           return { ...asBrowserFacts(facts), confirmedAddition: task.confirmed!.proposal }
         }
@@ -846,6 +849,8 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
     && /^(?:請|幫我|我要|我想要)?整[張份個]菜單(?:全部)?都?(?:各|每樣|每道)(?:要|來)?[一1]份[。！!]*$/.test(task.text)) {
     return task.dialogue.presentWholeMenu(rawFacts)
   }
+  if (tool.name === 'browser_cart_add' && !task.confirmed && typeof input.quantity === 'number' && input.quantity > servingLimits.confirmAbove && typeof input.productRef === 'string')
+    return confirmLargeAddition(rawFacts, [{ ...input, productRef: input.productRef, quantity: input.quantity }])
   const original = facts.cart.lines.find(line => line.ref === input.lineRef)
   const copySource = tool.name === 'browser_cart_add' && typeof input.copySourceRef === 'string' ? facts.cart.lines.find(line => line.ref === input.copySourceRef && line.productRef === input.productRef && line.options !== undefined) : undefined
   if (input.copySourceRef !== undefined && !copySource)
@@ -1170,6 +1175,23 @@ export async function refreshMissingDishMenu(client: BrowserClient, version: str
     throw new Error('更新菜單時無法核對購物車，請先確認畫面上的餐點。')
   // Navigation normally preserves the same-store catalog. This lookup specifically needs the refreshed one.
   task.reads = {}
+}
+
+/** Ask once before any write in a large batch, using the current visitor's question window. */
+export function confirmLargeAddition(facts: unknown, items: { productRef: string, quantity: number, [key: string]: unknown }[]) {
+  const task = active
+  if (!task?.isCurrent() || !task.dialogue || task.readOnly)
+    return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '請重新確認要加入的餐點與份數。' }
+  if (companionMealQuestion(task.transcript))
+    return { ok: true, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '需要點餐時，請告訴我要哪道餐點及份數。' }
+  const total = items.reduce((sum, item) => sum + item.quantity, 0)
+  if (total > servingLimits.maximum) {
+    const prefix = `這次要求 ${total} 份，機台一次最多可加 ${servingLimits.maximum} 份。`
+    if (items.every(item => item.productRef === items[0]!.productRef))
+      return task.dialogue.presentQuantity(facts, items[0]!.productRef, task.transcript, undefined, true, prefix)
+    return { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: `${prefix}請問各道餐點要改為幾份？` }
+  }
+  return task.dialogue.presentAddition(facts, items)
 }
 
 /** Reads verified PB facts without consuming an answer or changing the page. */

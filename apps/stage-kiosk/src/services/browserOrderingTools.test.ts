@@ -1389,7 +1389,6 @@ it.each([
   { name: 'add_items_to_cart', input: { items: [] } },
   { name: 'add_items_to_cart', input: { items: [{ name: '雞腿飯', quantity: 0 }] } },
   { name: 'add_items_to_cart', input: { items: [{ name: '雞腿飯', quantity: 1.5 }] } },
-  { name: 'add_items_to_cart', input: { items: [{ name: '雞腿飯', quantity: 100 }] } },
   { name: 'add_items_to_cart', input: { items: [{ name: '雞腿飯', quantity: 1, piecesPerServing: 7 }] } },
   { name: 'add_items_to_cart', input: { items: [{ name: '雞腿飯', quantity: 1, options: [{ group: '加購', name: '蛋', quantity: -1 }] }] } },
   { name: 'set_cart_item_quantity', input: { target: { name: '雞腿飯' }, quantity: 0 } },
@@ -2309,4 +2308,28 @@ it('clarifies the shared chicken alias in a soup and rice order', async () => {
   expect(result.pendingCustomerChoice.question).not.toContain('蛋花湯')
   expect(result.effect).toBe('none')
   expect(execute.mock.calls.every(([tool]) => ['browser_cart_get', 'browser_present'].includes(tool.name))).toBe(true)
+})
+
+it.each([[20, false], [21, true], [99, true]])('asks before adding more than twenty servings: %i', async (count, needsConfirmation) => {
+  const { call, execute } = setup(`我要雞腿飯${count}份`)
+  const result = await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: count }] })
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add')).toBe(!needsConfirmation)
+  if (needsConfirmation)
+    expect(result.pendingCustomerChoice?.purpose).toBe('browser-confirm-add')
+})
+
+it.each([{ parts: [100] }, { parts: [99, 1] }])('asks for a smaller quantity without adding a hundred servings: $parts', async ({ parts }) => {
+  const { call, execute } = setup('我要一百份雞腿飯')
+  const result = await call('add_items_to_cart', { items: parts.map(quantity => ({ name: '雞腿飯', quantity })) })
+  expect(result.customerMessage).toContain('100')
+  expect(result.customerMessage).toContain('幾份')
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add')).toBe(false)
+})
+
+it('checks the total across different meals before adding even the first row', async () => {
+  const { call, execute, facts } = setup('雞腿飯六十份，魚丸湯四十份')
+  facts.products.push({ ...facts.products[0], ref: 'soup', name: '魚丸湯' })
+  const result = await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: 60 }, { name: '魚丸湯', quantity: 40 }] })
+  expect(result.customerMessage).toContain('99')
+  expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add')).toBe(false)
 })

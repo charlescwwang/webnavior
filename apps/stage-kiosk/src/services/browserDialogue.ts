@@ -18,7 +18,7 @@ import { array, looseObject, number, parse, safeParse, string } from 'valibot'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { createBrowserOrderDrafts, orderFactsSchema, orderSlotCount } from './browserOrderDrafts'
-import { createBrowserQuestionWindow } from './browserQuestionWindow'
+import { createBrowserQuestionWindow, servingLimits } from './browserQuestionWindow'
 import { finishedOrdering } from './checkoutInvitation'
 import { createRecommendationSession } from './recommendationSession'
 import { createTableSelection } from './tableSelection'
@@ -352,6 +352,11 @@ export function createBrowserDialogue(io: {
     orders.reset()
     const evidence = orderEvidence
     orderEvidence = undefined
+    const total = next.proposals.reduce((sum, proposal) => sum + proposal.quantity, 0)
+    if (total > servingLimits.maximum)
+      return { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: `這次要求 ${total} 份，機台一次最多可加 ${servingLimits.maximum} 份。請問要改為幾份？` }
+    if (total > servingLimits.confirmAbove)
+      return receipt(questions.presentOrder(binding, next.proposals))
     return { ok: true, source: 'browser', completeOrder: { proposals: next.proposals, binding, evidence } }
   }
 
@@ -616,6 +621,8 @@ export function createBrowserDialogue(io: {
       const { products } = parse(factsSchema, raw)
       if (!binding || !products.length)
         return { ok: false, status: 'rejected', effect: 'none', customerMessage: '目前沒有可核對的完整菜單。' }
+      if (products.length > servingLimits.maximum)
+        return { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: `整張菜單各一份共 ${products.length} 份，機台一次最多可加 ${servingLimits.maximum} 份。請問要選哪些餐點？` }
       const proposals: AdditionProposal[] = []
       for (const product of products) {
         const configuration = product.configurations[0]
@@ -627,26 +634,29 @@ export function createBrowserDialogue(io: {
       }
       return receipt(questions.presentOrder(binding, proposals, true))
     },
-    presentAddition(raw: unknown, input: Record<string, unknown>) {
+    presentAddition(raw: unknown, inputOrBatch: Record<string, unknown> | Record<string, unknown>[]) {
       const facts = parse(factsSchema, raw)
       const binding = snapshot(raw)
       if (!binding)
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '目前接待或頁面已變更，尚未建立確認。' }
       try {
-        const product = facts.products.find(product => product.ref === input.productRef)
-        const configuration = product?.configurations.find(configuration => configuration.variantRef === (input.selection as Record<string, unknown> | undefined)?.variantRef)
-        if (!product || !configuration)
-          throw new Error('目前的餐點規格已變更，請重新選擇。')
-        // The same selection policy used by the PB adapter determines the price;
-        // model-proposed totals cannot define what the customer is confirming.
-        const selection = parse(looseObject({ version: string(), variantRef: string(), choices: array(looseObject({ ref: string(), quantity: number() })) }), input.selection)
-        const selected = resolveSelection(configuration, selection, typeof input.note === 'string' ? input.note : '')
-        if (input.unitPrice !== selected.unitPrice)
-          throw new Error('提案售價與最新規格不符，尚未建立確認。')
-        const options = selected.choices.map(choice => ({ name: configuration.groups.flatMap(group => group.choices).find(option => option.ref === choice.ref)!.name, quantity: choice.quantity }))
-        const optionSummary = options.map(option => `${option.name} 每份 ${option.quantity} 個`).join('、')
-        const proposal: AdditionProposal = { productRef: product.ref, productName: product.name, quantity: Number(input.quantity), unitPrice: selected.unitPrice, note: typeof input.note === 'string' ? input.note : '', optionSummary, options, selection }
-        return receipt(questions.presentAddition(binding, proposal))
+        const inputs = Array.isArray(inputOrBatch) ? inputOrBatch : [inputOrBatch]
+        const proposals = inputs.map((input): AdditionProposal => {
+          const product = facts.products.find(product => product.ref === input.productRef)
+          const configuration = product?.configurations.find(configuration => configuration.variantRef === (input.selection as Record<string, unknown> | undefined)?.variantRef)
+          if (!product || !configuration)
+            throw new Error('目前的餐點規格已變更，請重新選擇。')
+          // The same selection policy used by the PB adapter determines the price;
+          // model-proposed totals cannot define what the customer is confirming.
+          const selection = parse(looseObject({ version: string(), variantRef: string(), choices: array(looseObject({ ref: string(), quantity: number() })) }), input.selection)
+          const selected = resolveSelection(configuration, selection, typeof input.note === 'string' ? input.note : '')
+          if (input.unitPrice !== selected.unitPrice)
+            throw new Error('提案售價與最新規格不符，尚未建立確認。')
+          const options = selected.choices.map(choice => ({ name: configuration.groups.flatMap(group => group.choices).find(option => option.ref === choice.ref)!.name, quantity: choice.quantity }))
+          const optionSummary = options.map(option => `${option.name} 每份 ${option.quantity} 個`).join('、')
+          return { productRef: product.ref, productName: product.name, quantity: Number(input.quantity), unitPrice: selected.unitPrice, note: typeof input.note === 'string' ? input.note : '', optionSummary, options, selection }
+        })
+        return receipt(Array.isArray(inputOrBatch) ? questions.presentOrder(binding, proposals) : questions.presentAddition(binding, proposals[0]!))
       }
       catch (error) {
         // No vendor call occurs while building a confirmation. Invalid model
@@ -674,14 +684,19 @@ export function createBrowserDialogue(io: {
         return receipt(phoneQuestion(binding, input.request, phoneDraft.digits))
       return receipt(questions.presentService(binding, input))
     },
-    presentQuantity(raw: unknown, productRef: string, request: string, requestTarget?: string, orderSelection?: true) {
+    presentQuantity(raw: unknown, productRef: string, request: string, requestTarget?: string, orderSelection?: true, prefix = '') {
       if (checkoutProgress)
         checkoutProgress.suspended = true
       const binding = snapshot(raw)
       const product = binding?.products.find(product => product.productRef === productRef)
       if (!binding || !product)
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '目前無法確認這份餐點，請重新選餐。' }
-      return receipt(questions.presentQuantity(binding, product, request, requestTarget, orderSelection))
+      // Main may ask for a revised count directly, without proposing an oversized add.
+      // Retain the reason when the customer's request contains one explicit large serving count.
+      const counts = request.replaceAll(product.name, '').normalize('NFKC').match(/[0-9一二兩三四五六七八九十百千萬零〇]+[份碗杯]/g)
+      if (!prefix && counts?.length === 1 && (/[百千萬]/.test(counts[0]) || Number.parseInt(counts[0].normalize('NFKC'), 10) > servingLimits.maximum))
+        prefix = `機台一次最多可加 ${servingLimits.maximum} 份。`
+      return receipt(questions.presentQuantity(binding, product, request, requestTarget, orderSelection, prefix))
     },
     async answer(raw: unknown, transcript: string, observe: () => Promise<unknown>, isCurrent: () => boolean, utteranceId?: number, options: { selectedAnswer?: SelectedBrowserAnswer } = {}) {
       const binding = snapshot(raw)

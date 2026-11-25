@@ -5,6 +5,9 @@ import type { PresentedQuestion } from '../../../server/src/services/domain/kios
 import { describePbMeal, pbBasicServing, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { browserRecommendationLimit } from '@proj-airi/stage-shared/product-presentation'
 
+/** Customer confirmation and native write limits apply to servings, never pieces or add-ons. */
+export const servingLimits = { confirmAbove: 20, maximum: 99 } as const
+
 /** Literal product evidence used to keep spoken ordinals bound to their original list. */
 export interface QuestionProduct {
   productRef: string
@@ -186,11 +189,11 @@ export function createBrowserQuestionWindow(now = Date.now) {
       return structuredClone(question)
     },
     /** A missing serving count never becomes one; selection is retained without write authority. */
-    presentQuantity(snapshot: QuestionSnapshot, product: QuestionProduct, request: string, requestTarget?: string, orderSelection?: true) {
+    presentQuantity(snapshot: QuestionSnapshot, product: QuestionProduct, request: string, requestTarget?: string, orderSelection?: true, prefix = '') {
       if (!snapshot.products.some(candidate => JSON.stringify(candidate) === JSON.stringify(product)))
         throw new Error('Quantity question requires a current observed product.')
       const serving = pbBasicServing(product.name, product.unitPrice)
-      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-order-quantity', question: `${serving ? `${pbProductName(product.name)}${serving}。` : ''}請問「${pbProductName(product.name)}」要幾份？`, expiresAt: now() + 120_000, choices: [{ id: 'cancel', description: '取消這次尚未加入的餐點，保留購物車。' }] }
+      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-order-quantity', question: `${prefix}${serving ? `${pbProductName(product.name)}${serving}。` : ''}請問「${pbProductName(product.name)}」要幾份？`, expiresAt: now() + 120_000, choices: [{ id: 'cancel', description: '取消這次尚未加入的餐點，保留購物車。' }] }
       ticket = { kind: 'quantity', binding: structuredClone({ ...snapshot, products: [product] }), product: structuredClone(product), request, requestTarget, question, orderSelection }
       return structuredClone(question)
     },
