@@ -1,0 +1,70 @@
+{
+  "version": "0.7.8-rc.12",
+  "previousVersion": "0.7.8-rc.11",
+  "package": {
+    "archive": "/home/aimax/webnavior/pb-test.local/kiosk-rc12-20261125-r1/windows/Webnavior-Kiosk-v0.7.8-rc.12-Windows-x64-20261125-211955.zip",
+    "sha256": "152523c5ab6619ec4e94dcb3bd16017570d9eb147a5cce31230dd39d3f3d5cc8",
+    "bytes": 163771465,
+    "files": 81,
+    "version": "0.7.8-rc.12",
+    "sourceCommit": "35f1f2d449129eba5902b0fe53be7329cea0033d",
+    "pairedFrontend": "kiosk-rc12-20261125-r1"
+  },
+  "frontend": {
+    "release": "kiosk-rc12-20261125-r1",
+    "status": "activated-http-verified",
+    "apiRestart": false,
+    "changed": 99,
+    "apiPid": "1214145"
+  },
+  "httpChecks": 9,
+  "api": {
+    "previousPid": "1214145",
+    "files": [
+      {
+        "path": "apps/server/src/services/domain/browser-ordering/skills/common/SKILL.md",
+        "before": "dfed7ad120af29da596e438e59313e942f3c974dfb66376d5a6eae008c80cdf0",
+        "after": "a67946053c9833727edcc932b3291a8a8ce9e1807e3dc5e083d30d44d937a9a1"
+      },
+      {
+        "path": "apps/server/src/services/domain/browser-ordering/skills/cart/SKILL.md",
+        "before": "3c1720ae27fa1e590f79bf7994ae9c1a66ee7331c02e21d0ea055c464f7fb06f",
+        "after": "5b7957ac368e41e8d34f46783f2115fe28f05f14f9aa49116218a2ecbf194a60"
+      },
+      {
+        "path": "packages/stage-shared/src/orderingTools.ts",
+        "before": "2a5ebbc3a6282d6c96d4e76f33a8e6f3eefe1a9113e3ef3c6cd08f2536984fb2",
+        "after": "74989a807925b588310dbda9fd7116cb547240bf6bcf507427a4128b90ec8fcf"
+      }
+    ],
+    "status": "rolled-back",
+    "apiPid": "1214145",
+    "health": {
+      "status": "ready",
+      "checks": {
+        "db": "ok",
+        "redis": "ok"
+      }
+    }
+  },
+  "apiRestartAttempt": "systemctl authorization timed out; changes rolled back",
+  "validation": {
+    "kioskTests": {
+      "passed": 1350,
+      "expectedFail": 1,
+      "skipped": 49
+    },
+    "desktopTests": 43,
+    "stageUiTargetedTests": 86,
+    "serverRouteTests": 155,
+    "windowsArchiveVerified": true,
+    "windowsPhysicalValidation": false,
+    "realModel": {
+      "jevEnabled": true,
+      "backgroundFilter": false,
+      "identicalMealUndo": "3 to 2",
+      "differentNotesUndo": "original two with notes preserved",
+      "companionQuestion": "cart unchanged; host blocked write"
+    }
+  }
+}
